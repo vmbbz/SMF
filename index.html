@@ -1177,7 +1177,10 @@
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 <script type="module">
   import { getTrendingTokens, getTokenByMint } from './src/token-utils.js';
-  import { generatePersonality } from './src/token-utils.js'; // if needed
+  import { generatePersonality } from './src/token-utils.js';
+  import { generateShareableFightLink, showShareableLink } from './share-fight.js';
+  import { showWalletConnect, hideWalletConnect } from './wallet-connect.js';
+  import { LeaderboardManager } from './leaderboard.js';
 
   window.startTrendingMode = async () => {
   const tokens = await getTrendingTokens(8);
@@ -1257,12 +1260,23 @@ window.captureVictory = async (winner) => {
   const canvas = document.querySelector('canvas');
   const screenshot = await html2canvas(canvas);
   
+  // Generate shareable fight link
+  const shareData = generateShareableFightLink('player', game.opponent.tokenData?.mint || 'unknown');
+  
+  // Show share link instead of just X post
+  showShareableLink(shareData.fightId);
+  
+  // Download screenshot
   const link = document.createElement('a');
   link.download = `smf-karate-chopped-${game.opponent.tokenData.symbol}.png`;
   link.href = screenshot.toDataURL();
   link.click();
 
-  // Auto X intent
+  // Save to leaderboard
+  const leaderboardManager = new LeaderboardManager();
+  leaderboardManager.saveFight('player', game.opponent.tokenData?.mint || 'unknown', 'player', game.opponent.tokenData?.mint || 'unknown');
+
+  // Auto X intent (still available)
   const text = encodeURIComponent(`I just KARATE CHOPPED $${game.opponent.tokenData.symbol} with $SMF tech 💥🥋 Come fight me at smf.fight!`);
   window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
 };

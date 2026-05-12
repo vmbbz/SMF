@@ -1,11 +1,16 @@
 {
-  "private": true,
-  "type": "module",
-  "devDependencies": {
-    "@jest/globals": "^29.7.0",
-    "jest": "^29.7.0"
-  },
+  "name": "smf-karate",
+  "version": "1.0.0",
+  "description": "Solana Meme Fighter - Beat trending tokens with karate moves",
+  "main": "index.html",
   "scripts": {
-    "test": "node --experimental-vm-modules node_modules/.bin/jest"
+    "build": "npm run build",
+    "test": "npm run test"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.0.0"
   }
 }
