@@ -49,7 +49,7 @@ export class LeaderboardManager {
     } catch (e) {
       console.error('Failed to save leaderboard:', e);
       return [];
-    }
+    };
   }
 
   // Get top 10 players
