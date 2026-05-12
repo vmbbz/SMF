@@ -119,6 +119,15 @@
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
   
   <script type="module">
+    // Core game modules (load first)
+    import { Actions } from './src/fighter.js';
+    import { Game } from './src/game.js';
+    import { Fighter } from './src/fighter.js';
+    import { SFX } from './src/sfx.js';
+    import { InputManager, KeyboardAdapter, P1_KEYBOARD_MAP, P2_KEYBOARD_MAP } from './src/input.js';
+    import { DG, INPUT_MODES, LLM_PROVIDERS, updateModeSelection, updateControlsInfo, getPlayerLabel } from './src/ui.js';
+    
+    // Utility modules
     import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';
     import { Effects } from './src/effects.js';
 
