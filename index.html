@@ -9,13 +9,35 @@
     :root { --neon-green: #00ff9d; --neon-pink: #ff00ff; }
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
-      background: radial-gradient(circle at center, #0a0a0a, #000);
+      background: 
+        radial-gradient(circle at center, #0a0a0a, #000),
+        url('assets/smf-bg.jpg') center/cover no-repeat;
       font-family: 'Press Start 2P', system-ui;
       color: var(--neon-green);
       overflow: hidden;
       height: 100vh;
       display: flex;
       flex-direction: column;
+      position: relative;
+    }
+    
+    /* Frosted glass overlay for main content */
+    body::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(10, 10, 10, 0.3);
+      backdrop-filter: blur(8px);
+      z-index: 1;
+    }
+    
+    /* Game and panel above frosted layer */
+    #game, #meme-panel, #mobile-controls {
+      position: relative;
+      z-index: 2;
     }
     #game { width: 100vw; height: 100vh; display: block; image-rendering: pixelated; }
     
@@ -81,7 +103,7 @@
   
   <!-- OUR MEME PANEL - always visible -->
   <div id="meme-panel">
-    <h1>$SMF KARATE</h1>
+    <h1><img src="assets/smf-logo.png" alt="$SMF KARATE" style="height:40px;vertical-align:middle;margin-right:10px;">$SMF KARATE</h1>
     <button onclick="startTrendingMode()">TRENDING ARENA 🔥</button>
     <button onclick="startEndlessMode()">ENDLESS PUMP STREAM</button>
     <input id="mint-input" placeholder="PASTE $TOKEN MINT" style="width:100%;padding:16px;margin:10px 0;background:#111;border:4px solid var(--neon-green);color:var(--neon-green);font-size:16px;border-radius:12px;">
