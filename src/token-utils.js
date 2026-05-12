@@ -2,7 +2,7 @@
 // IMPROVED — works reliably for real Pump.fun / Solana memes
 export async function getTrendingTokens(count = 8) {
   try {
-    // Use token-boosts endpoint for trending Solana memes
+    // Use token-boosts endpoint for trending tokens (more Solana tokens, better trending)
     const res = await fetch('https://api.dexscreener.com/token-boosts/latest/v1');
     const data = await res.json();
     
@@ -25,12 +25,29 @@ export async function getTrendingTokens(count = 8) {
         // Log full item data to see what fields are available
         console.log('🔍 FULL TOKEN DATA:', item);
         
+        // Smart symbol extraction: description -> URL -> address fallback
+        const description = item.description || '';
+        const symbolMatch = description.match(/\$([A-Z0-9]+)/i);
+        let symbol = symbolMatch ? symbolMatch[1] : null;
+        
+        // Fallback to URL extraction
+        if (!symbol) {
+          const urlParts = item.url.split('/');
+          const urlToken = urlParts[urlParts.length - 1];
+          symbol = urlToken.replace(/pump$/i, '').toUpperCase();
+        }
+        
+        // Final fallback to address
+        if (!symbol) {
+          symbol = item.tokenAddress.slice(0, 8);
+        }
+        
         return {
           mint: item.tokenAddress,
-          symbol: '$' + item.tokenAddress.slice(0, 8),
-          name: item.tokenAddress.slice(0, 8),
+          symbol: symbol,
+          name: symbol,
           description: item.description,
-          logoURI: item.icon,
+          logoURI: item.openGraph, // Use openGraph for full image URLs (icon is just hash)
           openGraph: item.openGraph,
           twitter: item.links?.find(link => link.type === 'twitter')?.url,
           telegram: item.links?.find(link => link.type === 'telegram')?.url,
