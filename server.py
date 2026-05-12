@@ -150,16 +150,28 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         except Exception:
             print("[postgres] Skipped - running without database")
 
-        room_manager = RoomManager(redis_pool) if redis_pool else None
-        game_loop_manager = GameLoopManager()
-        signaling_manager = SignalingManager()
-        oidc_config = OIDCConfig.from_env()
-        elo_manager = EloManager(pg_pool) if pg_pool else None
+        # Only create background tasks if we have a working RoomManager
+        if redis_pool:
+            room_manager = RoomManager(redis_pool)
+            game_loop_manager = GameLoopManager()
+            signaling_manager = SignalingManager()
+            oidc_config = OIDCConfig.from_env()
+            elo_manager = EloManager(pg_pool) if pg_pool else None
 
-        cleanup_task = RoomCleanupTask(room_manager, game_loop_manager, signaling_manager)
-        cleanup_task.start()
-        matchmaking_task = MatchmakingTask(room_manager, elo_manager)
-        matchmaking_task.start()
+            cleanup_task = RoomCleanupTask(room_manager, game_loop_manager, signaling_manager)
+            cleanup_task.start()
+            matchmaking_task = MatchmakingTask(room_manager, elo_manager)
+            matchmaking_task.start()
+        else:
+            # In-memory mode - no background tasks
+            room_manager = None
+            game_loop_manager = None
+            signaling_manager = None
+            oidc_config = OIDCConfig.from_env()
+            elo_manager = None
+            cleanup_task = None
+            matchmaking_task = None
+            print("[mode] Running in-memory mode - no multiplayer features")
 
         if oidc_config.configured:
             print(f"[auth] OIDC configured: issuer={oidc_config.issuer}")
@@ -169,7 +181,7 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         yield
 
     finally:
-        # SAFE SHUTDOWN - never crash on None
+        # SAFE SHUTDOWN - only stop what was created
         if matchmaking_task is not None:
             await matchmaking_task.stop()
         if cleanup_task is not None:
@@ -732,30 +744,29 @@ async def send_sse(session: LLMSession, data: Any) -> None:
 async def health() -> dict:
     return {"status": "ok"}
 
+@get("/favicon.ico")
+async def favicon() -> Response:
+    # Return empty 204 to prevent 404 errors
+    return Response(content="", status_code=204)
+
 
 @get("/")
 async def index_route() -> Response:
-    try:
-        print(f"[route] Serving index.html from: {ROOT / 'index.html'}")
-        html = (ROOT / "index.html").read_text(encoding="utf-8")
-        print(f"[route] Successfully read {len(html)} characters")
-        return Response(content=html, media_type="text/html")
-    except Exception as e:
-        print(f"[route] ERROR serving index.html: {type(e).__name__}: {e}")
-        raise
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    return Response(content=html, media_type="text/html")
 
 
 @get("/room/{code:str}")
 async def room_route(code: str) -> Response:
     """Serve the game page for a room join link (JS reads the URL to detect the room code)."""
-    html = (ROOT / "index.html").read_text()
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
     return Response(content=html, media_type="text/html")
 
 
 @get("/leaderboard")
 async def leaderboard_page() -> Response:
     """Serve the game page for the leaderboard URL (JS reads the route)."""
-    html = (ROOT / "index.html").read_text()
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
     return Response(content=html, media_type="text/html")
 
 
