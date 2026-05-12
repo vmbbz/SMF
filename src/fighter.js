@@ -765,7 +765,6 @@ export class Fighter {
     // === EPIC HEAD SWAP (perfect circular logo + neon glow) ===
     // Check if head image exists and has token data
     if (this.headImage && this.tokenData) {
-      console.log('🎯 Drawing head for', this.tokenData.symbol, 'image exists:', !!this.headImage);
       ctx.save();
       // Circular clip + subtle border
       ctx.beginPath();
