@@ -870,12 +870,19 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.font = "bold 48px monospace";
       ctx.textAlign = "center";
       let text = "TIME!";
+      let playerWins = false;
       if (this.p1.health <= 0 && this.p2.health <= 0) text = "DOUBLE KO!";
       else if (this.p1.health <= 0) text = "P2 WINS!";
-      else if (this.p2.health <= 0) text = "P1 WINS!";
-      else if (this.p1.health > this.p2.health) text = "P1 WINS!";
+      else if (this.p2.health <= 0) { text = "P1 WINS!"; playerWins = true; }
+      else if (this.p1.health > this.p2.health) { text = "P1 WINS!"; playerWins = true; }
       else if (this.p2.health > this.p1.health) text = "P2 WINS!";
       else text = "DRAW!";
+
+      // Victory capture for single-player meme mode
+      if (playerWins && window.captureVictory && this.p2 && this.p2.tokenData) {
+        window.lastOpponentSymbol = this.p2.tokenData.symbol || 'MEME';
+        window.captureVictory('P1');
+      }
 
       ctx.fillText(text, w / 2, this.logicalH / 2);
 
