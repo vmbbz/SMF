@@ -136,7 +136,7 @@
       status.innerHTML = 'Loading trending tokens...';
       const tokens = await getTrendingTokens(8);
       if (tokens.length === 0) {
-        status.innerHTML = 'No hot tokens right now — try pasting one!';
+        status.innerHTML = 'No tokens matched filter — check console for raw data';
         return;
       }
       const token = tokens[Math.floor(Math.random() * tokens.length)];
@@ -148,7 +148,11 @@
       const status = document.getElementById('status');
       status.innerHTML = 'ENDLESS PUMP STREAM — loading...';
       pumpQueue = await getTrendingTokens(12);
-      if (pumpQueue.length > 0) await loadOpponent(pumpQueue.shift());
+      if (pumpQueue.length === 0) {
+        status.innerHTML = 'No tokens matched filter — check console for raw data';
+        return;
+      }
+      await loadOpponent(pumpQueue.shift());
     };
 
     window.startCustomFight = async () => {
@@ -167,10 +171,18 @@
 
     // ================== CORE FIGHT STARTER ==================
     async function loadOpponent(token) {
-      // Wait for the original game to be fully ready
+      const status = document.getElementById('status');
+      status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
+
+      // Stronger wait for game to be ready
+      let attempts = 0;
+      while ((!window.game || !window.game.opponent) && attempts < 60) {
+        await new Promise(r => setTimeout(r, 80));
+        attempts++;
+      }
+
       if (!window.game || !window.game.opponent) {
-        console.log('Game not ready yet, retrying...');
-        setTimeout(() => loadOpponent(token), 200);
+        status.innerHTML = 'Game not ready — refresh page';
         return;
       }
 
@@ -197,13 +209,18 @@
         speechSynthesis.speak(utterance);
       }
 
-      // START THE FIGHT
-      console.log('%c🚀 Starting fight vs $' + token.symbol, 'color:#ff00ff');
+      // Force start the fight (multiple fallbacks)
+      console.log('%c🚀 Forcing fight start vs $' + token.symbol, 'color:#ff00ff;font-weight:bold');
+
       if (window.game && typeof window.game.start === 'function') {
         window.game.start();
       } else if (typeof startFight === 'function') {
         startFight();
+      } else if (typeof window.startFight === 'function') {
+        window.startFight();
       }
+
+      status.innerHTML = `FIGHTING <strong>$${token.symbol}</strong> — GO!`;
     }
 
     window.loadOpponent = loadOpponent;   // make it global

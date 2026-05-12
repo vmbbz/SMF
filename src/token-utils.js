@@ -6,32 +6,33 @@ export async function getTrendingTokens(count = 8) {
     const res = await fetch('https://api.dexscreener.com/token-boosts/latest/v1');
     const data = await res.json();
     
-    // Check if data exists and has tokens array
     if (!data || !Array.isArray(data)) {
       console.error("Invalid API response:", data);
       return [];
     }
     
-    // Token boosts endpoint returns array directly
+    // FIXED parsing for actual Dexscreener token-boosts response
     const tokens = data
-      .filter(token => 
-        token.symbol && 
-        token.volume?.h24 > 10000 && // lower threshold for more results
-        !token.symbol.includes('USDC') && // skip stables
-        !token.symbol.includes('USDT') // skip stables
+      .filter(item => 
+        (item.chainId === 'solana' || item.chainId === 'ethereum') &&
+        (item.tokenAddress || item.address)
       )
-      .sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0))
-      .slice(0, count);
+      .slice(0, count)   // no strict volume filter needed — boosts endpoint already gives hot ones
+      .map(item => {
+        const address = item.tokenAddress || item.address;
+        return {
+          mint: address,
+          symbol: '$' + (item.symbol || 'MEME'),
+          name: item.name || 'Hot Meme',
+          logoURI: item.logoURI || `https://dd.dexscreener.com/ds-data/tokens/solana/${address}.png` 
+        };
+      });
 
-    return tokens.map(token => ({
-      mint: token.address,
-      symbol: '$' + (token.symbol || 'MEME'),
-      name: token.name || 'Hot Meme',
-      logoURI: token.logoURI || `https://dd.dexscreener.com/ds-data/tokens/solana/${token.address}.png`
-    }));
+    console.log(`✅ Loaded ${tokens.length} hot tokens`, tokens);
+    return tokens;
   } catch (e) {
     console.error("Trending fetch failed:", e);
-    return []; // fallback
+    return [];
   }
 }
 
