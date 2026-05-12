@@ -220,6 +220,13 @@
       const opponent = window.game.opponent;
       await opponent.loadTokenHead(token);
 
+      // HIDE MEME PANEL
+      const memePanel = document.getElementById('meme-panel');
+      if (memePanel) memePanel.style.display = 'none';
+
+      status.innerHTML = `FIGHTING ${token.symbol} — GO!`;
+      console.log('%c🚀 FIGHT STARTED vs ' + token.symbol, 'color:#ff00ff;font-weight:bold');
+
       // Market sauce
       let volumeBoost = 1;
       try {
