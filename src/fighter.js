@@ -158,22 +158,24 @@ export class Fighter {
   }
 
   async loadTokenHead(tokenData) {
+  console.log(`🚀 loadTokenHead START: symbol=${tokenData.symbol}, logoURI=${tokenData.logoURI}`);
   this.tokenData = tokenData;
   this.personality = generatePersonality(tokenData);
 
   if (tokenData.logoURI) {
+    console.log(`📸 Creating Image with logoURI: ${tokenData.logoURI}`);
     this.headImage = new Image();
     this.headImage.crossOrigin = 'anonymous';
     this.headImage.src = tokenData.logoURI;
 
-    this.headImage.onerror = () => {
-      console.log('Head image failed to load for', tokenData.symbol);
+    this.headImage.onerror = (error) => {
+      console.error('❌ Head image failed to load for', tokenData.symbol, error);
       this.headImage = null;
     };
 
     await new Promise(resolve => {
       this.headImage.onload = () => {
-        console.log('✅ Head loaded for', tokenData.symbol);
+        console.log(`✅ Head loaded SUCCESS: symbol=${tokenData.symbol}, width=${this.headImage.width}, height=${this.headImage.height}, complete=${this.headImage.complete}`);
         // FORCE REDRAW so the head appears immediately
         if (window.game && typeof window.game.draw === 'function') {
           window.game.draw();
@@ -181,6 +183,8 @@ export class Fighter {
         resolve();
       };
     });
+  } else {
+    console.log(`❌ NO LOGO URI for token: ${tokenData.symbol}`);
   }
 }
 
@@ -765,7 +769,13 @@ export class Fighter {
     this._drawLimb(ctx, skeleton.elbowFront, skeleton.handFront);
 
     // === EPIC HEAD SWAP (perfect circular logo + neon glow) ===
+    console.log(`🎯 HEAD DRAW DEBUG: headImage=${!!this.headImage}, complete=${this.headImage?.complete}, tokenData=${!!this.tokenData}`);
+    if (this.tokenData) {
+      console.log(`🎯 TOKEN DEBUG: symbol=${this.tokenData.symbol}, logoURI=${this.tokenData.logoURI}`);
+    }
+    
     if (this.headImage && this.headImage.complete) {
+      console.log(`✅ DRAWING TOKEN HEAD for ${this.tokenData?.symbol || 'UNKNOWN'}`);
       ctx.save();
       // Circular clip + subtle border
       ctx.beginPath();
@@ -787,6 +797,7 @@ export class Fighter {
         this.headRadius * 2);
       ctx.restore();
     } else {
+      console.log(`❌ FALLBACK NEON CIRCLE: headImage=${!!this.headImage}, complete=${this.headImage?.complete}`);
       // fallback neon circle
       ctx.shadowColor = '#00ff9d';
       ctx.shadowBlur = 15;
