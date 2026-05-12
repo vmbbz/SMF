@@ -1167,6 +1167,7 @@
     <input id="mint-input" placeholder="Paste Solana mint address" style="width:220px">
     <button onclick="startCustomFight()">1v1 This Token</button>
     <button onclick="startEndlessMode()">Endless Pump Stream 🔥</button>
+<button onclick="stopEndlessMode()" style="margin-left: 5px;">Stop Stream</button>
     <div id="status"></div>
   </div>
 
@@ -1211,13 +1212,22 @@ async function loadNextPumpOpponent() {
   const token = pumpQueue.shift();
   
   // MARKET SAUCE — scale opponent based on real volume
-  const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${token.mint}`);
-  const pairData = await pairRes.json();
-  const volumeBoost = Math.min(2, 1 + (pairData.pairs?.[0]?.volume?.m5 || 0) / 500000); // up to 2x stronger
+  let volumeBoost = 1;
+  try {
+    const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${token.mint}`);
+    const pairData = await pairRes.json();
+    volumeBoost = Math.min(2, 1 + (pairData.pairs?.[0]?.volume?.m5 || 0) / 500000); // up to 2x stronger
+  } catch(e) {
+    console.error('Failed to fetch market data for scaling:', e);
+    volumeBoost = 1; // fallback to normal difficulty
+  }
   
   const opponent = game.opponent; // or however your game references the opponent fighter
   await opponent.loadTokenHead(token);
-  opponent.healthMax = opponent.healthMax * volumeBoost; // example scaling
+  if (opponent.healthMax && opponent.health) {
+    opponent.healthMax = opponent.health * volumeBoost; // scale current health
+    opponent.health = opponent.health * volumeBoost; // scale current health
+  }
   opponent.speed = (opponent.speed || 1) * volumeBoost;
   
   // Speak personality taunt
@@ -1233,6 +1243,13 @@ async function loadNextPumpOpponent() {
 setInterval(async () => {
   if (pumpQueue.length < 3) pumpQueue = await getTrendingTokens(12);
 }, 30000);
+
+// Stop endless mode
+window.stopEndlessMode = () => {
+  clearInterval(marketInterval);
+  pumpQueue = [];
+  document.getElementById('status').innerHTML = 'Endless stopped — pick a new mode!';
+};
 
 // Victory screenshot + X post (call this from game end logic)
 window.captureVictory = async (winner) => {

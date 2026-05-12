@@ -162,6 +162,7 @@ export class Fighter {
       this.headImage = new Image();
       this.headImage.crossOrigin = 'anonymous';
       this.headImage.src = tokenData.logoURI;
+      this.headImage.onerror = () => { this.headImage = null; }; // fallback on error
       await new Promise(resolve => { this.headImage.onload = resolve; });
     }
   }
