@@ -91,6 +91,10 @@ export async function getTrendingTokens(count = 8) {
           const urlParts = item.url.split('/');
           const urlToken = urlParts[urlParts.length - 1];
           symbol = urlToken.replace(/pump$/i, '').toUpperCase();
+          // Truncate if too long (max 12 chars for display)
+          if (symbol.length > 12) {
+            symbol = symbol.slice(0, 12);
+          }
         }
         
         // Final fallback to generic symbol

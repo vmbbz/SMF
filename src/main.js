@@ -1939,5 +1939,6 @@ initAuth().then(handledRoute => {
   }
 });
 
-// Expose game globally for meme mode
+// Expose game and startFight globally for meme mode
 window.game = game;
+window.startFight = startFight;
