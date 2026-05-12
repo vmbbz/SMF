@@ -27,21 +27,35 @@ export async function getTrendingTokens(count = 8) {
         // Log full item data to see what fields are available
         console.log('🔍 FULL TOKEN DATA:', item);
         
-        // Use ALL available data from Dexscreener response
+        // Use ACTUAL Dexscreener API fields from the real response
+        const symbol = address.slice(0, 8); // Extract symbol from address since no symbol field
+        const description = item.description || '';
+        const icon = item.icon; // This is the actual logo/icon field
+        const openGraph = item.openGraph; // Alternative image
+        const links = item.links || [];
+        
+        // Extract social links
+        const twitterLink = links.find(link => link.type === 'twitter')?.url;
+        const telegramLink = links.find(link => link.type === 'telegram')?.url;
+        const websiteLink = links.find(link => !link.type)?.url;
+        
         return {
           mint: address,
-          symbol: item.symbol ? '$' + item.symbol : ('$' + address.slice(0, 8)),
-          name: item.name || item.symbol || (address.slice(0, 8) + ' Token'),
-          logoURI: item.logoURI || item.image || `https://dd.dexscreener.com/ds-data/tokens/${item.chainId}/${address}.png`,
-          // Preserve ALL other data fields that might exist
-          volume: item.volume,
-          price: item.price,
-          marketCap: item.marketCap,
-          liquidity: item.liquidity,
-          description: item.description,
-          website: item.website,
-          twitter: item.twitter,
-          telegram: item.telegram,
+          symbol: '$' + symbol,
+          name: symbol + ' Token',
+          description: description,
+          logoURI: `https://cdn.dexscreener.com/cms/images/${icon}`, // Construct actual logo URL
+          openGraph: openGraph,
+          // Social links
+          twitter: twitterLink,
+          telegram: telegramLink,
+          website: websiteLink,
+          links: links,
+          // Additional metadata
+          chainId: item.chainId,
+          totalAmount: item.totalAmount,
+          amount: item.amount,
+          header: item.header,
           // Keep the original full item for debugging
           _raw: item
         };
