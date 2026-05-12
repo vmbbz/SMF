@@ -281,6 +281,32 @@
   <!-- ORIGINAL GAME FILES -->
   <script type="module" src="./src/fighter.js"></script>
   <script type="module" src="./src/game.js"></script>
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="/src/main.js"></script>
+
+<!-- html2canvas for screenshot capture -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<script>
+window.captureVictory = async (winner) => {
+  const status = document.getElementById('status');
+  status.innerHTML = `${winner} WINS! Capturing...`;
+
+  // Capture the canvas
+  const canvas = document.getElementById('game');
+  const screenshot = await html2canvas(canvas, { scale: 2 });
+
+  // Download locally
+  const link = document.createElement('a');
+  link.download = `I_just_defeated_${window.lastOpponentSymbol || 'MEME'}_in_SMF.png`;
+  link.href = screenshot.toDataURL('image/png');
+  link.click();
+
+  // Auto post to X with meme text
+  const tweetText = `I just defeated $${window.lastOpponentSymbol || 'MEME'} in stickman fight. $SMF tech is cool af 🔥 https://smf.sticklash.com`;
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`, '_blank');
+
+  status.innerHTML = `${winner} WINS! Screenshot + X post ready!`;
+};
+</script>
 </body>
 </html>

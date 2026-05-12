@@ -899,6 +899,8 @@ async function handleMultiplayerRoundOver(msg) {
   } else if (msg.winner === myNum) {
     winnerEl.textContent = 'YOU WIN!';
     winnerEl.classList.add(myNum === 1 ? 'p1-wins' : 'p2-wins');
+    // Track opponent symbol for victory capture
+    window.lastOpponentSymbol = game && game.p2 && game.p2.tokenData ? game.p2.tokenData.symbol : 'MEME';
     // Call our new victory function
     if (window.captureVictory) {
       await window.captureVictory('player');
