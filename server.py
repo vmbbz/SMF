@@ -125,66 +125,58 @@ def _cancel_controller_wait_timer(code: str) -> None:
 
 @asynccontextmanager
 async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
-    """Start/stop Redis + Postgres pools and background tasks."""
-    global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, cleanup_task, matchmaking_task  # noqa: PLW0603
+    """Safe lifespan for $SMF Stick Lash - no required Redis or Postgres"""
+    print("[lifespan] Starting safe mode for $SMF Stick Lash")
 
-    # Redis — ephemeral state (rooms, matchmaking queue, signaling) - DISABLED FOR NOW
-    # redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
-    # redis_pool = aioredis.from_url(redis_url, decode_responses=True)
-    # print(f"[redis] Connected to {redis_url}")
-    print("[redis] Redis disabled - running in-memory mode")
+    global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, cleanup_task, matchmaking_task
 
-    # Postgres — persistent state (ELO, players, match history)
-    database_url = os.environ.get("DATABASE_URL", "postgresql://stick:fighter@localhost:5433/stickfighter")
+    redis_pool = None
+    pg_pool = None
+
     try:
-        pg_pool = await asyncpg.create_pool(database_url, min_size=2, max_size=10)
-        await ensure_schema(pg_pool)
-        print("[postgres] Connected to database")
-    except Exception as e:
-        print(f"[postgres] Database connection failed: {e}")
-        print("[postgres] Running without database - ELO and leaderboard disabled")
-        pg_pool = None
-    if pg_pool:
-        elo_manager = EloManager(pg_pool)
-        print("[postgres] Connected, schema ensured")
-    else:
-        elo_manager = None
-        print("[postgres] Running without ELO manager")
+        # Redis (optional - disabled for local)
+        print("[redis] Redis disabled - running in-memory mode")
+        room_manager = RoomManager(None)  # Redis disabled
 
-    room_manager = RoomManager(None)  # Redis disabled
-    game_loop_manager = GameLoopManager()
-    signaling_manager = SignalingManager()
-    oidc_config = OIDCConfig.from_env()
-    cleanup_task = RoomCleanupTask(room_manager, game_loop_manager, signaling_manager)
-    cleanup_task.start()
-    matchmaking_task = MatchmakingTask(room_manager, elo_manager)
-    matchmaking_task.start()
-    if oidc_config.configured:
-        print(f"[auth] OIDC configured: issuer={oidc_config.issuer}")
-    else:
-        print("[auth] OIDC not configured (set OIDC_CLIENT_ID to enable login)")
-    try:
+        # Postgres (optional)
+        database_url = os.environ.get("DATABASE_URL", "postgresql://stick:fighter@localhost:5433/stickfighter")
+        try:
+            pg_pool = await asyncpg.create_pool(database_url, min_size=2, max_size=10)
+            await ensure_schema(pg_pool)
+            print("[postgres] Connected")
+        except Exception as e:
+            print(f"[postgres] Skipped - {e}")
+            pg_pool = None
+
+        game_loop_manager = GameLoopManager()
+        signaling_manager = SignalingManager()
+        oidc_config = OIDCConfig.from_env()
+        elo_manager = EloManager(pg_pool) if pg_pool else None
+
+        cleanup_task = RoomCleanupTask(room_manager, game_loop_manager, signaling_manager)
+        cleanup_task.start()
+        matchmaking_task = MatchmakingTask(room_manager, elo_manager)
+        matchmaking_task.start()
+
+        if oidc_config.configured:
+            print(f"[auth] OIDC configured: issuer={oidc_config.issuer}")
+        else:
+            print("[auth] OIDC not configured")
+
         yield
+
     finally:
+        # SAFE SHUTDOWN - never crash on None
         if matchmaking_task is not None:
             await matchmaking_task.stop()
-        matchmaking_task = None
         if cleanup_task is not None:
             await cleanup_task.stop()
-        cleanup_task = None
         if game_loop_manager is not None:
             await game_loop_manager.stop_all()
-        game_loop_manager = None
-        signaling_manager = None
-        oidc_config = None
-        elo_manager = None
-        if pg_pool:
+        if pg_pool is not None:
             await pg_pool.close()
             print("[postgres] Connection closed")
-        if redis_pool:
-            await redis_pool.aclose()
-            room_manager = None
-            print("[redis] Connection closed")
+        print("[lifespan] Shutdown complete")
 
 DG_TTS_URL = "https://api.deepgram.com/v1/speak"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
