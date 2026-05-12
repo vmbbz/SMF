@@ -1,0 +1,4 @@
+{
+  "pattern": "(?i)^.*verified.*$",
+  "message": "🟢 Verified commit by @vmbbz"
+}
