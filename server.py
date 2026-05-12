@@ -130,24 +130,30 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
 
     global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, cleanup_task, matchmaking_task
 
+    # Declare variables BEFORE try so finally block never fails
     redis_pool = None
     pg_pool = None
 
     try:
-        # Redis (optional - disabled for local)
-        print("[redis] Redis disabled - running in-memory mode")
-        room_manager = RoomManager(None)  # Redis disabled
+        # Redis (optional - disabled for local development)
+        try:
+            redis_pool = aioredis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
+            print("[redis] Connected")
+        except Exception:
+            print("[redis] Skipped - running in-memory mode")
 
         # Postgres (optional)
-        database_url = os.environ.get("DATABASE_URL", "postgresql://stick:fighter@localhost:5433/stickfighter")
         try:
-            pg_pool = await asyncpg.create_pool(database_url, min_size=2, max_size=10)
+            pg_pool = await asyncpg.create_pool(
+                os.environ.get("DATABASE_URL", "postgresql://stick:fighter@localhost:5433/stickfighter"),
+                min_size=2, max_size=10
+            )
             await ensure_schema(pg_pool)
             print("[postgres] Connected")
-        except Exception as e:
-            print(f"[postgres] Skipped - {e}")
-            pg_pool = None
+        except Exception:
+            print("[postgres] Skipped - running without database")
 
+        room_manager = RoomManager(redis_pool) if redis_pool else None
         game_loop_manager = GameLoopManager()
         signaling_manager = SignalingManager()
         oidc_config = OIDCConfig.from_env()
@@ -176,6 +182,9 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         if pg_pool is not None:
             await pg_pool.close()
             print("[postgres] Connection closed")
+        if redis_pool is not None:
+            await redis_pool.aclose()
+            print("[redis] Connection closed")
         print("[lifespan] Shutdown complete")
 
 DG_TTS_URL = "https://api.deepgram.com/v1/speak"
