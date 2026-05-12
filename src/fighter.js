@@ -104,9 +104,12 @@ export class Fighter {
     this.vy = 0;
     this.facing = facing; // 1 = right, -1 = left
 
+    // Scale for bigger, more dramatic stickmen
+    this.scale = 1.35;
+
     // Dimensions (stick figure bounding)
-    this.width = 40;
-    this.height = 120;
+    this.width = 40 * this.scale;
+    this.height = 120 * this.scale;
 
     // State
     this.state = "idle"; // idle | walk | jump | crouch | attack | hitstun | blockstun
@@ -840,12 +843,12 @@ export class Fighter {
     const f = this.facing;
 
     // Base measurements
-    const legLen = 32;
-    const thighLen = 30;
-    const torsoLen = 40;
-    const upperArm = 22;
-    const forearm = 20;
-    const headRadius = 10;
+    const legLen = 32 * this.scale;
+    const thighLen = 30 * this.scale;
+    const torsoLen = 40 * this.scale;
+    const upperArm = 22 * this.scale;
+    const forearm = 20 * this.scale;
+    const headRadius = 10 * this.scale;
 
     switch (this.state) {
       case "idle":
