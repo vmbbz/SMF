@@ -108,17 +108,16 @@
   </div>
 
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-  <script src="src/fighter.js"></script>
-  <script src="src/game.js"></script>
-  <script src="src/main.js"></script>
-  <script src="src/effects.js"></script>
-  <script src="src/token-utils.js"></script>
-  <!-- your other src files -->
 
   <script type="module">
-    // Import required functions
+    // Import all required modules
     import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';
     import { Effects } from './src/effects.js';
+    
+    // Load other scripts as modules
+    import './src/fighter.js';
+    import './src/game.js'; 
+    import './src/main.js';
     
     // Global functions
     window.startTrendingMode = async () => {
