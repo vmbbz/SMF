@@ -291,9 +291,20 @@ window.captureVictory = async (winner) => {
   const status = document.getElementById('status');
   status.innerHTML = `${winner} WINS! Capturing...`;
 
-  // Capture the canvas
+  // Capture the canvas directly (avoids font CORS issues)
   const canvas = document.getElementById('game');
-  const screenshot = await html2canvas(canvas, { scale: 2 });
+  
+  // Create a temporary canvas to copy the game canvas
+  const tempCanvas = document.createElement('canvas');
+  const tempCtx = tempCanvas.getContext('2d');
+  tempCanvas.width = canvas.width * 2;
+  tempCanvas.height = canvas.height * 2;
+  
+  // Scale and copy the game canvas
+  tempCtx.scale(2, 2);
+  tempCtx.drawImage(canvas, 0, 0);
+  
+  const screenshot = tempCanvas;
 
   // Download locally
   const link = document.createElement('a');
