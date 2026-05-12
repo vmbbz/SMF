@@ -9,11 +9,9 @@
     :root { --neon-green: #00ff9d; --neon-pink: #ff00ff; }
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
-      background: 
-        radial-gradient(circle at center, #0a0a0a, #000),
-        url('assets/smf-bg.jpg') center/cover no-repeat;
+      background: #000;
       font-family: 'Press Start 2P', system-ui;
-      color: var(--neon-green);
+      color: #fff;
       overflow: hidden;
       height: 100vh;
       display: flex;
@@ -21,80 +19,69 @@
       position: relative;
     }
     
-    /* Frosted glass overlay for main content */
-    body::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(10, 10, 10, 0.3);
-      backdrop-filter: blur(8px);
-      z-index: 1;
-    }
     
-    /* Game and panel above frosted layer */
-    #game, #meme-panel, #mobile-controls {
-      position: relative;
-      z-index: 2;
-    }
     #game { width: 100vw; height: 100vh; display: block; image-rendering: pixelated; }
     
     /* HIDE ORIGINAL DEEPGRAM SCREENS */
     #onboarding, #leaderboard, #match-results, .mode-select, .character-select { display: none !important; }
     
-    /* EPIC MEME PANEL - bigger, centered on mobile */
+    /* MOBILE-FIRST MEME PANEL */
     #meme-panel {
-      position: absolute;
-      top: 15px;
-      left: 15px;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       background: rgba(10,10,10,0.95);
-      border: 5px solid var(--neon-green);
-      border-radius: 16px;
-      padding: 20px;
-      box-shadow: 0 0 40px var(--neon-green);
-      z-index: 999;
-      max-width: 380px;
-      width: 92%;
+      border: 3px solid #fff;
+      border-radius: 20px;
+      padding: 25px;
+      z-index: 1000;
+      max-width: 400px;
+      width: 90%;
       text-align: center;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     }
-    h1 { font-size: 28px; margin-bottom: 15px; text-shadow: 0 0 20px var(--neon-pink); }
+    h1 { font-size: 20px; margin-bottom: 20px; color: #fff; }
     button {
-      background: #111;
-      color: var(--neon-pink);
-      border: 4px solid var(--neon-pink);
-      padding: 16px 24px;
-      margin: 10px 5px;
-      font-size: 15px;
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      border: 2px solid rgba(255,255,255,0.3);
+      padding: 18px 24px;
+      margin: 12px 0;
+      font-size: 16px;
       width: 100%;
-      border-radius: 12px;
-      box-shadow: 0 0 20px var(--neon-pink);
-      transition: all 0.2s;
+      border-radius: 15px;
+      transition: all 0.3s;
+      backdrop-filter: blur(10px);
     }
-    button:hover { transform: scale(1.08); box-shadow: 0 0 30px var(--neon-pink); }
+    button:hover { 
+      background: rgba(255,255,255,0.2);
+      border-color: rgba(255,255,255,0.5);
+      transform: translateY(-2px);
+    }
     
-    /* Mobile controls - BIG & chunky */
+    /* Mobile controls - clean & minimal */
     #mobile-controls {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      right: 20px;
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 1000;
       display: none; /* will be shown on touch */
     }
     .control-btn {
-      background: rgba(255,0,255,0.4);
-      border: 5px solid var(--neon-pink);
+      background: rgba(255,255,255,0.2);
+      border: 2px solid rgba(255,255,255,0.4);
       color: white;
-      font-size: 28px;
-      width: 70px;
-      height: 70px;
-      border-radius: 50%;
-      display: flex;
+      font-size: 24px;
+      width: 60px;
+      height: 60px;
+      border-radius: 12px;
+      display: inline-flex;
       align-items: center;
       justify-content: center;
-      box-shadow: 0 0 25px var(--neon-pink);
+      margin: 0 5px;
+      backdrop-filter: blur(5px);
     }
   </style>
 </head>
@@ -103,15 +90,22 @@
   
   <!-- OUR MEME PANEL - always visible -->
   <div id="meme-panel">
-    <h1><img src="assets/smf-logo.png" alt="$SMF KARATE" style="height:40px;vertical-align:middle;margin-right:10px;">$SMF KARATE</h1>
+    <div style="text-align:center;margin-bottom:25px;">
+      <img src="assets/smf-logo.png" alt="$SMF KARATE" style="height:50px;margin-bottom:10px;">
+      <div style="font-size:24px;color:#fff;font-weight:bold;">$SMF KARATE</div>
+    </div>
     <button onclick="startTrendingMode()">TRENDING ARENA 🔥</button>
     <button onclick="startEndlessMode()">ENDLESS PUMP STREAM</button>
-    <input id="mint-input" placeholder="PASTE $TOKEN MINT" style="width:100%;padding:16px;margin:10px 0;background:#111;border:4px solid var(--neon-green);color:var(--neon-green);font-size:16px;border-radius:12px;">
+    <input id="mint-input" placeholder="PASTE $TOKEN MINT">
     <button onclick="startCustomFight()">1v1 THIS TOKEN</button>
     <div id="status" style="margin-top:15px;font-size:13px;min-height:22px;"></div>
   </div>
 
-  <div id="mobile-controls"></div>
+  <div id="mobile-controls">
+    <button class="control-btn" style="margin-right:10px;">🎮</button>
+    <button class="control-btn" style="margin-right:10px;">👊</button>
+    <button class="control-btn">🦵</button>
+  </div>
 
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
   <script src="src/fighter.js"></script>
@@ -121,13 +115,45 @@
   <script src="src/token-utils.js"></script>
   <!-- your other src files -->
 
-  <script>
-    // Force meme-first flow + hide original screens
-    window.addEventListener('load', () => {
-      document.querySelectorAll('#onboarding, .mode-select, .character-select').forEach(el => el.style.display = 'none');
-      initMobileControls();
-      console.log('%c✅ $SMF EPIC MODE LOADED', 'color:#ff00ff;font-size:18px');
-    });
+  <script type="module">
+    // Import required functions
+    import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';
+    import { Effects } from './src/effects.js';
+    
+    // Global functions
+    window.startTrendingMode = async () => {
+      const tokens = await getTrendingTokens(8);
+      if (tokens.length === 0) {
+        document.getElementById('status').innerHTML = `No hot tokens right now — try pasting one!`;
+        return;
+      }
+      const randomToken = tokens[Math.floor(Math.random() * tokens.length)];
+      document.getElementById('status').innerHTML = `Fighting <strong>$${randomToken.symbol}</strong>!`;
+      await window.loadOpponent(randomToken);
+    };
+    
+    window.startCustomFight = async () => {
+      const mint = document.getElementById('mint-input').value.trim();
+      if (!mint) return alert('Paste a mint!');
+      const token = await getTokenByMint(mint);
+      document.getElementById('status').innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
+      await window.loadOpponent(token);
+    };
+    
+    window.startEndlessMode = async () => {
+      document.getElementById('status').innerHTML = 'ENDLESS PUMP STREAM — next token every 30s';
+      // Implementation would go here
+    };
+    
+    // Initialize effects
+    window.effects = new Effects();
+    
+    // Mobile controls
+    if ('ontouchstart' in window) {
+      document.getElementById('mobile-controls').style.display = 'flex';
+    }
+    
+    console.log('%c✅ $SMF MOBILE-FIRST MODE LOADED', 'color:#00ff9d;font-size:18px');
   </script>
 </body>
 </html>
