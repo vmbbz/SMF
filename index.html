@@ -198,26 +198,26 @@
         window.startFight();
       }
 
-      // Now wait for the game object and opponent
+      // Now wait for the game object and player 2 (opponent)
       let attempts = 0;
       while (attempts < 120) {
-        if (window.game && window.game.opponent) {
-          console.log('✅ Game and opponent ready after', attempts, 'attempts');
+        if (window.game && window.game.p2) {
+          console.log('✅ Game and player 2 ready after', attempts, 'attempts');
           break;
         }
         await new Promise(r => setTimeout(r, 50));
         attempts++;
       }
 
-      if (!window.game || !window.game.opponent) {
+      if (!window.game || !window.game.p2) {
         status.innerHTML = 'Game not ready — refresh page';
         console.error('❌ Game object still not ready after', attempts, 'attempts');
         console.log('window.game exists:', !!window.game);
-        console.log('window.game.opponent exists:', !!(window.game && window.game.opponent));
+        console.log('window.game.p2 exists:', !!(window.game && window.game.p2));
         return;
       }
 
-      const opponent = window.game.opponent;
+      const opponent = window.game.p2;
       await opponent.loadTokenHead(token);
 
       // HIDE MEME PANEL
