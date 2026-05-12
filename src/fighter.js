@@ -159,7 +159,7 @@ export class Fighter {
 
   async loadTokenHead(tokenData) {
   console.log(`� FIGHTER DEBUG: New loadTokenHead code is executing!`);
-  console.log(`�🚀 loadTokenHead START: symbol=${tokenData.symbol}, logoURI=${tokenData.logoURI}`);
+  console.log(`� loadTokenHead START: symbol=${tokenData.symbol}, logoURI=${tokenData.logoURI}`);
   this.tokenData = tokenData;
   this.personality = generatePersonality(tokenData);
 
@@ -775,8 +775,9 @@ export class Fighter {
       console.log(`🎯 TOKEN DEBUG: symbol=${this.tokenData.symbol}, logoURI=${this.tokenData.logoURI}`);
     }
     
-    if (this.headImage && this.headImage.complete) {
-      console.log(`✅ DRAWING TOKEN HEAD for ${this.tokenData?.symbol || 'UNKNOWN'}`);
+    // More robust check: use naturalWidth/naturalHeight instead of complete
+    if (this.headImage && this.headImage.naturalWidth > 0 && this.headImage.naturalHeight > 0) {
+      console.log(`✅ DRAWING TOKEN HEAD for ${this.tokenData?.symbol || 'UNKNOWN'} (w=${this.headImage.naturalWidth}, h=${this.headImage.naturalHeight})`);
       ctx.save();
       // Circular clip + subtle border
       ctx.beginPath();
@@ -798,7 +799,7 @@ export class Fighter {
         this.headRadius * 2);
       ctx.restore();
     } else {
-      console.log(`❌ FALLBACK NEON CIRCLE: headImage=${!!this.headImage}, complete=${this.headImage?.complete}`);
+      console.log(`❌ FALLBACK NEON CIRCLE: headImage=${!!this.headImage}, naturalWidth=${this.headImage?.naturalWidth || 0}, naturalHeight=${this.headImage?.naturalHeight || 0}`);
       // fallback neon circle
       ctx.shadowColor = '#00ff9d';
       ctx.shadowBlur = 15;
