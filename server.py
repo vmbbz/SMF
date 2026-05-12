@@ -136,11 +136,8 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
 
     try:
         # Redis (optional - disabled for local development)
-        try:
-            redis_pool = aioredis.from_url(os.environ.get("REDIS_URL", "redis://localhost:6379"), decode_responses=True)
-            print("[redis] Connected")
-        except Exception:
-            print("[redis] Skipped - running in-memory mode")
+        print("[redis] Skipped - running in-memory mode")
+        redis_pool = None
 
         # Postgres (optional)
         try:
