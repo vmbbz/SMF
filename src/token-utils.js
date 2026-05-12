@@ -27,10 +27,23 @@ export async function getTrendingTokens(count = 8) {
         // Log full item data to see what fields are available
         console.log('🔍 FULL TOKEN DATA:', item);
         
-        // Extract REAL token name from description (e.g., "$GREET" from "🐸🌴 $GREET — too rich to panic...")
+        // Extract REAL token name from description or URL
         const description = item.description || '';
         const nameMatch = description.match(/\$([A-Z0-9]+)/i);
-        const realTokenName = nameMatch ? nameMatch[1] : address.slice(0, 8);
+        let realTokenName = nameMatch ? nameMatch[1] : null;
+        
+        // If no $ symbol in description, try to extract from URL
+        if (!realTokenName && item.url) {
+          const urlParts = item.url.split('/');
+          const urlToken = urlParts[urlParts.length - 1];
+          // Remove 'pump' suffix and convert to uppercase
+          realTokenName = urlToken.replace(/pump$/i, '').toUpperCase();
+        }
+        
+        // Fallback: use first 6 chars of address (but this should rarely happen)
+        if (!realTokenName) {
+          realTokenName = address.slice(0, 6);
+        }
         
         const icon = item.icon; // This is the actual logo/icon field
         const openGraph = item.openGraph; // Alternative image
