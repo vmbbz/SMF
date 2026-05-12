@@ -81,10 +81,11 @@ class RoomCleanupTask:
                 cleaned.append(code)
 
         # Clean up expired matchmaking queue entries
-        for category in ("keyboard", "voice"):
-            expired = await self._room_manager.matchmaking_cleanup_expired(category)
-            if expired:
-                print(f"[cleanup] Removed {len(expired)} expired matchmaking entries from '{category}'")
+        if self._room_manager:
+            for category in ("keyboard", "voice"):
+                expired = await self._room_manager.matchmaking_cleanup_expired(category)
+                if expired:
+                    print(f"[cleanup] Removed {len(expired)} expired matchmaking entries from '{category}'")
 
         if cleaned:
             print(f"[cleanup] Swept {len(cleaned)} expired room(s): {', '.join(cleaned)}")

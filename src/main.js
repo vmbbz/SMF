@@ -18,6 +18,12 @@ const safeListener = (id, event, handler) => {
   if (el) el.addEventListener(event, handler);
 };
 
+// === MEME UI SAFETY PATCH ===
+const safeAddEventListener = (selector, event, handler) => {
+  const el = document.getElementById(selector) || (screens && screens[selector]);
+  if (el) el.addEventListener(event, handler);
+};
+
 const canvas = document.getElementById('game');
 
 // Screen elements
@@ -1553,7 +1559,7 @@ document.querySelectorAll('.mode-pills').forEach(container => {
 // ─────────────────────────────────────────────
 // Click handlers for LLM provider pills (delegated)
 // ─────────────────────────────────────────────
-screens.onboarding.addEventListener('click', e => {
+safeAddEventListener('onboarding', 'click', e => {
   const pill = e.target.closest('.provider-pill');
   if (!pill) return;
   const container = pill.closest('.provider-pills');
