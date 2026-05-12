@@ -6,6 +6,9 @@ export async function getTrendingTokens(count = 8) {
     const res = await fetch('https://api.dexscreener.com/token-boosts/latest/v1');
     const data = await res.json();
     
+    // DEBUG: Log full API response structure
+    console.log('🔍 RAW API RESPONSE SAMPLE:', data.slice(0, 2));
+    
     if (!data || !Array.isArray(data)) {
       console.error("Invalid API response:", data);
       return [];
@@ -20,14 +23,27 @@ export async function getTrendingTokens(count = 8) {
       .slice(0, count)   // no strict volume filter needed — boosts endpoint already gives hot ones
       .map(item => {
         const address = item.tokenAddress || item.address;
-        // Extract actual symbol from the URL or use fallback
-        const urlSymbol = item.url?.split('/')?.pop()?.toUpperCase() || 'MEME';
-        const cleanSymbol = urlSymbol.replace('PUMP', '').slice(0, 8) || 'MEME';
+        
+        // Log full item data to see what fields are available
+        console.log('🔍 FULL TOKEN DATA:', item);
+        
+        // Use ALL available data from Dexscreener response
         return {
           mint: address,
-          symbol: '$' + cleanSymbol,
-          name: cleanSymbol + ' Token',  // Use the actual symbol-derived name
-          logoURI: item.logoURI || `https://dd.dexscreener.com/ds-data/tokens/${item.chainId}/${address}.png` 
+          symbol: item.symbol ? '$' + item.symbol : ('$' + address.slice(0, 8)),
+          name: item.name || item.symbol || (address.slice(0, 8) + ' Token'),
+          logoURI: item.logoURI || item.image || `https://dd.dexscreener.com/ds-data/tokens/${item.chainId}/${address}.png`,
+          // Preserve ALL other data fields that might exist
+          volume: item.volume,
+          price: item.price,
+          marketCap: item.marketCap,
+          liquidity: item.liquidity,
+          description: item.description,
+          website: item.website,
+          twitter: item.twitter,
+          telegram: item.telegram,
+          // Keep the original full item for debugging
+          _raw: item
         };
       });
 
