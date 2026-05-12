@@ -158,36 +158,29 @@ export class Fighter {
   }
 
   async loadTokenHead(tokenData) {
-  console.log(`� FIGHTER DEBUG: New loadTokenHead code is executing!`);
-  console.log(`� loadTokenHead START: symbol=${tokenData.symbol}, logoURI=${tokenData.logoURI}`);
-  this.tokenData = tokenData;
-  this.personality = generatePersonality(tokenData);
+    this.tokenData = tokenData;
+    this.personality = generatePersonality(tokenData);
 
-  if (tokenData.logoURI) {
-    console.log(`📸 Creating Image with logoURI: ${tokenData.logoURI}`);
-    this.headImage = new Image();
-    this.headImage.crossOrigin = 'anonymous';
-    this.headImage.src = tokenData.logoURI;
+    if (tokenData.logoURI) {
+      this.headImage = new Image();
+      this.headImage.crossOrigin = 'anonymous';
+      this.headImage.src = tokenData.logoURI;
 
-    this.headImage.onerror = (error) => {
-      console.error('❌ Head image failed to load for', tokenData.symbol, error);
-      this.headImage = null;
-    };
-
-    await new Promise(resolve => {
-      this.headImage.onload = () => {
-        console.log(`✅ Head loaded SUCCESS: symbol=${tokenData.symbol}, width=${this.headImage.width}, height=${this.headImage.height}, complete=${this.headImage.complete}`);
-        // FORCE REDRAW so the head appears immediately
-        if (window.game && typeof window.game.draw === 'function') {
-          window.game.draw();
-        }
-        resolve();
+      this.headImage.onerror = (error) => {
+        this.headImage = null;
       };
-    });
-  } else {
-    console.log(`❌ NO LOGO URI for token: ${tokenData.symbol}`);
+
+      await new Promise(resolve => {
+        this.headImage.onload = () => {
+          // FORCE REDRAW so the head appears immediately
+          if (window.game && typeof window.game.draw === 'function') {
+            window.game.draw();
+          }
+          resolve();
+        };
+      });
+    }
   }
-}
 
   /** Serialize all simulation state to a plain object (server snapshot format). */
   toSnapshot() {
@@ -770,14 +763,8 @@ export class Fighter {
     this._drawLimb(ctx, skeleton.elbowFront, skeleton.handFront);
 
     // === EPIC HEAD SWAP (perfect circular logo + neon glow) ===
-    console.log(`🎯 HEAD DRAW DEBUG: headImage=${!!this.headImage}, complete=${this.headImage?.complete}, tokenData=${!!this.tokenData}`);
-    if (this.tokenData) {
-      console.log(`🎯 TOKEN DEBUG: symbol=${this.tokenData.symbol}, logoURI=${this.tokenData.logoURI}`);
-    }
-    
     // More robust check: use naturalWidth/naturalHeight instead of complete
     if (this.headImage && this.headImage.naturalWidth > 0 && this.headImage.naturalHeight > 0) {
-      console.log(`✅ DRAWING TOKEN HEAD for ${this.tokenData?.symbol || 'UNKNOWN'} (w=${this.headImage.naturalWidth}, h=${this.headImage.naturalHeight})`);
       ctx.save();
       // Circular clip + subtle border
       ctx.beginPath();
@@ -799,7 +786,6 @@ export class Fighter {
         this.headRadius * 2);
       ctx.restore();
     } else {
-      console.log(`❌ FALLBACK NEON CIRCLE: headImage=${!!this.headImage}, naturalWidth=${this.headImage?.naturalWidth || 0}, naturalHeight=${this.headImage?.naturalHeight || 0}`);
       // fallback neon circle
       ctx.shadowColor = '#00ff9d';
       ctx.shadowBlur = 15;
