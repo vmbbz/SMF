@@ -735,8 +735,14 @@ async def health() -> dict:
 
 @get("/")
 async def index_route() -> Response:
-    html = (ROOT / "index.html").read_text()
-    return Response(content=html, media_type="text/html")
+    try:
+        print(f"[route] Serving index.html from: {ROOT / 'index.html'}")
+        html = (ROOT / "index.html").read_text(encoding="utf-8")
+        print(f"[route] Successfully read {len(html)} characters")
+        return Response(content=html, media_type="text/html")
+    except Exception as e:
+        print(f"[route] ERROR serving index.html: {type(e).__name__}: {e}")
+        raise
 
 
 @get("/room/{code:str}")
