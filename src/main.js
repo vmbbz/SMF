@@ -90,7 +90,7 @@ let peerConnection = null;
 /** Show a screen by name, hiding all others */
 function showScreen(name) {
   for (const el of Object.values(screens)) {
-    el.classList.add('hidden');
+    if (el) el.classList.add('hidden');
   }
   canvas.classList.remove('active');
   if (screens[name]) {
@@ -173,7 +173,7 @@ function showLanding() {
 
 async function startFight() {
   state = 'fighting';
-  screens.onboarding.classList.add('hidden');
+  if (screens.onboarding) screens.onboarding.classList.add('hidden');
   canvas.classList.add('active');
   resize();
 
@@ -272,7 +272,8 @@ safeListener('btn-create-room', 'click', async () => {
     document.getElementById('room-lobby-hint').textContent = 'Share this code with your opponent';
     document.getElementById('room-code-display').textContent = data.code;
     document.getElementById('room-url-display').value = data.url;
-    document.getElementById('room-url-row').classList.remove('hidden');
+    const roomUrlRow = document.getElementById('room-url-row');
+    if (roomUrlRow) roomUrlRow.classList.remove('hidden');
     document.getElementById('room-waiting-text').textContent = 'Waiting for opponent...';
     showScreen('roomLobby');
     startRoomPolling(); // Poll until P2 joins → status becomes "selecting"
@@ -484,10 +485,11 @@ function showRoomControllerScreen() {
   // Reset selection
   roomModeIdx = 0;
   roomProviderIdx = 0;
-  confirmBtn.disabled = false;
-  confirmBtn.textContent = 'CONFIRM';
-  document.getElementById('room-ctrl-status').textContent = 'Both players selecting controllers...';
-  document.getElementById('room-ctrl-status').classList.remove('ready');
+  if (confirmBtn) confirmBtn.disabled = false;
+  if (confirmBtn) confirmBtn.textContent = 'CONFIRM';
+  const roomCtrlStatus = document.getElementById('room-ctrl-status');
+  if (roomCtrlStatus) roomCtrlStatus.textContent = 'Both players selecting controllers...';
+  if (roomCtrlStatus) roomCtrlStatus.classList.remove('ready');
 
   updateRoomControllerUI();
   showScreen('roomController');
@@ -612,7 +614,7 @@ function startWaitingInArena(deadline) {
   const myNum = parseInt(localStorage.getItem('sf_playerNum') || '1', 10);
   state = 'waitingInArena';
 
-  for (const el of Object.values(screens)) el.classList.add('hidden');
+  for (const el of Object.values(screens)) if (el) el.classList.add('hidden');
   canvas.classList.add('active');
   resize();
 
@@ -751,7 +753,7 @@ function startMultiplayerFight(_roomData) {
   const playerId = localStorage.getItem('sf_playerId');
 
   state = 'fighting';
-  for (const el of Object.values(screens)) el.classList.add('hidden');
+  for (const el of Object.values(screens)) if (el) el.classList.add('hidden');
   canvas.classList.add('active');
   resize();
 
@@ -988,7 +990,8 @@ function showEloChanges(elo, myNum) {
       </div>
     `;
   }
-  eloEl.classList.remove('hidden');
+  const resultsElo = document.getElementById('results-elo');
+  if (resultsElo) resultsElo.classList.remove('hidden');
 }
 
 /** Handle room expiry — server cleaned up the room due to inactivity TTL */
@@ -1066,8 +1069,10 @@ function showMatchmakingScreen() {
   mmModeIdx = 0;
   mmProviderIdx = 0;
   mmPlayerId = null;
-  document.getElementById('mm-select').classList.remove('hidden');
-  document.getElementById('mm-searching').classList.add('hidden');
+  const mmSelect = document.getElementById('mm-select');
+  if (mmSelect) mmSelect.classList.remove('hidden');
+  const mmSearching = document.getElementById('mm-searching');
+  if (mmSearching) mmSearching.classList.add('hidden');
   updateMatchmakingControllerUI();
   showScreen('matchmaking');
 }
@@ -1164,8 +1169,10 @@ async function startMatchmakingSearch() {
     mmPlayerId = data.playerId;
 
     // Toggle to searching state
-    document.getElementById('mm-select').classList.add('hidden');
-    document.getElementById('mm-searching').classList.remove('hidden');
+    const mmSelect = document.getElementById('mm-select');
+    if (mmSelect) mmSelect.classList.add('hidden');
+    const mmSearching = document.getElementById('mm-searching');
+    if (mmSearching) mmSearching.classList.remove('hidden');
     mmSearchStart = Date.now();
     document.getElementById('mm-searching-text').textContent = 'Searching for opponent... (0s)';
     document.getElementById('mm-wait-info').textContent =
@@ -1293,7 +1300,7 @@ safeListener('btn-mm-play-wait', 'click', () => {
   mmWaitingGame = true;
   // Start a SIM fight — keys for P1, simulated for P2
   state = 'fighting';
-  for (const el of Object.values(screens)) el.classList.add('hidden');
+  for (const el of Object.values(screens)) if (el) el.classList.add('hidden');
   canvas.classList.add('active');
   resize();
 
@@ -1381,7 +1388,7 @@ async function startCharacterFight() {
   if (!char) return;
 
   state = 'fighting';
-  screens.characterSelect.classList.add('hidden');
+  if (screens.characterSelect) screens.characterSelect.classList.add('hidden');
   canvas.classList.add('active');
   resize();
 
