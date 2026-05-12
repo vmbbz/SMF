@@ -6,7 +6,22 @@
   <title>$SMF-STICKLASH</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-    :root { --neon-green: #00ff9d; --neon-pink: #ff00ff; }
+    :root { 
+      --neon-green: #00ff9d; 
+      --neon-pink: #ff00ff;
+      --dg-grad-start: #00ff9d;
+      --dg-grad-end: #ff00ff;
+      --dg-primary: #fff;
+      --dg-secondary: #ccc;
+      --dg-almost-blk: #111;
+      --dg-bg: #000;
+      --dg-charcoal: #222;
+      --dg-border: #333;
+      --dg-pebble: #444;
+      --dg-slate: #555;
+      --dg-text: #fff;
+      --dg-danger: #ff0000;
+    }
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
       background: #000;
@@ -183,16 +198,22 @@
         window.startFight();
       }
 
-      // Now wait for the game object
+      // Now wait for the game object and opponent
       let attempts = 0;
-      while ((!window.game || !window.game.opponent) && attempts < 120) {
+      while (attempts < 120) {
+        if (window.game && window.game.opponent) {
+          console.log('✅ Game and opponent ready after', attempts, 'attempts');
+          break;
+        }
         await new Promise(r => setTimeout(r, 50));
         attempts++;
       }
 
       if (!window.game || !window.game.opponent) {
         status.innerHTML = 'Game not ready — refresh page';
-        console.error('❌ Game object still not ready');
+        console.error('❌ Game object still not ready after', attempts, 'attempts');
+        console.log('window.game exists:', !!window.game);
+        console.log('window.game.opponent exists:', !!(window.game && window.game.opponent));
         return;
       }
 
