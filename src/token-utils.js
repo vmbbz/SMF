@@ -1,5 +1,61 @@
 // src/token-utils.js
 // IMPROVED — works reliably for real Pump.fun / Solana memes
+
+// Helper functions for smart name extraction
+function extractNameFromUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    const pathname = new URL(url).pathname;
+    
+    // Extract from domain (e.g., greenkittencrew.com -> GreenKittenCrew)
+    const domain = hostname.replace('www.', '').replace('.com', '').replace('.io', '').replace('.xyz', '').replace('.fun', '').replace('.app', '').replace('.net', '').replace('.org', '');
+    
+    // Extract from path (e.g., /trollnaldo -> Trollnaldo)
+    const pathParts = pathname.split('/').filter(part => part.length > 0);
+    const pathName = pathParts[pathParts.length - 1];
+    
+    // Prefer domain name, fallback to path
+    const bestName = domain.length > 2 ? domain : pathName;
+    return bestName.charAt(0).toUpperCase() + bestName.slice(1);
+  } catch {
+    return null;
+  }
+}
+
+function extractNameFromTwitter(url) {
+  try {
+    // Handle different Twitter URL formats
+    // https://x.com/PVEcoinPump -> PVEcoinPump
+    // https://x.com/i/communities/2020241545933283739 -> skip (community ID)
+    const match = url.match(/x\.com\/([^\/\?]+)/);
+    if (match) {
+      const handle = match[1];
+      // Skip if it's a community ID (numbers)
+      if (!/^\d+$/.test(handle)) {
+        return handle;
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function extractNameFromTelegram(url) {
+  try {
+    // Extract from Telegram URL
+    // https://t.me/poposhitcoin -> poposhitcoin
+    // https://t.me/GreenKittenCrewGKC -> GreenKittenCrewGKC
+    const match = url.match(/t\.me\/([^\/\?]+)/);
+    if (match) {
+      return match[1];
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getTrendingTokens(count = 8) {
   try {
     // Use token-boosts endpoint for trending tokens (more Solana tokens, better trending)
@@ -42,10 +98,45 @@ export async function getTrendingTokens(count = 8) {
           symbol = item.tokenAddress.slice(0, 8);
         }
         
+        // Smart name extraction from links: website -> twitter -> telegram
+        let name = symbol; // Default to symbol
+        if (item.links && item.links.length > 0) {
+          // Try website first (most likely to have good name)
+          const website = item.links.find(link => !link.type);
+          if (website && website.url) {
+            const websiteName = extractNameFromUrl(website.url);
+            if (websiteName && websiteName.length > 2) {
+              name = websiteName;
+            }
+          }
+          
+          // If no good website name, try twitter
+          if (name === symbol) {
+            const twitter = item.links.find(link => link.type === 'twitter');
+            if (twitter && twitter.url) {
+              const twitterName = extractNameFromTwitter(twitter.url);
+              if (twitterName && twitterName.length > 2) {
+                name = twitterName;
+              }
+            }
+          }
+          
+          // If still no good name, try telegram
+          if (name === symbol) {
+            const telegram = item.links.find(link => link.type === 'telegram');
+            if (telegram && telegram.url) {
+              const telegramName = extractNameFromTelegram(telegram.url);
+              if (telegramName && telegramName.length > 2) {
+                name = telegramName;
+              }
+            }
+          }
+        }
+        
         return {
           mint: item.tokenAddress,
           symbol: symbol,
-          name: symbol,
+          name: name,
           description: item.description,
           logoURI: item.openGraph, // Use openGraph for full image URLs (icon is just hash)
           openGraph: item.openGraph,
