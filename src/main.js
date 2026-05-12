@@ -193,12 +193,14 @@ async function startFight() {
   game = new Game(canvas, p1Input, p2Input, sfx, { p1Label, p2Label });
   game.start();
 
+  // Expose game globally immediately (fixes race condition)
+  window.game = game;
+  window._game = game;
+
   // Wire up adapters with game reference
   for (const adapter of activeAdapters) {
     if (adapter.setGameRef) adapter.setGameRef(game);
   }
-
-  window._game = game;
 
   // Wait for all providers, then show "FIGHT!"
   await Promise.all(readyPromises);
@@ -1939,6 +1941,5 @@ initAuth().then(handledRoute => {
   }
 });
 
-// Expose game and startFight globally for meme mode
-window.game = game;
+// Expose startFight globally for meme mode
 window.startFight = startFight;
