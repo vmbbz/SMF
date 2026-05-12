@@ -2,12 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Solana Meme Fighter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>STICK-LASH • $SMF KARATE</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#13ef95">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap">
   <style>
     :root {
+      --neon-green: #00ff9d;
+      --neon-pink: #ff00ff;
       --dg-primary: #13ef95;
       --dg-secondary: #149afb;
       --dg-almost-blk: #050506;
@@ -21,10 +23,16 @@
       --dg-grad-end: #00f099;
       --dg-danger: #f04438;
     }
-
+    
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; font-family: monospace; }
-    body { background: var(--dg-bg); color: var(--dg-text); display: flex; flex-direction: column; }
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'Press Start 2P', system-ui; }
+    body { 
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #0a0a0a, #000);
+      font-family: 'Press Start 2P', system-ui;
+      color: var(--neon-green);
+    }
 
     /* ── Header ── */
     .header {
@@ -92,6 +100,21 @@
     }
     .player-card.p1 h3 { color: var(--dg-primary); }
     .player-card.p2 h3 { color: var(--dg-secondary); }
+
+    /* Meme Overlay Panel */
+    #meme-panel {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      background: rgba(10,10,10,0.95);
+      border: 4px solid var(--neon-green);
+      border-radius: 12px;
+      padding: 15px;
+      box-shadow: 0 0 30px var(--neon-green);
+      z-index: 100;
+      max-width: 340px;
+      backdrop-filter: blur(8px);
+    }
 
     .select-hint {
       font-size: 10px;
@@ -882,21 +905,18 @@
 
     .char-card {
       font-family: monospace;
-      background: var(--dg-charcoal);
-      border: 2px solid var(--dg-border);
-      border-radius: 8px;
-      padding: 24px 28px;
-      min-width: 260px;
-      max-width: 280px;
-      text-align: center;
+      background: #111;
+      color: var(--neon-pink);
+      border: 3px solid var(--neon-pink);
+      padding: 12px 20px;
+      margin: 8px 4px;
+      font-family: 'Press Start 2P';
+      font-size: 14px;
       cursor: pointer;
+      text-shadow: 0 0 10px var(--neon-pink);
       transition: all 0.2s;
     }
-    .char-card:hover {
-      transform: translateY(-2px);
-      border-color: var(--dg-secondary);
-      background: rgba(20, 154, 251, 0.05);
-    }
+    .char-card:hover { transform: scale(1.05); box-shadow: 0 0 20px var(--neon-pink); }
     .char-card.selected {
       border-color: var(--dg-secondary);
       background: rgba(20, 154, 251, 0.1);
@@ -934,6 +954,17 @@
     <div class="header-auth hidden" id="header-auth">
       <!-- Populated by JS: login btn or user name + logout -->
     </div>
+  </div>
+
+  <!-- Mobile Controls (auto-hidden on desktop) -->
+  <div id="mobile-controls">
+    <!-- D-pad and attacks will be injected by JS if on mobile -->
+    <button class="control-btn" style="position:absolute; bottom:20px; left:20px;">🎮</button>
+    <button class="control-btn" style="position:absolute; bottom:20px; left:80px;">👊</button>
+    <button class="control-btn" style="position:absolute; bottom:20px; left:140px;">🦵</button>
+    <button class="control-btn" style="position:absolute; bottom:80px; left:20px;">👎</button>
+    <button class="control-btn" style="position:absolute; bottom:80px; left:80px;">🦵</button>
+    <button class="control-btn" style="position:absolute; bottom:80px; left:140px;">💥</button>
   </div>
 
   <!-- Landing screen — mode selection -->
@@ -1161,14 +1192,13 @@
   </div>
 
   <!-- Meme Panel -->
-  <div id="meme-panel" style="position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.8); padding:15px; border-radius:12px; color:white; z-index:100; font-family:sans-serif;">
-    <h3>$SMF Karate Arena</h3>
-    <button onclick="startTrendingMode()">Trending Meme Arena</button>
-    <input id="mint-input" placeholder="Paste Solana mint address" style="width:220px">
-    <button onclick="startCustomFight()">1v1 This Token</button>
-    <button onclick="startEndlessMode()">Endless Pump Stream 🔥</button>
-<button onclick="stopEndlessMode()" style="margin-left: 5px;">Stop Stream</button>
-    <div id="status"></div>
+  <div id="meme-panel">
+    <h2 style="color:#00ff9d; text-shadow:0 0 15px #00ff9d;">$SMF KARATE</h2>
+    <button onclick="startTrendingMode()">TRENDING ARENA 🔥</button>
+    <button onclick="startEndlessMode()">ENDLESS PUMP STREAM</button>
+    <input id="mint-input" placeholder="PASTE $TOKEN MINT" style="width:100%; padding:12px; margin:8px 0; background:#111; border:3px solid #00ff9d; color:#00ff9d; font-family:inherit;">
+    <button onclick="startCustomFight()">1v1 THIS TOKEN</button>
+    <div id="status" style="margin-top:10px; font-size:12px; color:#fff;"></div>
   </div>
 
   <!-- Game canvas -->
@@ -1181,6 +1211,7 @@
   import { generateShareableFightLink, showShareableLink } from './share-fight.js';
   import { showWalletConnect, hideWalletConnect } from './wallet-connect.js';
   import { LeaderboardManager } from './leaderboard.js';
+  import { Effects } from './src/effects.js';
 
   window.startTrendingMode = async () => {
   const tokens = await getTrendingTokens(8);
@@ -1239,6 +1270,9 @@ async function loadNextPumpOpponent() {
   utterance.rate = opponent.personality.rate;
   speechSynthesis.speak(utterance);
   
+  // After drawing fighters and HUD
+  window.effects.updateAndDraw(ctx);
+
   startFight(); // your existing fight starter
 }
 

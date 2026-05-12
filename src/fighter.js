@@ -747,17 +747,37 @@ export class Fighter {
     this._drawLimb(ctx, skeleton.shoulder, skeleton.elbowFront);
     this._drawLimb(ctx, skeleton.elbowFront, skeleton.handFront);
 
-    // === HEAD DRAWING (replace existing head circle) ===
+    // === EPIC HEAD SWAP (perfect circular logo + neon glow) ===
     if (this.headImage && this.headImage.complete) {
       ctx.save();
-      ctx.drawImage(this.headImage, skeleton.head[0] - 10, skeleton.head[1] - 10, 20, 20);
+      // Circular clip + subtle border
+      ctx.beginPath();
+      ctx.arc(this.headX, this.headY, this.headRadius + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = '#00ff9d';
+      ctx.lineWidth = 6;
+      ctx.shadowColor = '#00ff9d';
+      ctx.shadowBlur = 20;
+      ctx.stroke();
+      // Clip to circular area
+      ctx.beginPath();
+      ctx.arc(this.headX, this.headY, this.headRadius, 0, Math.PI * 2);
+      ctx.clip();
+      // Draw head image
+      ctx.drawImage(this.headImage, 
+        this.headX - this.headRadius, 
+        this.headY - this.headRadius, 
+        this.headRadius * 2, 
+        this.headRadius * 2);
       ctx.restore();
     } else {
-      // fallback circle
+      // fallback neon circle
+      ctx.shadowColor = '#00ff9d';
+      ctx.shadowBlur = 15;
       ctx.beginPath();
-      ctx.arc(skeleton.head[0], skeleton.head[1], 10, 0, Math.PI * 2);
-      ctx.fillStyle = this.color || '#ff0000';
+      ctx.arc(this.headX, this.headY, this.headRadius, 0, Math.PI * 2);
+      ctx.fillStyle = '#111';
       ctx.fill();
+      ctx.shadowBlur = 0;
     }
 
     // Fist/foot impact indicator during active attack frames (skip hadouken — projectile handles it)
