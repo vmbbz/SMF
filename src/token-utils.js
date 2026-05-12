@@ -27,9 +27,11 @@ export async function getTrendingTokens(count = 8) {
         // Log full item data to see what fields are available
         console.log('🔍 FULL TOKEN DATA:', item);
         
-        // Use ACTUAL Dexscreener API fields from the real response
-        const symbol = address.slice(0, 8); // Extract symbol from address since no symbol field
+        // Extract REAL token name from description (e.g., "$GREET" from "🐸🌴 $GREET — too rich to panic...")
         const description = item.description || '';
+        const nameMatch = description.match(/\$([A-Z0-9]+)/i);
+        const realTokenName = nameMatch ? nameMatch[1] : address.slice(0, 8);
+        
         const icon = item.icon; // This is the actual logo/icon field
         const openGraph = item.openGraph; // Alternative image
         const links = item.links || [];
@@ -41,8 +43,8 @@ export async function getTrendingTokens(count = 8) {
         
         return {
           mint: address,
-          symbol: '$' + symbol,
-          name: symbol + ' Token',
+          symbol: '$' + realTokenName, // Real token name, no double $$
+          name: realTokenName, // Just the token name, no "Token" suffix
           description: description,
           logoURI: `https://cdn.dexscreener.com/cms/images/${icon}`, // Construct actual logo URL
           openGraph: openGraph,
