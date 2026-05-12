@@ -94,6 +94,7 @@ export class Game {
     this.roundTimer = 99;
     this.hitSparks = [];
     this._lastClashKey = null;
+    this.victoryCaptured = false;
 
     // Active projectiles (hadouken energy balls)
     this.projectiles = []; // {x, y, vx, owner, active, animTimer}
@@ -878,8 +879,9 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       else if (this.p2.health > this.p1.health) text = "P2 WINS!";
       else text = "DRAW!";
 
-      // Victory capture for single-player meme mode
-      if (playerWins && window.captureVictory && this.p2 && this.p2.tokenData) {
+      // Victory capture for single-player meme mode (only once)
+      if (playerWins && window.captureVictory && this.p2 && this.p2.tokenData && !this.victoryCaptured) {
+        this.victoryCaptured = true;
         window.lastOpponentSymbol = this.p2.tokenData.symbol || 'MEME';
         window.captureVictory('P1');
       }
