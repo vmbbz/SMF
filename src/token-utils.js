@@ -71,9 +71,10 @@ export async function getTrendingTokens(count = 8) {
     }
     
     // FIXED parsing for actual Dexscreener token-boosts response
+    // SOLANA-ONLY: Filter out Ethereum tokens - this is a Solana blockchain project
     const tokens = data
       .filter(item => 
-        (item.chainId === 'solana' || item.chainId === 'ethereum') &&
+        item.chainId === 'solana' &&
         (item.tokenAddress || item.address)
       )
       .slice(0, count)   // no strict volume filter needed — boosts endpoint already gives hot ones
