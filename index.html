@@ -142,17 +142,42 @@
     
     window.startEndlessMode = async () => {
       document.getElementById('status').innerHTML = 'ENDLESS PUMP STREAM — Loading tokens...';
+      pumpQueue = await getTrendingTokens(12); // bigger pool
+      await loadNextPumpOpponent();
+    };
+
+async function loadNextPumpOpponent() {
+      if (pumpQueue.length === 0) pumpQueue = await getTrendingTokens(12);
+      const token = pumpQueue.shift();
+  
+      // MARKET SAUCE — scale opponent based on real volume
+      let volumeBoost = 1;
       try {
-        const tokens = await getTrendingTokens(12);
-        if (tokens.length === 0) {
-          document.getElementById('status').innerHTML = 'No hot tokens found — try pasting one!';
-          return;
-        }
-        document.getElementById('status').innerHTML = `🔥 ENDLESS MODE — ${tokens.length} tokens loaded`;
-        console.log('Endless mode loaded with tokens:', tokens);
-      } catch (e) {
-        document.getElementById('status').innerHTML = 'Error loading tokens — try again!';
-        console.error('Endless mode error:', e);
+        const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${token.mint}`);
+        const pairData = await pairRes.json();
+        volumeBoost = Math.min(2, 1 + (pairData.pairs?.[0]?.volume?.m5 || 0) / 500000); // up to 2x stronger
+      } catch(e) {
+        console.error('Failed to fetch market data for scaling:', e);
+        volumeBoost = 1; // fallback to normal difficulty
+      }
+  
+      const opponent = game.opponent; // or however your game references the opponent fighter
+      await opponent.loadTokenHead(token);
+      if (opponent.healthMax && opponent.health) {
+        opponent.healthMax = opponent.health * volumeBoost; // scale current health
+        opponent.health = opponent.health * volumeBoost; // scale current health
+      }
+      opponent.speed = (opponent.speed || 1) * volumeBoost;
+  
+      // Speak personality taunt
+      const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
+      utterance.pitch = opponent.personality.pitch;
+      utterance.rate = opponent.personality.rate;
+      speechSynthesis.speak(utterance);
+      
+      // Start fight if not already fighting
+      if (state !== 'fighting') {
+        startFight(); // your existing fight starter
       }
     };
     
