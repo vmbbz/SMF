@@ -1,4 +1,4 @@
-# SMF - Stick Meme Fighter
+# Stick-Lash - Solana Meme Fighter
 
 Web3 meme token gamified fighting game where players battle against trending Solana Pump.fun tokens.
 
