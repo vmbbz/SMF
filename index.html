@@ -176,8 +176,8 @@
 
       // Stronger wait for game to be ready
       let attempts = 0;
-      while ((!window.game || !window.game.opponent) && attempts < 60) {
-        await new Promise(r => setTimeout(r, 80));
+      while ((!window.game || !window.game.opponent) && attempts < 100) {
+        await new Promise(r => setTimeout(r, 60));
         attempts++;
       }
 

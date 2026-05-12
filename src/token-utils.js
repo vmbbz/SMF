@@ -93,9 +93,9 @@ export async function getTrendingTokens(count = 8) {
           symbol = urlToken.replace(/pump$/i, '').toUpperCase();
         }
         
-        // Final fallback to address
+        // Final fallback to generic symbol
         if (!symbol) {
-          symbol = item.tokenAddress.slice(0, 8);
+          symbol = 'MEME';
         }
         
         // Smart name extraction from links: website -> twitter -> telegram
