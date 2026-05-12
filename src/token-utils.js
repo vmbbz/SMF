@@ -25,39 +25,22 @@ export async function getTrendingTokens(count = 8) {
         // Log full item data to see what fields are available
         console.log('🔍 FULL TOKEN DATA:', item);
         
-        // Extract real token name from description or URL
-        const description = item.description || '';
-        const symbolMatch = description.match(/\$([A-Z0-9]+)/i);
-        
-        let tokenName;
-        if (symbolMatch) {
-          tokenName = symbolMatch[1]; // From $GREET, $EPIC, etc.
-        } else {
-          // Extract from URL: 7sgdnqsvugpahh6qyxb3g5gsdk9fazzm299kycxspump -> 7SGDNQSV
-          const urlParts = item.url.split('/');
-          const urlToken = urlParts[urlParts.length - 1];
-          tokenName = urlToken.replace(/pump$/i, '').toUpperCase();
-        }
-        
         return {
           mint: item.tokenAddress,
-          symbol: '$' + tokenName,
-          name: tokenName,
+          symbol: '$' + item.tokenAddress.slice(0, 8),
+          name: item.tokenAddress.slice(0, 8),
           description: item.description,
-          logoURI: `https://cdn.dexscreener.com/cms/images/${item.icon}`,
+          logoURI: item.icon,
           openGraph: item.openGraph,
-          // Social links - map directly
           twitter: item.links?.find(link => link.type === 'twitter')?.url,
           telegram: item.links?.find(link => link.type === 'telegram')?.url,
           website: item.links?.find(link => !link.type)?.url,
           links: item.links,
-          // Map all other fields directly
           chainId: item.chainId,
           totalAmount: item.totalAmount,
           amount: item.amount,
           header: item.header,
           url: item.url,
-          // Keep the original full item for debugging
           _raw: item
         };
       });
