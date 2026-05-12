@@ -151,6 +151,7 @@ export class Fighter {
     this.tokenData = null;        // {mint, symbol, name, logoURI}
     this.personality = null;
     this.headImage = null;        // Image object for logo
+    this.headDrawn = false;       // Track if head has been drawn once
   }
 
   get grounded() {
@@ -172,6 +173,7 @@ export class Fighter {
 
       await new Promise(resolve => {
         this.headImage.onload = () => {
+          console.log('✅ TOKEN HEAD LOADED ONCE for', this.tokenData.symbol, 'naturalWidth:', this.headImage.naturalWidth, 'naturalHeight:', this.headImage.naturalHeight);
           // FORCE REDRAW so the head appears immediately
           if (window.game && typeof window.game.draw === 'function') {
             window.game.draw();
@@ -765,6 +767,10 @@ export class Fighter {
     // === EPIC HEAD SWAP (perfect circular logo + neon glow) ===
     // Check if head image exists and has token data
     if (this.headImage && this.tokenData) {
+      if (!this.headDrawn) {
+        console.log('🎯 FIRST TIME DRAWING HEAD for', this.tokenData.symbol, 'headImage exists:', !!this.headImage, 'naturalWidth:', this.headImage.naturalWidth);
+        this.headDrawn = true;
+      }
       ctx.save();
       // Circular clip + subtle border
       ctx.beginPath();
