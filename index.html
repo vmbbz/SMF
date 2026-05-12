@@ -174,15 +174,25 @@
       const status = document.getElementById('status');
       status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
 
-      // Stronger wait for game to be ready
+      console.log('%c🔥 Starting fight vs', token.symbol, token);
+
+      // ←←← THIS IS THE MISSING PIECE
+      if (typeof startFight === 'function') {
+        startFight();                    // creates window.game
+      } else if (typeof window.startFight === 'function') {
+        window.startFight();
+      }
+
+      // Now wait for the game object
       let attempts = 0;
-      while ((!window.game || !window.game.opponent) && attempts < 100) {
-        await new Promise(r => setTimeout(r, 60));
+      while ((!window.game || !window.game.opponent) && attempts < 120) {
+        await new Promise(r => setTimeout(r, 50));
         attempts++;
       }
 
       if (!window.game || !window.game.opponent) {
         status.innerHTML = 'Game not ready — refresh page';
+        console.error('❌ Game object still not ready');
         return;
       }
 
