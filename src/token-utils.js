@@ -2,32 +2,32 @@
 // IMPROVED — works reliably for real Pump.fun / Solana memes
 export async function getTrendingTokens(count = 8) {
   try {
-    const res = await fetch('https://api.dexscreener.com/latest/dex/search?q=memes&chainId=solana&limit=20');
+    // Use token-boosts endpoint for trending Solana memes
+    const res = await fetch('https://api.dexscreener.com/token-boosts/latest/v1');
     const data = await res.json();
     
-    // Check if data.pairs exists and is an array
-    if (!data.pairs || !Array.isArray(data.pairs)) {
+    // Check if data exists and has tokens array
+    if (!data || !Array.isArray(data)) {
       console.error("Invalid API response:", data);
       return [];
     }
     
-    // Take top volume pairs that look like memes (high volume + short symbol)
-    const pairs = data.pairs
-      .filter(p => 
-        p.baseToken && 
-        p.baseToken.symbol && 
-        p.volume?.h24 > 50000 && // lower threshold for more results
-        !p.baseToken.symbol.includes('USDC') && // skip stables
-        !p.baseToken.symbol.includes('USDT') // skip stables
+    // Token boosts endpoint returns array directly
+    const tokens = data
+      .filter(token => 
+        token.symbol && 
+        token.volume?.h24 > 10000 && // lower threshold for more results
+        !token.symbol.includes('USDC') && // skip stables
+        !token.symbol.includes('USDT') // skip stables
       )
       .sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0))
       .slice(0, count);
 
-    return pairs.map(p => ({
-      mint: p.baseToken.address,
-      symbol: '$' + (p.baseToken.symbol || 'MEME'),
-      name: p.baseToken.name || 'Hot Meme',
-      logoURI: p.baseToken.logoURI || `https://dd.dexscreener.com/ds-data/tokens/solana/${p.baseToken.address}.png`
+    return tokens.map(token => ({
+      mint: token.address,
+      symbol: '$' + (token.symbol || 'MEME'),
+      name: token.name || 'Hot Meme',
+      logoURI: token.logoURI || `https://dd.dexscreener.com/ds-data/tokens/solana/${token.address}.png`
     }));
   } catch (e) {
     console.error("Trending fetch failed:", e);
