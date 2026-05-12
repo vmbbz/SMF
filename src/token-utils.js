@@ -29,8 +29,11 @@ export async function getTrendingTokens(count = 8) {
         
         // Extract REAL token name from description or URL
         const description = item.description || '';
-        const nameMatch = description.match(/\$([A-Z0-9]+)/i);
-        let realTokenName = nameMatch ? nameMatch[1] : null;
+        // Look for patterns like "$GREET", "$EPIC", "$PAPUA", "KOTO" (without $)
+        const dollarMatch = description.match(/\$([A-Z0-9]+)/i);
+        const wordMatch = description.match(/\b([A-Z]{4,})\b/); // Look for 4+ letter words like KOTO, EPIC
+        
+        let realTokenName = dollarMatch ? dollarMatch[1] : wordMatch ? wordMatch[1] : null;
         
         // If no $ symbol in description, try to extract from URL
         if (!realTokenName && item.url) {
