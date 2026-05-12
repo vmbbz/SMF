@@ -12,6 +12,12 @@ import { isAuthConfigured, login, logout, handleCallback, checkAuth, isLoggedIn,
 import { PeerConnection, RemoteInputAdapter } from './webrtc.js';
 import { PredictionManager } from './prediction.js';
 
+// Safe guard for meme-first UI - prevents addEventListener errors when elements don't exist
+const safeListener = (id, event, handler) => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener(event, handler);
+};
+
 const canvas = document.getElementById('game');
 
 // Screen elements
@@ -225,7 +231,7 @@ window.loadOpponent = async function(token) {
 // ─────────────────────────────────────────────
 // Landing page click handlers
 // ─────────────────────────────────────────────
-document.getElementById('btn-multiplayer').addEventListener('click', async () => {
+safeListener('btn-multiplayer', 'click', async () => {
   // Multiplayer requires authentication
   if (!isLoggedIn()) {
     const configured = await isAuthConfigured();
@@ -238,10 +244,10 @@ document.getElementById('btn-multiplayer').addEventListener('click', async () =>
   }
   showScreen('multiplayer');
 });
-document.getElementById('btn-singleplayer').addEventListener('click', () => showCharacterSelect());
+safeListener('btn-singleplayer', 'click', () => showCharacterSelect());
 
 // Multiplayer menu
-document.getElementById('btn-create-room').addEventListener('click', async () => {
+safeListener('btn-create-room', 'click', async () => {
   const createBtn = document.getElementById('btn-create-room');
   createBtn.classList.add('loading');
   const origLabel = createBtn.querySelector('.mp-label');
@@ -271,28 +277,46 @@ document.getElementById('btn-create-room').addEventListener('click', async () =>
     if (origLabel) origLabel.textContent = savedText;
   }
 });
-document.getElementById('btn-join-room').addEventListener('click', () => showScreen('joinRoom'));
-document.getElementById('btn-matchmaking').addEventListener('click', () => showMatchmakingScreen());
-document.getElementById('btn-mp-back').addEventListener('click', () => showScreen('landing'));
+safeListener('btn-join-room', 'click', () => showScreen('joinRoom'));
+safeListener('btn-matchmaking', 'click', () => showMatchmakingScreen());
+safeListener('btn-mp-back', 'click', () => showScreen('landing'));
 
 // Join room
 const roomCodeInput = document.getElementById('room-code-input');
 const joinGoBtn = document.getElementById('btn-join-go');
 
-roomCodeInput.addEventListener('input', () => {
-  // Enable join button when input has a plausible room code
-  joinGoBtn.disabled = roomCodeInput.value.trim().length < 3;
-});
+if (roomCodeInput && joinGoBtn) {
+  roomCodeInput.addEventListener('input', () => {
+    // Enable join button when input has a plausible room code
+    joinGoBtn.disabled = roomCodeInput.value.trim().length < 3;
+  });
+
+  joinGoBtn.addEventListener('click', () => {
+    const code = roomCodeInput.value.trim().toLowerCase();
+    if (code) joinRoom(code);
+  });
+
+  roomCodeInput.addEventListener('keydown', (e) => {
+    if (e.code === 'Enter' && !joinGoBtn.disabled) {
+      const code = roomCodeInput.value.trim().toLowerCase();
+      if (code) joinRoom(code);
+    }
+  });
+}
 
 /** Join a room by code — calls the API, navigates to lobby on success */
 async function joinRoom(code) {
   const joinError = document.getElementById('join-error');
-  joinError.classList.add('hidden');
-  joinError.textContent = '';
+  if (joinError) {
+    joinError.classList.add('hidden');
+    joinError.textContent = '';
+  }
 
-  joinGoBtn.disabled = true;
-  joinGoBtn.classList.add('loading');
-  joinGoBtn.textContent = 'JOINING...';
+  if (joinGoBtn) {
+    joinGoBtn.disabled = true;
+    joinGoBtn.classList.add('loading');
+    joinGoBtn.textContent = 'JOINING...';
+  }
 
   try {
     const resp = await fetch('/api/room/join', {
@@ -304,8 +328,10 @@ async function joinRoom(code) {
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       const detail = err.detail || `Failed to join (HTTP ${resp.status})`;
-      joinError.textContent = detail;
-      joinError.classList.remove('hidden');
+      if (joinError) {
+        joinError.textContent = detail;
+        joinError.classList.remove('hidden');
+      }
       return;
     }
 
@@ -320,40 +346,33 @@ async function joinRoom(code) {
     startRoomPolling();
   } catch (err) {
     console.error('[multiplayer] Failed to join room:', err);
-    joinError.textContent = 'Network error — could not reach server';
-    joinError.classList.remove('hidden');
+    if (joinError) {
+      joinError.textContent = 'Network error — could not reach server';
+      joinError.classList.remove('hidden');
+    }
   } finally {
-    joinGoBtn.classList.remove('loading');
-    joinGoBtn.textContent = 'JOIN';
-    joinGoBtn.disabled = roomCodeInput.value.trim().length < 3;
+    if (joinGoBtn) {
+      joinGoBtn.classList.remove('loading');
+      joinGoBtn.textContent = 'JOIN';
+      joinGoBtn.disabled = roomCodeInput ? roomCodeInput.value.trim().length < 3 : true;
+    }
   }
 }
 
-joinGoBtn.addEventListener('click', () => {
-  const code = roomCodeInput.value.trim().toLowerCase();
-  if (code) joinRoom(code);
-});
-
-roomCodeInput.addEventListener('keydown', e => {
-  if (e.code === 'Enter' && !joinGoBtn.disabled) {
-    const code = roomCodeInput.value.trim().toLowerCase();
-    if (code) joinRoom(code);
-  }
-});
-
-document.getElementById('btn-join-back').addEventListener('click', () => {
-  roomCodeInput.value = '';
-  joinGoBtn.disabled = true;
-  document.getElementById('join-error').classList.add('hidden');
+safeListener('btn-join-back', 'click', () => {
+  if (roomCodeInput) roomCodeInput.value = '';
+  if (joinGoBtn) joinGoBtn.disabled = true;
+  const joinError = document.getElementById('join-error');
+  if (joinError) joinError.classList.add('hidden');
   showScreen('multiplayer');
 });
 
 // Room lobby
-document.getElementById('btn-lobby-back').addEventListener('click', () => {
+safeListener('btn-lobby-back', 'click', () => {
   stopRoomPolling();
   showScreen('multiplayer');
 });
-document.getElementById('btn-copy-url').addEventListener('click', () => {
+safeListener('btn-copy-url', 'click', () => {
   const url = document.getElementById('room-url-display').value;
   navigator.clipboard.writeText(url).then(() => {
     const btn = document.getElementById('btn-copy-url');
@@ -508,7 +527,7 @@ function updateRoomControllerUI() {
 }
 
 // Mode pill clicks on room controller screen
-document.getElementById('room-ctrl-pills').addEventListener('click', e => {
+safeListener('room-ctrl-pills', 'click', e => {
   const pill = e.target.closest('.mode-pill');
   if (!pill) return;
   const idx = parseInt(pill.dataset.mode, 10);
@@ -518,7 +537,7 @@ document.getElementById('room-ctrl-pills').addEventListener('click', e => {
 });
 
 // LLM provider pill clicks (delegated from room-ctrl-info)
-document.getElementById('room-ctrl-info').addEventListener('click', e => {
+safeListener('room-ctrl-info', 'click', e => {
   const pill = e.target.closest('.provider-pill');
   if (!pill) return;
   roomProviderIdx = parseInt(pill.dataset.provider, 10);
@@ -526,7 +545,7 @@ document.getElementById('room-ctrl-info').addEventListener('click', e => {
 });
 
 // Confirm controller choice
-document.getElementById('btn-ctrl-confirm').addEventListener('click', async () => {
+safeListener('btn-ctrl-confirm', 'click', async () => {
   const code = localStorage.getItem('sf_roomCode');
   const playerId = localStorage.getItem('sf_playerId');
   const controller = INPUT_MODES[roomModeIdx].id;
@@ -571,7 +590,7 @@ document.getElementById('btn-ctrl-confirm').addEventListener('click', async () =
 });
 
 // Back button on controller screen
-document.getElementById('btn-ctrl-back').addEventListener('click', () => {
+safeListener('btn-ctrl-back', 'click', () => {
   stopRoomPolling();
   stopWaitingInArena();
   showScreen('multiplayer');
@@ -984,7 +1003,7 @@ function handleRoomExpired() {
 }
 
 // Results screen: Rematch button
-document.getElementById('btn-rematch').addEventListener('click', async () => {
+safeListener('btn-rematch', 'click', async () => {
   const roomCode = localStorage.getItem('sf_roomCode');
   const playerId = localStorage.getItem('sf_playerId');
   if (!roomCode || !playerId) { showLanding(); return; }
@@ -1012,7 +1031,7 @@ document.getElementById('btn-rematch').addEventListener('click', async () => {
 });
 
 // Results screen: Leave button
-document.getElementById('btn-leave').addEventListener('click', () => {
+safeListener('btn-leave', 'click', () => {
   localStorage.removeItem('sf_roomCode');
   localStorage.removeItem('sf_playerId');
   localStorage.removeItem('sf_playerNum');
@@ -1087,7 +1106,7 @@ function updateMatchmakingControllerUI() {
 }
 
 // Mode pill clicks
-document.getElementById('mm-ctrl-pills').addEventListener('click', e => {
+safeListener('mm-ctrl-pills', 'click', e => {
   const pill = e.target.closest('.mode-pill');
   if (!pill) return;
   const idx = parseInt(pill.dataset.mode, 10);
@@ -1097,7 +1116,7 @@ document.getElementById('mm-ctrl-pills').addEventListener('click', e => {
 });
 
 // LLM provider pill clicks (delegated from mm-ctrl-info)
-document.getElementById('mm-ctrl-info').addEventListener('click', e => {
+safeListener('mm-ctrl-info', 'click', e => {
   const pill = e.target.closest('.provider-pill');
   if (!pill) return;
   mmProviderIdx = parseInt(pill.dataset.provider, 10);
@@ -1105,7 +1124,7 @@ document.getElementById('mm-ctrl-info').addEventListener('click', e => {
 });
 
 // Search button
-document.getElementById('btn-mm-search').addEventListener('click', startMatchmakingSearch);
+safeListener('btn-mm-search', 'click', startMatchmakingSearch);
 
 async function startMatchmakingSearch() {
   const controller = INPUT_MODES[mmModeIdx].id;
@@ -1249,7 +1268,7 @@ async function handleMatchFound(data) {
 }
 
 // Cancel button
-document.getElementById('btn-mm-cancel').addEventListener('click', async () => {
+safeListener('btn-mm-cancel', 'click', async () => {
   if (mmPlayerId) {
     await fetch('/api/matchmaking/cancel', {
       method: 'POST',
@@ -1264,7 +1283,7 @@ document.getElementById('btn-mm-cancel').addEventListener('click', async () => {
 });
 
 // Play while you wait
-document.getElementById('btn-mm-play-wait').addEventListener('click', () => {
+safeListener('btn-mm-play-wait', 'click', () => {
   mmWaitingGame = true;
   // Start a SIM fight — keys for P1, simulated for P2
   state = 'fighting';
@@ -1287,7 +1306,7 @@ document.getElementById('btn-mm-play-wait').addEventListener('click', () => {
 });
 
 // Back button
-document.getElementById('btn-mm-back').addEventListener('click', () => {
+safeListener('btn-mm-back', 'click', () => {
   if (mmPlayerId) {
     fetch('/api/matchmaking/cancel', {
       method: 'POST',
@@ -1391,12 +1410,12 @@ async function startCharacterFight() {
   game.showFightAlert();
 }
 
-document.getElementById('btn-char-fight').addEventListener('click', () => startCharacterFight());
-document.getElementById('btn-char-classic').addEventListener('click', () => {
+safeListener('btn-char-fight', 'click', () => startCharacterFight());
+safeListener('btn-char-classic', 'click', () => {
   selectedCharacter = null;
   showScreen('onboarding');
 });
-document.getElementById('btn-char-back').addEventListener('click', () => showScreen('landing'));
+safeListener('btn-char-back', 'click', () => showScreen('landing'));
 
 // ─────────────────────────────────────────────
 // Leaderboard
@@ -1493,20 +1512,20 @@ function escapeHtml(str) {
 }
 
 // Leaderboard button on landing page
-document.getElementById('btn-leaderboard').addEventListener('click', () => {
+safeListener('btn-leaderboard', 'click', () => {
   showScreen('leaderboard');
   loadLeaderboard(lbCategory);
 });
 
 // Filter buttons
-document.getElementById('lb-filters').addEventListener('click', e => {
+safeListener('lb-filters', 'click', e => {
   const btn = e.target.closest('.lb-filter');
   if (!btn) return;
   loadLeaderboard(btn.dataset.category);
 });
 
 // Back button
-document.getElementById('btn-lb-back').addEventListener('click', () => showScreen('landing'));
+safeListener('btn-lb-back', 'click', () => showScreen('landing'));
 
 // ─────────────────────────────────────────────
 // Click handlers for mode pills (onboarding)
