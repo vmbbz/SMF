@@ -25,10 +25,19 @@ export async function getTrendingTokens(count = 8) {
         // Log full item data to see what fields are available
         console.log('🔍 FULL TOKEN DATA:', item);
         
-        // Extract real token name from description
+        // Extract real token name from description or URL
         const description = item.description || '';
         const symbolMatch = description.match(/\$([A-Z0-9]+)/i);
-        const tokenName = symbolMatch ? symbolMatch[1] : item.tokenAddress.slice(0, 8);
+        
+        let tokenName;
+        if (symbolMatch) {
+          tokenName = symbolMatch[1]; // From $GREET, $EPIC, etc.
+        } else {
+          // Extract from URL: 7sgdnqsvugpahh6qyxb3g5gsdk9fazzm299kycxspump -> 7SGDNQSV
+          const urlParts = item.url.split('/');
+          const urlToken = urlParts[urlParts.length - 1];
+          tokenName = urlToken.replace(/pump$/i, '').toUpperCase();
+        }
         
         return {
           mint: item.tokenAddress,
