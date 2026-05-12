@@ -22,58 +22,32 @@ export async function getTrendingTokens(count = 8) {
       )
       .slice(0, count)   // no strict volume filter needed — boosts endpoint already gives hot ones
       .map(item => {
-        const address = item.tokenAddress || item.address;
-        
         // Log full item data to see what fields are available
         console.log('🔍 FULL TOKEN DATA:', item);
         
-        // Extract REAL token name from description or URL
+        // Extract real token name from description
         const description = item.description || '';
-        // Look for patterns like "$GREET", "$EPIC", "$PAPUA", "KOTO" (without $)
-        const dollarMatch = description.match(/\$([A-Z0-9]+)/i);
-        const wordMatch = description.match(/\b([A-Z]{4,})\b/); // Look for 4+ letter words like KOTO, EPIC
-        
-        let realTokenName = dollarMatch ? dollarMatch[1] : wordMatch ? wordMatch[1] : null;
-        
-        // If no $ symbol in description, try to extract from URL
-        if (!realTokenName && item.url) {
-          const urlParts = item.url.split('/');
-          const urlToken = urlParts[urlParts.length - 1];
-          // Remove 'pump' suffix and convert to uppercase
-          realTokenName = urlToken.replace(/pump$/i, '').toUpperCase();
-        }
-        
-        // Fallback: use first 6 chars of address (but this should rarely happen)
-        if (!realTokenName) {
-          realTokenName = address.slice(0, 6);
-        }
-        
-        const icon = item.icon; // This is the actual logo/icon field
-        const openGraph = item.openGraph; // Alternative image
-        const links = item.links || [];
-        
-        // Extract social links
-        const twitterLink = links.find(link => link.type === 'twitter')?.url;
-        const telegramLink = links.find(link => link.type === 'telegram')?.url;
-        const websiteLink = links.find(link => !link.type)?.url;
+        const symbolMatch = description.match(/\$([A-Z0-9]+)/i);
+        const tokenName = symbolMatch ? symbolMatch[1] : item.tokenAddress.slice(0, 8);
         
         return {
-          mint: address,
-          symbol: '$' + realTokenName, // Real token name, no double $$
-          name: realTokenName, // Just the token name, no "Token" suffix
-          description: description,
-          logoURI: `https://cdn.dexscreener.com/cms/images/${icon}`, // Construct actual logo URL
-          openGraph: openGraph,
-          // Social links
-          twitter: twitterLink,
-          telegram: telegramLink,
-          website: websiteLink,
-          links: links,
-          // Additional metadata
+          mint: item.tokenAddress,
+          symbol: '$' + tokenName,
+          name: tokenName,
+          description: item.description,
+          logoURI: `https://cdn.dexscreener.com/cms/images/${item.icon}`,
+          openGraph: item.openGraph,
+          // Social links - map directly
+          twitter: item.links?.find(link => link.type === 'twitter')?.url,
+          telegram: item.links?.find(link => link.type === 'telegram')?.url,
+          website: item.links?.find(link => !link.type)?.url,
+          links: item.links,
+          // Map all other fields directly
           chainId: item.chainId,
           totalAmount: item.totalAmount,
           amount: item.amount,
           header: item.header,
+          url: item.url,
           // Keep the original full item for debugging
           _raw: item
         };
