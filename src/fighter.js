@@ -763,8 +763,9 @@ export class Fighter {
     this._drawLimb(ctx, skeleton.elbowFront, skeleton.handFront);
 
     // === EPIC HEAD SWAP (perfect circular logo + neon glow) ===
-    // More robust check: use naturalWidth/naturalHeight instead of complete
-    if (this.headImage && this.headImage.naturalWidth > 0 && this.headImage.naturalHeight > 0) {
+    // Check if head image exists and has token data
+    if (this.headImage && this.tokenData) {
+      console.log('🎯 Drawing head for', this.tokenData.symbol, 'image exists:', !!this.headImage);
       ctx.save();
       // Circular clip + subtle border
       ctx.beginPath();
