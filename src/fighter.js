@@ -143,10 +143,27 @@ export class Fighter {
 
     // Per-frame events for SFX (consumed by Game each frame)
     this.events = new Set();
+
+    // Token data for meme integration
+    this.tokenData = null;        // {mint, symbol, name, logoURI}
+    this.personality = null;
+    this.headImage = null;        // Image object for logo
   }
 
   get grounded() {
     return this.y >= this.floorY;
+  }
+
+  async loadTokenHead(tokenData) {
+    this.tokenData = tokenData;
+    this.personality = generatePersonality(tokenData); // from token-utils
+    
+    if (tokenData.logoURI) {
+      this.headImage = new Image();
+      this.headImage.crossOrigin = 'anonymous';
+      this.headImage.src = tokenData.logoURI;
+      await new Promise(resolve => { this.headImage.onload = resolve; });
+    }
   }
 
   /** Serialize all simulation state to a plain object (server snapshot format). */
@@ -729,10 +746,18 @@ export class Fighter {
     this._drawLimb(ctx, skeleton.shoulder, skeleton.elbowFront);
     this._drawLimb(ctx, skeleton.elbowFront, skeleton.handFront);
 
-    // Head
-    ctx.beginPath();
-    ctx.arc(skeleton.head[0], skeleton.head[1], 10, 0, Math.PI * 2);
-    ctx.stroke();
+    // === HEAD DRAWING (replace existing head circle) ===
+    if (this.headImage && this.headImage.complete) {
+      ctx.save();
+      ctx.drawImage(this.headImage, skeleton.head[0] - 10, skeleton.head[1] - 10, 20, 20);
+      ctx.restore();
+    } else {
+      // fallback circle
+      ctx.beginPath();
+      ctx.arc(skeleton.head[0], skeleton.head[1], 10, 0, Math.PI * 2);
+      ctx.fillStyle = this.color || '#ff0000';
+      ctx.fill();
+    }
 
     // Fist/foot impact indicator during active attack frames (skip hadouken — projectile handles it)
     if (this.state === "attack" && this.currentAttack && this.currentAttack !== Actions.HADOUKEN) {

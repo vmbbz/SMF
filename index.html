@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stick Fighter — Deepgram</title>
+  <title>Solana Meme Fighter</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#13ef95">
   <style>
     :root {
       --dg-primary: #13ef95;
@@ -1158,9 +1160,96 @@
     </div>
   </div>
 
+  <!-- Meme Panel -->
+  <div id="meme-panel" style="position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.8); padding:15px; border-radius:12px; color:white; z-index:100; font-family:sans-serif;">
+    <h3>$SMF Karate Arena</h3>
+    <button onclick="startTrendingMode()">Trending Meme Arena</button>
+    <input id="mint-input" placeholder="Paste Solana mint address" style="width:220px">
+    <button onclick="startCustomFight()">1v1 This Token</button>
+    <button onclick="startEndlessMode()">Endless Pump Stream 🔥</button>
+    <div id="status"></div>
+  </div>
+
   <!-- Game canvas -->
   <canvas id="game"></canvas>
 
-  <script type="module" src="/src/main.js"></script>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+<script type="module">
+  import { getTrendingTokens, getTokenByMint } from './src/token-utils.js';
+  import { generatePersonality } from './src/token-utils.js'; // if needed
+
+  window.startTrendingMode = async () => {
+  const tokens = await getTrendingTokens(8);
+  if (tokens.length === 0) {
+    document.getElementById('status').innerHTML = `No hot tokens right now — try pasting one!`;
+    return;
+  }
+  const randomToken = tokens[Math.floor(Math.random() * tokens.length)];
+  document.getElementById('status').innerHTML = `Fighting <strong>$${randomToken.symbol}</strong>!`;
+  await window.loadOpponent(randomToken);
+};
+
+  window.startCustomFight = async () => {
+    const mint = document.getElementById('mint-input').value.trim();
+    if (!mint) return alert('Paste a mint!');
+    const token = await getTokenByMint(mint);
+    document.getElementById('status').innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
+    await window.loadOpponent(token);
+  };
+
+let pumpQueue = [];
+let marketInterval = null;
+
+window.startEndlessMode = async () => {
+  document.getElementById('status').innerHTML = 'ENDLESS PUMP STREAM — next token every 30s';
+  pumpQueue = await getTrendingTokens(12); // bigger pool
+  await loadNextPumpOpponent();
+};
+
+async function loadNextPumpOpponent() {
+  if (pumpQueue.length === 0) pumpQueue = await getTrendingTokens(12);
+  const token = pumpQueue.shift();
+  
+  // MARKET SAUCE — scale opponent based on real volume
+  const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${token.mint}`);
+  const pairData = await pairRes.json();
+  const volumeBoost = Math.min(2, 1 + (pairData.pairs?.[0]?.volume?.m5 || 0) / 500000); // up to 2x stronger
+  
+  const opponent = game.opponent; // or however your game references the opponent fighter
+  await opponent.loadTokenHead(token);
+  opponent.healthMax = opponent.healthMax * volumeBoost; // example scaling
+  opponent.speed = (opponent.speed || 1) * volumeBoost;
+  
+  // Speak personality taunt
+  const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
+  utterance.pitch = opponent.personality.pitch;
+  utterance.rate = opponent.personality.rate;
+  speechSynthesis.speak(utterance);
+  
+  startFight(); // your existing fight starter
+}
+
+// Auto-refresh queue every 30s
+setInterval(async () => {
+  if (pumpQueue.length < 3) pumpQueue = await getTrendingTokens(12);
+}, 30000);
+
+// Victory screenshot + X post (call this from game end logic)
+window.captureVictory = async (winner) => {
+  if (winner !== 'player') return;
+  const canvas = document.querySelector('canvas');
+  const screenshot = await html2canvas(canvas);
+  
+  const link = document.createElement('a');
+  link.download = `smf-karate-chopped-${game.opponent.tokenData.symbol}.png`;
+  link.href = screenshot.toDataURL();
+  link.click();
+
+  // Auto X intent
+  const text = encodeURIComponent(`I just KARATE CHOPPED $${game.opponent.tokenData.symbol} with $SMF tech 💥🥋 Come fight me at smf.fight!`);
+  window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+};
+</script>
+<script type="module" src="/src/main.js"></script>
 </body>
 </html>

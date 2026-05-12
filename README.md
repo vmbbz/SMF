@@ -7,10 +7,13 @@ Web3 meme token gamified fighting game where players battle against trending Sol
 ### Meme Token Integration
 - **Trending Arena**: Auto-load hottest Pump.fun tokens as opponents
 - **Custom Fights**: Paste any Solana mint address for instant 1v1
+- **Endless Pump Stream**: Non-stop meme opponents with 30-second refresh
+- **Market Scaling**: Opponent difficulty scales with real trading volume
 - **Token Logos**: Display as fighter heads with fallback circles
 - **Dynamic Personalities**: Each token gets unique taunts and voice traits
 - **Victory Screenshots**: Auto-capture wins with one-click X posts
 - **Browser Voice Taunts**: Zero-cost TTS for trash talk
+- **PWA Ready**: "Add to Home Screen" on mobile devices
 
 ### Combat System
 - **6 attack types**: light/medium/heavy punch and kick

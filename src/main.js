@@ -193,6 +193,35 @@ async function startFight() {
   game.showFightAlert();
 }
 
+// Global helper to load opponent into the current fight
+window.loadOpponent = async function(token) {
+  // Ensure game exists and has fighters
+  if (!game || !game.player || !game.opponent) {
+    console.error('Game not initialized or fighters not available');
+    return;
+  }
+  
+  const opponent = game.opponent;
+  
+  // Import generatePersonality from token-utils
+  const { generatePersonality } = await import('./src/token-utils.js');
+  
+  await opponent.loadTokenHead(token); // method we added
+  
+  // Optional: speak first taunt
+  if (opponent.personality && opponent.personality.taunts && opponent.personality.taunts.length > 0) {
+    const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
+    utterance.pitch = opponent.personality.pitch || 1.0;
+    utterance.rate = opponent.personality.rate || 1.0;
+    speechSynthesis.speak(utterance);
+  }
+  
+  // Start fight if not already fighting
+  if (state !== 'fighting') {
+    startFight(); // original function
+  }
+}
+
 // ─────────────────────────────────────────────
 // Landing page click handlers
 // ─────────────────────────────────────────────
@@ -841,6 +870,10 @@ async function handleMultiplayerRoundOver(msg) {
   } else if (msg.winner === myNum) {
     winnerEl.textContent = 'YOU WIN!';
     winnerEl.classList.add(myNum === 1 ? 'p1-wins' : 'p2-wins');
+    // Call our new victory function
+    if (window.captureVictory) {
+      await window.captureVictory('player');
+    }
   } else {
     winnerEl.textContent = 'YOU LOSE';
     winnerEl.classList.add(msg.winner === 1 ? 'p1-wins' : 'p2-wins');
