@@ -1,5 +1,7 @@
 # Solana Meme Fighter
 
+![GitHub verified badge](https://img.shields.io/badge/verified-brightgreen) ![Built with meme power](https://img.shields.io/badge/built%20with-meme%20power-orange) ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+
 Web3 meme token gamified fighting game where players battle against trending Solana Pump.fun tokens.
 
 ## Features
