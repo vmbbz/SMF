@@ -158,17 +158,31 @@ export class Fighter {
   }
 
   async loadTokenHead(tokenData) {
-    this.tokenData = tokenData;
-    this.personality = generatePersonality(tokenData); // from token-utils
-    
-    if (tokenData.logoURI) {
-      this.headImage = new Image();
-      this.headImage.crossOrigin = 'anonymous';
-      this.headImage.src = tokenData.logoURI;
-      this.headImage.onerror = () => { this.headImage = null; }; // fallback on error
-      await new Promise(resolve => { this.headImage.onload = resolve; });
-    }
+  this.tokenData = tokenData;
+  this.personality = generatePersonality(tokenData);
+
+  if (tokenData.logoURI) {
+    this.headImage = new Image();
+    this.headImage.crossOrigin = 'anonymous';
+    this.headImage.src = tokenData.logoURI;
+
+    this.headImage.onerror = () => {
+      console.log('Head image failed to load for', tokenData.symbol);
+      this.headImage = null;
+    };
+
+    await new Promise(resolve => {
+      this.headImage.onload = () => {
+        console.log('✅ Head loaded for', tokenData.symbol);
+        // FORCE REDRAW so the head appears immediately
+        if (window.game && typeof window.game.draw === 'function') {
+          window.game.draw();
+        }
+        resolve();
+      };
+    });
   }
+}
 
   /** Serialize all simulation state to a plain object (server snapshot format). */
   toSnapshot() {
