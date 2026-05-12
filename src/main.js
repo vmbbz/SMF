@@ -1906,3 +1906,6 @@ initAuth().then(handledRoute => {
     showScreen('landing');
   }
 });
+
+// Expose game globally for meme mode
+window.game = game;

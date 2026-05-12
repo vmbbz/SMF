@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>$SMF</title>
+  <title>$SMF-STICKLASH</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
     :root { --neon-green: #00ff9d; --neon-pink: #ff00ff; }
@@ -14,18 +14,14 @@
       color: #fff;
       overflow: hidden;
       height: 100vh;
-      display: flex;
-      flex-direction: column;
       position: relative;
     }
-    
-    
     #game { width: 100vw; height: 100vh; display: block; image-rendering: pixelated; }
     
     /* HIDE ORIGINAL DEEPGRAM SCREENS */
     #onboarding, #leaderboard, #match-results, .mode-select, .character-select { display: none !important; }
     
-    /* MOBILE-FIRST MEME PANEL */
+    /* MEME PANEL */
     #meme-panel {
       position: fixed;
       top: 50%;
@@ -41,7 +37,7 @@
       text-align: center;
       box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     }
-    h1 { font-size: 20px; margin-bottom: 20px; color: #fff; }
+    h1 { font-size: 24px; margin-bottom: 20px; color: #fff; text-shadow: 0 0 15px var(--neon-pink); }
     button {
       background: rgba(255,255,255,0.1);
       color: #fff;
@@ -54,20 +50,31 @@
       transition: all 0.3s;
       backdrop-filter: blur(10px);
     }
-    button:hover { 
+    button:hover {
       background: rgba(255,255,255,0.2);
       border-color: rgba(255,255,255,0.5);
       transform: translateY(-2px);
     }
+    input {
+      width: 100%;
+      padding: 16px;
+      margin: 12px 0;
+      background: #111;
+      border: 2px solid var(--neon-green);
+      color: #fff;
+      font-size: 15px;
+      border-radius: 12px;
+    }
+    #status { margin-top: 15px; font-size: 13px; min-height: 22px; color: var(--neon-green); }
     
-    /* Mobile controls - clean & minimal */
+    /* Mobile controls */
     #mobile-controls {
       position: fixed;
       bottom: 30px;
       left: 50%;
       transform: translateX(-50%);
       z-index: 1000;
-      display: none; /* will be shown on touch */
+      display: none;
     }
     .control-btn {
       background: rgba(255,255,255,0.2);
@@ -86,109 +93,146 @@
   </style>
 </head>
 <body>
-  <canvas id="game"></canvas> <!-- ORIGINAL CANVAS ID - fixed -->
-  
-  <!-- OUR MEME PANEL - always visible -->
+  <canvas id="game"></canvas>
+
+  <!-- MEME PANEL -->
   <div id="meme-panel">
     <div style="text-align:center;margin-bottom:25px;">
-      <img src="assets/smf-logo.png" alt="$SMF" style="height:50px;margin-bottom:10px;">
-      <div style="font-size:24px;color:#fff;font-weight:bold;">Stick Lash</div>
+      <img src="/assets/smf-logo.png" alt="$SMF" style="height:60px;margin-bottom:10px;" onerror="this.src='https://via.placeholder.com/60x60/ff00ff/ffffff?text=SMF';console.error('Logo failed to load, using fallback');">
+      <div style="font-size:28px;color:#fff;font-weight:bold;">STICK|LASH</div>
     </div>
     <button onclick="startTrendingMode()">TRENDING ARENA 🔥</button>
     <button onclick="startEndlessMode()">ENDLESS PUMP STREAM</button>
     <input id="mint-input" placeholder="PASTE $TOKEN MINT">
     <button onclick="startCustomFight()">1v1 THIS TOKEN</button>
-    <div id="status" style="margin-top:15px;font-size:13px;min-height:22px;"></div>
+    <div id="status"></div>
   </div>
 
   <div id="mobile-controls">
-    <button class="control-btn" style="margin-right:10px;">🎮</button>
-    <button class="control-btn" style="margin-right:10px;">👊</button>
-    <button class="control-btn">🦵</button>
+    <button class="control-btn" onclick="sendAction('left')">←</button>
+    <button class="control-btn" onclick="sendAction('jump')">↑</button>
+    <button class="control-btn" onclick="sendAction('right')">→</button>
+    <button class="control-btn" onclick="sendAction('lightPunch')" style="margin-left:20px;">👊</button>
+    <button class="control-btn" onclick="sendAction('heavyKick')">🥋</button>
   </div>
 
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-
+  
   <script type="module">
-    // Import all required modules
     import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';
     import { Effects } from './src/effects.js';
-    
-    // Load other scripts as modules
-    import './src/fighter.js';
-    import './src/game.js'; 
-    import './src/main.js';
-    
-    // Global functions
+
+    // Global exports
+    window.getTrendingTokens = getTrendingTokens;
+    window.getTokenByMint = getTokenByMint;
+    window.generatePersonality = generatePersonality;
+    window.effects = new Effects();
+
+    let pumpQueue = [];
+
+    // ================== MAIN MEME FUNCTIONS ==================
     window.startTrendingMode = async () => {
+      const status = document.getElementById('status');
+      status.innerHTML = 'Loading trending tokens...';
       const tokens = await getTrendingTokens(8);
       if (tokens.length === 0) {
-        document.getElementById('status').innerHTML = `No hot tokens right now — try pasting one!`;
+        status.innerHTML = 'No hot tokens right now — try pasting one!';
         return;
       }
-      const randomToken = tokens[Math.floor(Math.random() * tokens.length)];
-      document.getElementById('status').innerHTML = `Fighting <strong>$${randomToken.symbol}</strong>!`;
-      await window.loadOpponent(randomToken);
-    };
-    
-    window.startCustomFight = async () => {
-      const mint = document.getElementById('mint-input').value.trim();
-      if (!mint) return alert('Paste a mint!');
-      const token = await getTokenByMint(mint);
-      document.getElementById('status').innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
-      await window.loadOpponent(token);
-    };
-    
-    window.startEndlessMode = async () => {
-      document.getElementById('status').innerHTML = 'ENDLESS PUMP STREAM — Loading tokens...';
-      pumpQueue = await getTrendingTokens(12); // bigger pool
-      await loadNextPumpOpponent();
+      const token = tokens[Math.floor(Math.random() * tokens.length)];
+      status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
+      await loadOpponent(token);
     };
 
-async function loadNextPumpOpponent() {
-      if (pumpQueue.length === 0) pumpQueue = await getTrendingTokens(12);
-      const token = pumpQueue.shift();
-  
-      // MARKET SAUCE — scale opponent based on real volume
-      let volumeBoost = 1;
+    window.startEndlessMode = async () => {
+      const status = document.getElementById('status');
+      status.innerHTML = 'ENDLESS PUMP STREAM — loading...';
+      pumpQueue = await getTrendingTokens(12);
+      if (pumpQueue.length > 0) await loadOpponent(pumpQueue.shift());
+    };
+
+    window.startCustomFight = async () => {
+      const mint = document.getElementById('mint-input').value.trim();
+      if (!mint) return alert('Paste a mint address!');
+      const status = document.getElementById('status');
+      status.innerHTML = 'Loading token...';
       try {
-        const pairRes = await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${token.mint}`);
-        const pairData = await pairRes.json();
-        volumeBoost = Math.min(2, 1 + (pairData.pairs?.[0]?.volume?.m5 || 0) / 500000); // up to 2x stronger
-      } catch(e) {
-        console.error('Failed to fetch market data for scaling:', e);
-        volumeBoost = 1; // fallback to normal difficulty
-      }
-  
-      const opponent = game.opponent; // or however your game references the opponent fighter
-      await opponent.loadTokenHead(token);
-      if (opponent.healthMax && opponent.health) {
-        opponent.healthMax = opponent.health * volumeBoost; // scale current health
-        opponent.health = opponent.health * volumeBoost; // scale current health
-      }
-      opponent.speed = (opponent.speed || 1) * volumeBoost;
-  
-      // Speak personality taunt
-      const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
-      utterance.pitch = opponent.personality.pitch;
-      utterance.rate = opponent.personality.rate;
-      speechSynthesis.speak(utterance);
-      
-      // Start fight if not already fighting
-      if (state !== 'fighting') {
-        startFight(); // your existing fight starter
+        const token = await getTokenByMint(mint);
+        status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
+        await loadOpponent(token);
+      } catch (e) {
+        status.innerHTML = 'Token not found 😢';
       }
     };
-    
-    // Initialize effects
-    window.effects = new Effects();
-    
-    // Mobile controls
-    if ('ontouchstart' in window) {
-      document.getElementById('mobile-controls').style.display = 'flex';
+
+    // ================== CORE FIGHT STARTER ==================
+    async function loadOpponent(token) {
+      // Wait for the original game to be fully ready
+      if (!window.game || !window.game.opponent) {
+        console.log('Game not ready yet, retrying...');
+        setTimeout(() => loadOpponent(token), 200);
+        return;
+      }
+
+      const opponent = window.game.opponent;
+      await opponent.loadTokenHead(token);
+
+      // Market sauce
+      let volumeBoost = 1;
+      try {
+        const res = await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${token.mint}`);
+        const data = await res.json();
+        volumeBoost = Math.min(2, 1 + (data.pairs?.[0]?.volume?.m5 || 0) / 500000);
+      } catch(e) {}
+
+      if (opponent.healthMax) opponent.healthMax = Math.floor(opponent.healthMax * volumeBoost);
+      if (opponent.health) opponent.health = Math.floor(opponent.health * volumeBoost);
+      opponent.speed = (opponent.speed || 1) * volumeBoost;
+
+      // Personality TTS
+      if (opponent.personality && opponent.personality.taunts && opponent.personality.taunts.length > 0) {
+        const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
+        utterance.pitch = opponent.personality.pitch || 1;
+        utterance.rate = opponent.personality.rate || 1;
+        speechSynthesis.speak(utterance);
+      }
+
+      // START THE FIGHT
+      console.log('%c🚀 Starting fight vs $' + token.symbol, 'color:#ff00ff');
+      
+      // Wait for game to be fully ready
+      const startFight = () => {
+        if (window.game && typeof window.game.start === 'function') {
+          window.game.start();
+        } else {
+          console.log('Game not ready yet, retrying...');
+          setTimeout(startFight, 500);
+        }
+      };
+      
+      startFight();
     }
-    
-    console.log('%c✅ $SMF MOBILE-FIRST MODE LOADED', 'color:#00ff9d;font-size:18px');
+
+    window.loadOpponent = loadOpponent;   // make it global
+
+    window.sendAction = (action) => {
+      if (window.inputManager && typeof window.inputManager.handleAction === 'function') {
+        window.inputManager.handleAction(action);
+      }
+    };
+
+    // Auto init
+    window.addEventListener('load', () => {
+      if ('ontouchstart' in window) {
+        document.getElementById('mobile-controls').style.display = 'flex';
+      }
+      console.log('%c✅ $SMF STICK LASH FULLY LOADED — READY TO FIGHT', 'color:#ff00ff;font-size:18px');
+    });
   </script>
+
+  <!-- ORIGINAL GAME FILES -->
+  <script src="./src/fighter.js"></script>
+  <script src="./src/game.js"></script>
+  <script src="./src/main.js"></script>
 </body>
 </html>
