@@ -158,7 +158,8 @@ export class Fighter {
   }
 
   async loadTokenHead(tokenData) {
-  console.log(`🚀 loadTokenHead START: symbol=${tokenData.symbol}, logoURI=${tokenData.logoURI}`);
+  console.log(`� FIGHTER DEBUG: New loadTokenHead code is executing!`);
+  console.log(`�🚀 loadTokenHead START: symbol=${tokenData.symbol}, logoURI=${tokenData.logoURI}`);
   this.tokenData = tokenData;
   this.personality = generatePersonality(tokenData);
 
