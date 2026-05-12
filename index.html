@@ -141,8 +141,19 @@
     };
     
     window.startEndlessMode = async () => {
-      document.getElementById('status').innerHTML = 'ENDLESS PUMP STREAM — next token every 30s';
-      // Implementation would go here
+      document.getElementById('status').innerHTML = 'ENDLESS PUMP STREAM — Loading tokens...';
+      try {
+        const tokens = await getTrendingTokens(12);
+        if (tokens.length === 0) {
+          document.getElementById('status').innerHTML = 'No hot tokens found — try pasting one!';
+          return;
+        }
+        document.getElementById('status').innerHTML = `🔥 ENDLESS MODE — ${tokens.length} tokens loaded`;
+        console.log('Endless mode loaded with tokens:', tokens);
+      } catch (e) {
+        document.getElementById('status').innerHTML = 'Error loading tokens — try again!';
+        console.error('Endless mode error:', e);
+      }
     };
     
     // Initialize effects

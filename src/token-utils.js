@@ -2,18 +2,25 @@
 // IMPROVED — works reliably for real Pump.fun / Solana memes
 export async function getTrendingTokens(count = 8) {
   try {
-    const res = await fetch('https://api.dexscreener.com/latest/dex/search?q=&chainId=solana');
+    const res = await fetch('https://api.dexscreener.com/latest/dex/search?q=memes&chainId=solana&limit=20');
     const data = await res.json();
     
-    // Take top volume Raydium pairs that look like memes (high volume + short symbol)
+    // Check if data.pairs exists and is an array
+    if (!data.pairs || !Array.isArray(data.pairs)) {
+      console.error("Invalid API response:", data);
+      return [];
+    }
+    
+    // Take top volume pairs that look like memes (high volume + short symbol)
     const pairs = data.pairs
       .filter(p => 
-        p.dexId === 'raydium' && 
+        p.baseToken && 
         p.baseToken.symbol && 
-        p.volume?.h24 > 100000 && // real pumping activity
-        !p.baseToken.symbol.includes('USDC') // skip stables
+        p.volume?.h24 > 50000 && // lower threshold for more results
+        !p.baseToken.symbol.includes('USDC') && // skip stables
+        !p.baseToken.symbol.includes('USDT') // skip stables
       )
-      .sort((a, b) => b.volume.h24 - a.volume.h24)
+      .sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0))
       .slice(0, count);
 
     return pairs.map(p => ({
@@ -23,7 +30,7 @@ export async function getTrendingTokens(count = 8) {
       logoURI: p.baseToken.logoURI || `https://dd.dexscreener.com/ds-data/tokens/solana/${p.baseToken.address}.png`
     }));
   } catch (e) {
-    console.error("Trending fetch failed", e);
+    console.error("Trending fetch failed:", e);
     return []; // fallback
   }
 }
