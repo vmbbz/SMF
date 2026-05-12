@@ -61,8 +61,8 @@ def generate_room_code() -> str:
 class RoomManager:
     """Async Redis-backed room state manager."""
 
-    def __init__(self, redis: aioredis.Redis) -> None:  # type: ignore[type-arg]
-        self._redis: aioredis.Redis = redis  # type: ignore[type-arg]
+    def __init__(self, redis: aioredis.Redis | None) -> None:  # type: ignore[type-arg]
+        self._redis: aioredis.Redis | None = redis  # type: ignore[type-arg]
 
     async def create_room(self, player_id: str) -> dict[str, str]:
         """Create a new room, assign creator as Player 1, return room data.
@@ -73,7 +73,7 @@ class RoomManager:
         for _ in range(20):
             code = generate_room_code()
             key = _room_key(code)
-            if not await self._redis.exists(key):
+            if self._redis and not await self._redis.exists(key):
                 break
         else:
             # Extremely unlikely — 24*24*24 = 13,824 combinations
@@ -91,13 +91,16 @@ class RoomManager:
         }
 
         key = _room_key(code)
-        await self._redis.hset(key, mapping=room_data)  # type: ignore[misc]
-        await self._redis.expire(key, ROOM_TTL)  # type: ignore[misc]
+        if self._redis:
+            await self._redis.hset(key, mapping=room_data)  # type: ignore[misc]
+            await self._redis.expire(key, ROOM_TTL)  # type: ignore[misc]
 
         return room_data
 
     async def get_room(self, code: str) -> dict[str, str] | None:
         """Fetch room data by code. Returns None if not found / expired."""
+        if not self._redis:
+            return None
         data = await self._redis.hgetall(_room_key(code))  # type: ignore[misc]
         if not data:
             return None
@@ -244,6 +247,8 @@ class RoomManager:
     async def matchmaking_cleanup_expired(self, category: str) -> list[str]:
         """Remove queue entries whose TTL key has expired. Returns removed player IDs."""
         queue_key = f"matchmaking:{category}"
+        if not self._redis:
+            return []
         members: list[str] = await self._redis.zrange(queue_key, 0, -1)  # type: ignore[misc]
         removed: list[str] = []
 

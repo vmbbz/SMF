@@ -128,22 +128,33 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
     """Start/stop Redis + Postgres pools and background tasks."""
     global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, cleanup_task, matchmaking_task  # noqa: PLW0603
 
-    # Redis — ephemeral state (rooms, matchmaking queue, signaling)
-    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
-    redis_pool = aioredis.from_url(redis_url, decode_responses=True)
-    print(f"[redis] Connected to {redis_url}")
+    # Redis — ephemeral state (rooms, matchmaking queue, signaling) - DISABLED FOR NOW
+    # redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+    # redis_pool = aioredis.from_url(redis_url, decode_responses=True)
+    # print(f"[redis] Connected to {redis_url}")
+    print("[redis] Redis disabled - running in-memory mode")
 
     # Postgres — persistent state (ELO, players, match history)
     database_url = os.environ.get("DATABASE_URL", "postgresql://stick:fighter@localhost:5433/stickfighter")
-    pg_pool = await asyncpg.create_pool(database_url, min_size=2, max_size=10)
-    await ensure_schema(pg_pool)
-    print("[postgres] Connected, schema ensured")
+    try:
+        pg_pool = await asyncpg.create_pool(database_url, min_size=2, max_size=10)
+        await ensure_schema(pg_pool)
+        print("[postgres] Connected to database")
+    except Exception as e:
+        print(f"[postgres] Database connection failed: {e}")
+        print("[postgres] Running without database - ELO and leaderboard disabled")
+        pg_pool = None
+    if pg_pool:
+        elo_manager = EloManager(pg_pool)
+        print("[postgres] Connected, schema ensured")
+    else:
+        elo_manager = None
+        print("[postgres] Running without ELO manager")
 
-    room_manager = RoomManager(redis_pool)
+    room_manager = RoomManager(None)  # Redis disabled
     game_loop_manager = GameLoopManager()
     signaling_manager = SignalingManager()
     oidc_config = OIDCConfig.from_env()
-    elo_manager = EloManager(pg_pool)
     cleanup_task = RoomCleanupTask(room_manager, game_loop_manager, signaling_manager)
     cleanup_task.start()
     matchmaking_task = MatchmakingTask(room_manager, elo_manager)
@@ -167,11 +178,13 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         signaling_manager = None
         oidc_config = None
         elo_manager = None
-        await pg_pool.close()
-        print("[postgres] Connection closed")
-        await redis_pool.aclose()
-        room_manager = None
-        print("[redis] Connection closed")
+        if pg_pool:
+            await pg_pool.close()
+            print("[postgres] Connection closed")
+        if redis_pool:
+            await redis_pool.aclose()
+            room_manager = None
+            print("[redis] Connection closed")
 
 DG_TTS_URL = "https://api.deepgram.com/v1/speak"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
@@ -2014,5 +2027,6 @@ app = Litestar(
         get_elo,
         create_static_files_router(path="/src", directories=[ROOT / "src"]),
         create_static_files_router(path="/assets", directories=[ROOT / "assets"]),
+        create_static_files_router(path="/", directories=[ROOT / ""]),
     ],
 )
