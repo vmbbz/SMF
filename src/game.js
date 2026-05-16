@@ -85,8 +85,8 @@ export class Game {
     const stageRight = logicalW * (1 - STAGE_MARGIN);
     const startOffset = (stageRight - stageLeft) * 0.25;
 
-    this.p1 = new Fighter(stageLeft + startOffset, floorY, 1, DG.primary);
-    this.p2 = new Fighter(stageRight - startOffset, floorY, -1, DG.secondary);
+    this.p1 = new Fighter(stageLeft + startOffset, floorY, 1, DG.primary, 1);
+    this.p2 = new Fighter(stageRight - startOffset, floorY, -1, DG.secondary, 2);
 
     this.lastTime = 0;
     this.running = false;
@@ -95,6 +95,9 @@ export class Game {
     this.hitSparks = [];
     this._lastClashKey = null;
     this.victoryCaptured = false;
+    this.waitingForIntro = true; // NEW: Walk-in intro sequence
+    this.introTimer = 5.0; // Phase 3: 5 seconds of stats display
+    this.bgImage = null; // Background image for the current token
 
     // Active projectiles (hadouken energy balls)
     this.projectiles = []; // {x, y, vx, owner, active, animTimer}
@@ -187,7 +190,16 @@ export class Game {
 
   _update(dt) {
     // Waiting for providers or showing fight alert — no game logic
-    if (this.waitingForProviders) return;
+    // Intro sequence — walk in and show stats
+    if (this.waitingForIntro) {
+      this.introTimer -= dt;
+      if (this.introTimer <= 0) {
+        this.waitingForIntro = false;
+        this.showFightAlert(); // Trigger "FIGHT!" after intro
+      }
+      return;
+    }
+
     if (this.fightAlert > 0) {
       this.fightAlert -= dt;
       return;
@@ -420,6 +432,17 @@ export class Game {
         if (this.sfx) this.sfx.hit();
       }
       this.hitSparks.push({ x: sparkX, y: sparkY, life: 0.4, color, text });
+      
+      // Add visual particles
+      if (window.effects) {
+        if (typeof window.effects.addHitParticles === 'function') {
+          window.effects.addHitParticles(sparkX, sparkY, color);
+        }
+        if (typeof window.effects.addLashEffect === 'function') {
+          window.effects.addLashEffect(sparkX, sparkY, color);
+        }
+      }
+      
       this._logEvent(logText, color, atkSide);
       this._injectVoiceContext(
         defender,
@@ -575,7 +598,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     // Outer glow (Deepgram brand teal)
     ctx.globalAlpha = 0.3;
     const glow = ctx.createRadialGradient(proj.x, proj.y, 0, proj.x, proj.y, radius * 2.5);
-    glow.addColorStop(0, DG.primary);
+    glow.addColorStop(0, DG.primary || '#00ff9d');
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
@@ -586,8 +609,8 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     ctx.globalAlpha = 0.9;
     const core = ctx.createRadialGradient(proj.x, proj.y, 0, proj.x, proj.y, radius);
     core.addColorStop(0, '#ffffff');
-    core.addColorStop(0.35, DG.gradStart);
-    core.addColorStop(1, DG.gradEnd);
+    core.addColorStop(0.35, DG.gradStart || '#00ff9d');
+    core.addColorStop(1, DG.gradEnd || '#ff00ff');
     ctx.fillStyle = core;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, radius, 0, Math.PI * 2);
@@ -598,7 +621,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     const trailDir = proj.vx > 0 ? -1 : 1;
     ctx.globalAlpha = 0.25;
     const trail = ctx.createLinearGradient(proj.x, proj.y, proj.x + trailDir * trailLen, proj.y);
-    trail.addColorStop(0, DG.primary);
+    trail.addColorStop(0, DG.primary || '#00ff9d');
     trail.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = trail;
     ctx.fillRect(
@@ -611,19 +634,90 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     ctx.restore();
   }
 
-  // ─────────────────────────────────────────
-  // Drawing
-  // ─────────────────────────────────────────
+  _drawBackground(ctx, w, h) {
+    // Fill base black
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, w, h);
+
+    // Try to draw opponent's cover image as a dimmed background
+    const bgImg = this.p2.headerImage || this.p2.headImage;
+    if (bgImg && bgImg.complete) {
+      // Subtle pulse based on time
+      const pulse = 0.15 + Math.sin(performance.now() / 2000) * 0.05;
+      ctx.globalAlpha = pulse;
+      
+      const scale = Math.max(w / bgImg.width, h / bgImg.height);
+      const iw = bgImg.width * scale;
+      const ih = bgImg.height * scale;
+      ctx.drawImage(bgImg, (w - iw) / 2, (h - ih) / 2, iw, ih);
+      ctx.globalAlpha = 1;
+    }
+
+    // Add a dark vignette
+    const grad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w/2);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.9)'); // Darker vignette for focus
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // Add glowing arena scanline effect
+    ctx.strokeStyle = 'rgba(0, 255, 157, 0.05)';
+    ctx.lineWidth = 1;
+    const timeOffset = (performance.now() / 50) % 40;
+    for (let y = 0; y < h; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y + timeOffset);
+      ctx.lineTo(w, y + timeOffset);
+      ctx.stroke();
+    }
+  }
+
+  _drawIntroStats(ctx) {
+    const w = this.logicalW;
+    const h = this.logicalH;
+    
+    ctx.save();
+    ctx.font = 'bold 32px system-ui';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Draw P2 Stats (Opponent)
+    if (this.p2.tokenData) {
+      const td = this.p2.tokenData;
+      ctx.fillStyle = DG.secondary || '#ff00ff';
+      ctx.fillText(`VS ${td.name || td.symbol}`, w / 2, h / 2 - 100);
+      
+      ctx.font = '20px monospace';
+      ctx.fillStyle = '#fff';
+      const stats = [
+        `PRICE CHG: ${td.priceChangeH24 ? td.priceChangeH24.toFixed(2) + '%' : '??%'}`,
+        `VOLUME: $${td.volumeH24 ? (td.volumeH24 / 1000).toFixed(1) + 'K' : '??'}`,
+        `LIQUIDITY: $${td.liquidity ? (td.liquidity / 1000).toFixed(1) + 'K' : '??'}`
+      ];
+      ctx.font = 'bold 24px monospace';
+      stats.forEach((s, i) => {
+        const color = s.includes('-') ? '#ff4444' : '#00ff9d';
+        ctx.fillStyle = s.includes(':') ? '#fff' : color;
+        ctx.fillText(s, w / 2, h / 2 - 20 + i * 40);
+      });
+    }
+    ctx.restore();
+  }
   _draw() {
     const { ctx, canvas, dpr } = this;
 
     // Clear at physical resolution, then scale to CSS pixels
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = DG.bg;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Draw Dynamic Token Background
+    this._drawBackground(ctx, canvas.width, canvas.height);
 
     // Scale context so all drawing is in CSS pixel space
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    if (this.waitingForIntro) {
+      this._drawIntroStats(ctx);
+    }
 
     const w = this.logicalW;
     const h = this.logicalH;
@@ -636,8 +730,8 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       this.stageRight,
       0,
     );
-    floorGrad.addColorStop(0, DG.gradStart);
-    floorGrad.addColorStop(1, DG.gradEnd);
+    floorGrad.addColorStop(0, DG.gradStart || '#00ff9d');
+    floorGrad.addColorStop(1, DG.gradEnd || '#ff00ff');
     ctx.strokeStyle = floorGrad;
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.4;
@@ -647,16 +741,49 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     ctx.stroke();
     ctx.globalAlpha = 1;
 
-    // Stage boundary markers
-    ctx.strokeStyle = DG.border;
-    ctx.setLineDash([4, 4]);
+    // Neon Ropes (Phase 3)
+    ctx.save();
+    ctx.lineWidth = 4;
+    ctx.shadowBlur = 15;
+    
+    // Left Rope
+    ctx.strokeStyle = DG.primary;
+    ctx.shadowColor = DG.primary;
+    ctx.globalAlpha = 0.6 + Math.sin(performance.now() / 100) * 0.2;
     ctx.beginPath();
-    ctx.moveTo(this.stageLeft, floorY - 200);
+    ctx.moveTo(this.stageLeft, floorY - 300);
     ctx.lineTo(this.stageLeft, floorY);
-    ctx.moveTo(this.stageRight, floorY - 200);
+    ctx.stroke();
+
+    // Right Rope
+    ctx.strokeStyle = DG.secondary;
+    ctx.shadowColor = DG.secondary;
+    ctx.beginPath();
+    ctx.moveTo(this.stageRight, floorY - 300);
     ctx.lineTo(this.stageRight, floorY);
     ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Glowing Floor Grid (Phase 3)
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+    ctx.lineWidth = 1;
+    for (let i = -10; i <= 10; i++) {
+      const x = w/2 + i * 100;
+      ctx.beginPath();
+      ctx.moveTo(x, floorY);
+      ctx.lineTo(w/2 + i * 300, floorY + 150);
+      ctx.stroke();
+    }
+    for (let j = 0; j < 5; j++) {
+      const y = floorY + j * 30;
+      ctx.globalAlpha = 0.1 / (j + 1);
+      ctx.beginPath();
+      ctx.moveTo(this.stageLeft - 200, y);
+      ctx.lineTo(this.stageRight + 200, y);
+      ctx.stroke();
+    }
+    ctx.restore();
 
     // Fighters (with visual smoothing offsets for prediction corrections)
     const pm = this.predictionManager;
@@ -702,6 +829,11 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       }
 
       ctx.globalAlpha = 1;
+    }
+
+    // Effects (particles, coin rain, etc.)
+    if (window.effects) {
+      window.effects.updateAndDraw(ctx);
     }
 
     // HUD
@@ -786,8 +918,8 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
 
       // Gradient text effect
       const grad = ctx.createLinearGradient(w / 2 - 80, 0, w / 2 + 80, 0);
-      grad.addColorStop(0, DG.gradStart);
-      grad.addColorStop(1, DG.gradEnd);
+      grad.addColorStop(0, DG.gradStart || '#00ff9d');
+      grad.addColorStop(1, DG.gradEnd || '#ff00ff');
       ctx.fillStyle = grad;
       ctx.fillText("FIGHT!", w / 2, h / 2);
       ctx.restore();
@@ -813,8 +945,8 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     const p1Pct = this.p1.health / maxHealth;
     if (p1Pct > 0.25) {
       const g1 = ctx.createLinearGradient(p1BarX, 0, p1BarX + barW, 0);
-      g1.addColorStop(0, DG.gradStart);
-      g1.addColorStop(1, DG.gradEnd);
+      g1.addColorStop(0, DG.gradStart || '#00ff9d');
+      g1.addColorStop(1, DG.gradEnd || '#ff00ff');
       ctx.fillStyle = g1;
     } else {
       ctx.fillStyle = DG.danger;
@@ -831,8 +963,8 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     const p2Pct = this.p2.health / maxHealth;
     if (p2Pct > 0.25) {
       const g2 = ctx.createLinearGradient(p2BarX, 0, p2BarX + barW, 0);
-      g2.addColorStop(0, DG.gradEnd);
-      g2.addColorStop(1, DG.gradStart);
+      g2.addColorStop(0, DG.gradEnd || '#ff00ff');
+      g2.addColorStop(1, DG.gradStart || '#00ff9d');
       ctx.fillStyle = g2;
     } else {
       ctx.fillStyle = DG.danger;
@@ -871,25 +1003,24 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.font = "bold 48px monospace";
       ctx.textAlign = "center";
       let text = "TIME!";
-      let playerWins = false;
       if (this.p1.health <= 0 && this.p2.health <= 0) text = "DOUBLE KO!";
       else if (this.p1.health <= 0) text = "P2 WINS!";
-      else if (this.p2.health <= 0) { text = "P1 WINS!"; playerWins = true; }
-      else if (this.p1.health > this.p2.health) { text = "P1 WINS!"; playerWins = true; }
+      else if (this.p2.health <= 0) text = "P1 WINS!";
+      else if (this.p1.health > this.p2.health) text = "P1 WINS!";
       else if (this.p2.health > this.p1.health) text = "P2 WINS!";
       else text = "DRAW!";
 
-      // Victory capture for single-player meme mode (only once)
-      if (playerWins && window.captureVictory && this.p2 && this.p2.tokenData && !this.victoryCaptured) {
-        this.victoryCaptured = true;
-        window.lastOpponentSymbol = this.p2.tokenData.symbol || 'MEME';
-        window.captureVictory('P1');
+      // Premium Victory Overlay (Phase 3)
+      if (!this.victoryOverlayTriggered) {
+        this.victoryOverlayTriggered = true;
+        const winnerNum = (this.p1.health > this.p2.health) ? 1 : 2;
+        const winner = winnerNum === 1 ? this.p1 : this.p2;
+        if (window.showVictoryOverlay) {
+          window.showVictoryOverlay(winnerNum, winner.tokenData);
+        }
       }
 
       ctx.fillText(text, w / 2, this.logicalH / 2);
-
-      ctx.font = "18px monospace";
-      ctx.fillText("Press ENTER to restart", w / 2, this.logicalH / 2 + 40);
     }
   }
 

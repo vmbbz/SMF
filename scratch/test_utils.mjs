@@ -192,20 +192,7 @@ async function getTokenByMint(mint) {
 
 // Simple personality generator (we can make it smarter later)
 function generatePersonality(token) {
-  if (!token) {
-    return {
-      name: 'CHAD',
-      pitch: 1.0,
-      rate: 1.0,
-      taunts: [
-        "Stay humble, stay degen.",
-        "Victory is just another day at the office.",
-        "I didn't even use 1% of my power.",
-        "Moon soon. See you at the top."
-      ]
-    };
-  }
-  const vibe = (token.symbol || 'MEME').toLowerCase();
+  const vibe = token.symbol.toLowerCase();
   if (vibe.includes('pepe') || vibe.includes('frog')) {
     return { name: 'Cocky Frog Lord', pitch: 0.8, rate: 1.1, taunts: ['Ribbit your way to shadow realm!', 'My chart pumps harder than your kicks!'] };
   }
@@ -217,7 +204,7 @@ function generatePersonality(token) {
     pitch: 1.0, 
     rate: 1.0, 
     taunts: [
-      `You think you can beat ${token.symbol || 'me'}? My liquidity is thicker than your portfolio!`,
+      `You think you can beat ${token.symbol}? My liquidity is thicker than your portfolio!`,
       'PUMP IT OR DUMP IT — either way you\'re getting KO\'d!',
       `I just 100x\'d while you were loading this fight 😂`
     ]

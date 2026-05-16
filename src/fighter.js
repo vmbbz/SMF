@@ -95,7 +95,7 @@ export { HADOUKEN_DATA };
 // Fighter
 // ─────────────────────────────────────────────
 export class Fighter {
-  constructor(x, floorY, facing, color) {
+  constructor(x, floorY, facing, color, playerNum = 1) {
     // Position / physics
     this.x = x;
     this.y = floorY;
@@ -146,12 +146,12 @@ export class Fighter {
 
     // Per-frame events for SFX (consumed by Game each frame)
     this.events = new Set();
-
-    // Token data for meme integration
-    this.tokenData = null;        // {mint, symbol, name, logoURI}
+    this.neckOffset = 45; // Phase 3: Aggressive neck to ensure head clears all limb moves
+    this.headScale = playerNum === 1 ? 0.7 : 1.25; // Phase 3: P1 small, AI Boss big
+    this.tokenData = null;
     this.personality = null;
-    this.headImage = null;        // Image object for logo
-    this.headDrawn = false;       // Track if head has been drawn once
+    this.headImage = new Image();
+    this.headImage.src = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
   }
 
   get grounded() {
@@ -159,30 +159,41 @@ export class Fighter {
   }
 
   async loadTokenHead(tokenData) {
-    this.tokenData = tokenData;
-    this.personality = generatePersonality(tokenData);
+  this.tokenData = tokenData;
+  this.personality = generatePersonality(tokenData);
 
-    if (tokenData.logoURI) {
-      this.headImage = new Image();
-      this.headImage.crossOrigin = 'anonymous';
-      this.headImage.src = tokenData.logoURI;
-
-      this.headImage.onerror = (error) => {
-        this.headImage = null;
+  if (tokenData.logoURI) {
+    this.headImage = new Image();
+    this.headImage.crossOrigin = 'anonymous';
+    this.headImage.src = tokenData.logoURI;
+    
+    await new Promise(resolve => {
+      this.headImage.onload = () => resolve();
+      this.headImage.onerror = () => {
+        console.warn('Head image load failed, using SMF default');
+        this.headImage.src = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png'; // Solana logo fallback
+        resolve();
       };
-
-      await new Promise(resolve => {
-        this.headImage.onload = () => {
-          console.log('✅ TOKEN HEAD LOADED ONCE for', this.tokenData.symbol, 'naturalWidth:', this.headImage.naturalWidth, 'naturalHeight:', this.headImage.naturalHeight);
-          // FORCE REDRAW so the head appears immediately
-          if (window.game && typeof window.game.draw === 'function') {
-            window.game.draw();
-          }
-          resolve();
-        };
-      });
-    }
+    });
+  } else {
+    // Default SMF branding
+    this.headImage = new Image();
+    this.headImage.src = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
   }
+
+  if (tokenData.coverImage) {
+    this.headerImage = new Image();
+    this.headerImage.crossOrigin = 'anonymous';
+    this.headerImage.src = tokenData.coverImage;
+    await new Promise(resolve => {
+      this.headerImage.onload = () => resolve();
+      this.headerImage.onerror = () => {
+        this.headerImage = null; // fallback to black stage
+        resolve();
+      };
+    });
+  }
+}
 
   /** Serialize all simulation state to a plain object (server snapshot format). */
   toSnapshot() {
@@ -238,6 +249,26 @@ export class Fighter {
 
   get hurtboxRight() {
     return this.x + this.width / 2;
+  }
+
+
+  applyMarketStats(pairData) {
+    if (!pairData) return;
+    this.marketData = pairData;
+    
+    // Scale health by volume (m5)
+    const vol = pairData.volume?.m5 || 0;
+    const hpBoost = Math.min(1.5, 1 + vol / 100000);
+    this.healthMax = Math.floor(200 * hpBoost);
+    this.health = this.healthMax;
+    
+    // Scale speed by 24h price change
+    const change = pairData.priceChange?.h24 || 0;
+    const speedBoost = Math.min(1.3, 1 + Math.max(0, change) / 100);
+    this.walkSpeed = 4 * speedBoost;
+    this.dashSpeed = 12 * speedBoost;
+    
+    console.log(`📈 Market Scaling applied to ${this.tokenData?.symbol}: HP x${hpBoost.toFixed(2)}, Spd x${speedBoost.toFixed(2)}`);
   }
 
   update(dt, actions, justPressed, opponent, stageLeft, stageRight) {
@@ -738,7 +769,7 @@ export class Fighter {
 
     ctx.strokeStyle = this.color;
     ctx.fillStyle = this.color;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 1.5; // THINNER border for "sticker" look
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
@@ -752,6 +783,9 @@ export class Fighter {
 
     const f = this.facing;
     const skeleton = this._buildSkeleton();
+    const headX = skeleton.head[0];
+    const headY = skeleton.head[1];
+    const headRadius = 35 * this.scale * this.headScale; // Scaled per player type
 
     // Draw limbs (lines between joints)
     this._drawLimb(ctx, skeleton.footBack, skeleton.kneeBack);
@@ -765,40 +799,40 @@ export class Fighter {
     this._drawLimb(ctx, skeleton.elbowFront, skeleton.handFront);
 
     // === EPIC HEAD SWAP (perfect circular logo + neon glow) ===
-    // Check if head image exists and has token data
-    if (this.headImage && this.tokenData) {
-      if (!this.headDrawn) {
-        console.log('🎯 FIRST TIME DRAWING HEAD for', this.tokenData.symbol, 'headImage exists:', !!this.headImage, 'naturalWidth:', this.headImage.naturalWidth);
-        this.headDrawn = true;
-      }
+    if (this.headImage && this.headImage.complete) {
       ctx.save();
       // Circular clip + subtle border
       ctx.beginPath();
-      ctx.arc(this.headX, this.headY, this.headRadius + 4, 0, Math.PI * 2);
+      ctx.arc(headX, headY, headRadius + 4, 0, Math.PI * 2);
       ctx.strokeStyle = '#00ff9d';
-      ctx.lineWidth = 6;
+      ctx.lineWidth = 0.5 * this.scale; // Ultra thin border for premium look
       ctx.shadowColor = '#00ff9d';
-      ctx.shadowBlur = 20;
+      ctx.shadowBlur = 15 * this.scale;
       ctx.stroke();
+      
       // Clip to circular area
       ctx.beginPath();
-      ctx.arc(this.headX, this.headY, this.headRadius, 0, Math.PI * 2);
+      ctx.arc(headX, headY, headRadius, 0, Math.PI * 2);
       ctx.clip();
+      
       // Draw head image
       ctx.drawImage(this.headImage, 
-        this.headX - this.headRadius, 
-        this.headY - this.headRadius, 
-        this.headRadius * 2, 
-        this.headRadius * 2);
+        headX - headRadius, 
+        headY - headRadius, 
+        headRadius * 2, 
+        headRadius * 2);
       ctx.restore();
     } else {
       // fallback neon circle
       ctx.shadowColor = '#00ff9d';
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = 15 * this.scale;
       ctx.beginPath();
-      ctx.arc(this.headX, this.headY, this.headRadius, 0, Math.PI * 2);
+      ctx.arc(headX, headY, headRadius, 0, Math.PI * 2);
       ctx.fillStyle = '#111';
       ctx.fill();
+      ctx.strokeStyle = '#00ff9d';
+      ctx.lineWidth = 2 * this.scale;
+      ctx.stroke();
       ctx.shadowBlur = 0;
     }
 
@@ -965,7 +999,7 @@ export class Fighter {
     const shoulder = [0, -(legLen + thighLen + torsoLen) + breathe];
     const head = [
       0,
-      -(legLen + thighLen + torsoLen + headRadius + 2) + breathe,
+      -(legLen + thighLen + torsoLen + headRadius + 2 + this.neckOffset) + breathe,
     ];
     // Fighter stance — guard up
     const elbowFront = [f * 15, shoulder[1] + 12];
@@ -1000,7 +1034,7 @@ export class Fighter {
     const shoulder = [stride * 0.05, -(legLen + thighLen + torsoLen)];
     const head = [
       stride * 0.05,
-      -(legLen + thighLen + torsoLen + headRadius + 2),
+      -(legLen + thighLen + torsoLen + headRadius + 2 + this.neckOffset),
     ];
     // Arms swing opposite to legs
     const armSwing = -cycle * 8;
@@ -1039,7 +1073,7 @@ export class Fighter {
     const kneeFront = [f * 10, -totalLeg * tuck - legLen * 0.3];
     const hip = [0, -(legLen + thighLen * 0.3)];
     const shoulder = [f * 2, -(legLen + thighLen + torsoLen)];
-    const head = [f * 3, -(legLen + thighLen + torsoLen + headRadius + 2)];
+    const head = [f * 3, -(legLen + thighLen + torsoLen + headRadius + 2 + this.neckOffset)];
     // Arms up when rising, down when falling
     const armLift = airPhase === "rising" ? -15 : 8;
     const elbowFront = [f * 18, shoulder[1] + armLift];
@@ -1085,7 +1119,7 @@ export class Fighter {
     ];
     const head = [
       f * 3,
-      -(legLen + thighLen + torsoLen + headRadius + 2) + crouchDepth + 10,
+      -(legLen + thighLen + torsoLen + headRadius + 2 + this.neckOffset) + crouchDepth + 10,
     ];
     // Guard up while crouching
     const elbowFront = [f * 14, shoulder[1] + 8];
@@ -1173,7 +1207,7 @@ export class Fighter {
       kneeFront = [f * 8, -totalLeg * tuck - legLen * 0.3];
       hip = [0, -(legLen + thighLen * 0.3)];
       shoulder = [0, -(legLen + thighLen + torsoLen)];
-      head = [0, -(legLen + thighLen + torsoLen + 10 + 2)];
+      head = [0, -(legLen + thighLen + torsoLen + 10 + 2 + this.neckOffset)];
     } else {
       footBack = [-f * 10, 0];
       footFront = [f * 10, 0];

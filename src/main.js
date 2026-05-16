@@ -11,22 +11,11 @@ import { parseRoute } from './router.js';
 import { isAuthConfigured, login, logout, handleCallback, checkAuth, isLoggedIn, getUser, updateUsername } from './auth.js';
 import { PeerConnection, RemoteInputAdapter } from './webrtc.js';
 import { PredictionManager } from './prediction.js';
+import { generatePersonality } from './token-utils.js';
 
-// Safe guard for meme-first UI - prevents addEventListener errors when elements don't exist
-const safeListener = (id, event, handler) => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener(event, handler);
-};
-
-// === MEME UI SAFETY PATCH ===
-const safeAddEventListener = (selector, event, handler) => {
-  const el = document.getElementById(selector) || (screens && screens[selector]);
-  if (el) el.addEventListener(event, handler);
-};
+window.generatePersonality = generatePersonality;
 
 const canvas = document.getElementById('game');
-
-// Screen elements
 const screens = {
   landing: document.getElementById('landing'),
   multiplayer: document.getElementById('multiplayer-menu'),
@@ -38,6 +27,106 @@ const screens = {
   matchResults: document.getElementById('match-results'),
   characterSelect: document.getElementById('character-select'),
   onboarding: document.getElementById('onboarding'),
+};
+
+// Restored Name Extraction Engine (Commit 90323e43b1)
+function extractNameFromUrl(url) {
+  try {
+    const hostname = new URL(url).hostname;
+    const pathname = new URL(url).pathname;
+    const domain = hostname.replace('www.', '').replace('.com', '').replace('.io', '').replace('.xyz', '').replace('.fun', '').replace('.app', '').replace('.net', '').replace('.org', '');
+    const pathParts = pathname.split('/').filter(part => part.length > 0);
+    const pathName = pathParts[pathParts.length - 1];
+    const bestName = domain.length > 2 ? domain : pathName;
+    return bestName.charAt(0).toUpperCase() + bestName.slice(1);
+  } catch { return null; }
+}
+function extractNameFromTwitter(url) {
+  try {
+    const match = url.match(/x\.com\/([^\/\?]+)/);
+    if (match) {
+      const handle = match[1];
+      if (!/^\d+$/.test(handle)) return handle;
+    }
+    return null;
+  } catch { return null; }
+}
+function extractNameFromTelegram(url) {
+  try {
+    const match = url.match(/t\.me\/([^\/\?]+)/);
+    if (match) return match[1];
+    return null;
+  } catch { return null; }
+}
+
+async function enrichTokenData(mint) {
+  try {
+    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
+    const data = await res.json();
+    if (data.pairs && data.pairs.length > 0) {
+      const pair = data.pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
+      const info = pair.info || {};
+      
+      let name = pair.baseToken.name;
+      let symbol = pair.baseToken.symbol;
+      
+      // RESTORED: website -> twitter -> telegram priority
+      if (info.links && info.links.length > 0) {
+        const website = info.links.find(link => !link.type);
+        if (website && website.url) {
+          const websiteName = extractNameFromUrl(website.url);
+          if (websiteName && websiteName.length > 2) name = websiteName;
+        }
+        
+        if (name === symbol || !name) {
+          const twitter = info.links.find(link => link.type === 'twitter');
+          if (twitter && twitter.url) {
+            const twitterName = extractNameFromTwitter(twitter.url);
+            if (twitterName && twitterName.length > 2) name = twitterName;
+          }
+        }
+        
+        if (name === symbol || !name) {
+          const telegram = info.links.find(link => link.type === 'telegram');
+          if (telegram && telegram.url) {
+            const telegramName = extractNameFromTelegram(telegram.url);
+            if (telegramName && telegramName.length > 2) name = telegramName;
+          }
+        }
+      }
+      
+      return {
+        ...pair,
+        extractedName: name,
+        extractedSymbol: symbol
+      };
+    }
+  } catch (e) { console.error('Enrichment engine error:', e); }
+  return null;
+}
+window.enrichTokenData = enrichTokenData;
+
+// Global null-safe helpers for meme-first UI
+const safeAddEventListener = (id, event, handler) => {
+  const el = typeof id === 'string' ? (document.getElementById(id) || (screens && screens[id])) : id;
+  if (el && el.addEventListener) el.addEventListener(event, handler);
+};
+const safeListener = safeAddEventListener; // alias for compatibility
+
+const safeClass = (id, action, className) => {
+  const el = typeof id === 'string' ? (document.getElementById(id) || (screens && screens[id])) : id;
+  if (el && el.classList) el.classList[action](className);
+};
+
+const safeAction = (id, fn) => {
+  const el = typeof id === 'string' ? (document.getElementById(id) || (screens && screens[id])) : id;
+  if (el) fn(el);
+};
+
+const hideAllScreens = () => {
+  for (const el of Object.values(screens)) {
+    if (el && el.classList) el.classList.add('hidden');
+  }
 };
 
 // Hi-DPI setup
@@ -57,6 +146,20 @@ let p1ModeIdx = parseInt(localStorage.getItem('sf_p1Mode') || '0', 10);
 let p2ModeIdx = parseInt(localStorage.getItem('sf_p2Mode') || '0', 10);
 let p1ProviderIdx = parseInt(localStorage.getItem('sf_p1Provider') || '0', 10);
 let p2ProviderIdx = parseInt(localStorage.getItem('sf_p2Provider') || '0', 10);
+
+// Expose globally for index.html access
+window.setGameMode = (p1, p2) => {
+  if (p1 !== undefined) p1ModeIdx = p1;
+  if (p2 !== undefined) p2ModeIdx = p2;
+  saveModes();
+  updateModeSelection(1, p1ModeIdx, p1ProviderIdx);
+  updateModeSelection(2, p2ModeIdx, p2ProviderIdx);
+};
+window.setProviders = (p1, p2) => {
+  if (p1 !== undefined) p1ProviderIdx = p1;
+  if (p2 !== undefined) p2ProviderIdx = p2;
+  saveModes();
+};
 p1ModeIdx = Math.max(0, Math.min(p1ModeIdx, INPUT_MODES.length - 1));
 p2ModeIdx = Math.max(0, Math.min(p2ModeIdx, INPUT_MODES.length - 1));
 p1ProviderIdx = Math.max(0, Math.min(p1ProviderIdx, LLM_PROVIDERS.length - 1));
@@ -89,12 +192,12 @@ let peerConnection = null;
 
 /** Show a screen by name, hiding all others */
 function showScreen(name) {
-  for (const el of Object.values(screens)) {
-    if (el) el.classList.add('hidden');
-  }
-  canvas.classList.remove('active');
-  if (screens[name]) {
-    screens[name].classList.remove('hidden');
+  hideAllScreens();
+  if (canvas && canvas.classList) canvas.classList.remove('active');
+  
+  const targetScreen = screens[name];
+  if (targetScreen && targetScreen.classList) {
+    targetScreen.classList.remove('hidden');
   }
   state = name;
 
@@ -108,8 +211,7 @@ function showScreen(name) {
 
   // Auto-focus room code input when entering join screen
   if (name === 'joinRoom') {
-    const input = document.getElementById('room-code-input');
-    if (input) input.focus();
+    safeAction('room-code-input', el => el.focus());
   }
 }
 
@@ -172,9 +274,12 @@ function showLanding() {
 }
 
 async function startFight() {
+  await cleanupAdapters(); // Ensure fresh start
   state = 'fighting';
-  if (screens.onboarding) screens.onboarding.classList.add('hidden');
-  canvas.classList.add('active');
+  if (screens.onboarding && screens.onboarding.classList) {
+    screens.onboarding.classList.add('hidden');
+  }
+  if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
 
   // Create inputs based on mode selection
@@ -209,31 +314,58 @@ async function startFight() {
 
 // Global helper to load opponent into the current fight
 window.loadOpponent = async function(token) {
-  // Ensure game exists and has fighters
-  if (!game || !game.player || !game.opponent) {
-    console.error('Game not initialized or fighters not available');
-    return;
+  // 1. Ensure P2 is in LLM or Simulated mode for the AI to work
+  if (p2ModeIdx === 0) { // If Keyboard, switch to Simulated
+    window.setGameMode(undefined, 3); // 3 = Simulated
+  }
+
+  // 2. Start fight if not already fighting (creates the game object)
+  if (state !== 'fighting' || !game) {
+    await startFight();
   }
   
-  const opponent = game.opponent;
+  // 3. Wait for game and p2 to be fully initialized
+  let attempts = 0;
+  while ((!game || !game.p2) && attempts < 50) {
+    await new Promise(r => setTimeout(r, 50));
+    attempts++;
+  }
+
+  if (!game || !game.p2) {
+    console.error('Game initialization failed');
+    return;
+  }
+
+  const opponent = game.p2;
+  // Phase 3: Data Enrichment
+  try {
+    const pairData = await enrichTokenData(token.mint);
+    if (pairData) {
+      opponent.applyMarketStats(pairData);
+      // Enrich token object with market data for UI
+      token.name = pairData.extractedName || token.name;
+      token.symbol = pairData.extractedSymbol || token.symbol;
+      token.priceChangeH24 = pairData.priceChange?.h24;
+      token.volumeH24 = pairData.volume?.h24;
+      token.liquidity = pairData.liquidity?.usd;
+    }
+  } catch (e) {
+    console.error('Enrichment failed', e);
+  }
+
+  await opponent.loadTokenHead(token);
   
-  // Import generatePersonality from token-utils
-  const { generatePersonality } = await import('./src/token-utils.js');
-  
-  await opponent.loadTokenHead(token); // method we added
-  
-  // Optional: speak first taunt
-  if (opponent.personality && opponent.personality.taunts && opponent.personality.taunts.length > 0) {
+  // 4. Personality taunt
+  if (opponent.personality?.taunts?.length > 0) {
     const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
     utterance.pitch = opponent.personality.pitch || 1.0;
     utterance.rate = opponent.personality.rate || 1.0;
     speechSynthesis.speak(utterance);
   }
   
-  // Start fight if not already fighting
-  if (state !== 'fighting') {
-    startFight(); // original function
-  }
+  // 5. Hide panel
+  safeClass('meme-panel', 'add', 'hidden');
+  console.log('✅ Opponent loaded and fight started:', token.symbol);
 }
 
 // ─────────────────────────────────────────────
@@ -616,8 +748,8 @@ function startWaitingInArena(deadline) {
   const myNum = parseInt(localStorage.getItem('sf_playerNum') || '1', 10);
   state = 'waitingInArena';
 
-  for (const el of Object.values(screens)) if (el) el.classList.add('hidden');
-  canvas.classList.add('active');
+  hideAllScreens();
+  if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
 
   waitingArenaDeadline = deadline;
@@ -634,7 +766,7 @@ function startWaitingInArena(deadline) {
   const myX = myNum === 1 ? stageLeft + startOffset : stageRight - startOffset;
   const myFacing = myNum === 1 ? 1 : -1;
   const myColor = myNum === 1 ? DG.primary : DG.secondary;
-  const waitingFighter = new Fighter(myX, floorY, myFacing, myColor);
+  const waitingFighter = new Fighter(myX, floorY, myFacing, myColor, myNum);
 
   function drawFrame() {
     if (state !== 'waitingInArena') return;
@@ -755,8 +887,8 @@ function startMultiplayerFight(_roomData) {
   const playerId = localStorage.getItem('sf_playerId');
 
   state = 'fighting';
-  for (const el of Object.values(screens)) if (el) el.classList.add('hidden');
-  canvas.classList.add('active');
+  hideAllScreens();
+  if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
 
   // Create input for local player based on room controller selection
@@ -890,24 +1022,28 @@ async function handleMultiplayerRoundOver(msg) {
   const playerId = localStorage.getItem('sf_playerId');
 
   // Determine result text
-  const winnerEl = document.getElementById('results-winner');
-  winnerEl.classList.remove('p1-wins', 'p2-wins', 'draw');
+  safeClass('results-winner', 'remove', 'p1-wins');
+  safeClass('results-winner', 'remove', 'p2-wins');
+  safeClass('results-winner', 'remove', 'draw');
 
-  if (msg.winner === null || msg.winner === undefined) {
-    winnerEl.textContent = 'DRAW!';
-    winnerEl.classList.add('draw');
-  } else if (msg.winner === myNum) {
-    winnerEl.textContent = 'YOU WIN!';
-    winnerEl.classList.add(myNum === 1 ? 'p1-wins' : 'p2-wins');
-    // Track opponent symbol for victory capture
-    window.lastOpponentSymbol = game && game.p2 && game.p2.tokenData ? game.p2.tokenData.symbol : 'MEME';
-    // Call our new victory function
-    if (window.captureVictory) {
-      await window.captureVictory('player');
+  const winnerEl = document.getElementById('results-winner');
+  if (winnerEl) {
+    if (msg.winner === null || msg.winner === undefined) {
+      winnerEl.textContent = 'DRAW!';
+      winnerEl.classList.add('draw');
+    } else if (msg.winner === myNum) {
+      winnerEl.textContent = 'YOU WIN!';
+      winnerEl.classList.add(myNum === 1 ? 'p1-wins' : 'p2-wins');
+      // Track opponent symbol for victory capture
+      window.lastOpponentSymbol = game && game.p2 && game.p2.tokenData ? game.p2.tokenData.symbol : 'MEME';
+      // Call our new victory function
+      if (window.captureVictory) {
+        await window.captureVictory('player');
+      }
+    } else {
+      winnerEl.textContent = 'YOU LOSE';
+      winnerEl.classList.add(msg.winner === 1 ? 'p1-wins' : 'p2-wins');
     }
-  } else {
-    winnerEl.textContent = 'YOU LOSE';
-    winnerEl.classList.add(msg.winner === 1 ? 'p1-wins' : 'p2-wins');
   }
 
   // Show reason for forfeit
@@ -1304,8 +1440,8 @@ safeListener('btn-mm-play-wait', 'click', () => {
   mmWaitingGame = true;
   // Start a SIM fight — keys for P1, simulated for P2
   state = 'fighting';
-  for (const el of Object.values(screens)) if (el) el.classList.add('hidden');
-  canvas.classList.add('active');
+  hideAllScreens();
+  if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
 
   const simInput1 = createInput(1, 0, 0); // Keys
@@ -1392,8 +1528,10 @@ async function startCharacterFight() {
   if (!char) return;
 
   state = 'fighting';
-  if (screens.characterSelect) screens.characterSelect.classList.add('hidden');
-  canvas.classList.add('active');
+  if (screens.characterSelect && screens.characterSelect.classList) {
+    screens.characterSelect.classList.add('hidden');
+  }
+  if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
 
   // P1 uses keyboard, P2 is the selected LLM character
@@ -1945,3 +2083,62 @@ initAuth().then(handledRoute => {
 
 // Expose startFight globally for meme mode
 window.startFight = startFight;
+
+// ─────────────────────────────────────────────
+// Premium Victory & Social (Phase 3)
+// ─────────────────────────────────────────────
+
+window.showVictoryOverlay = function(winnerNum, token) {
+  const overlay = document.getElementById('victory-overlay');
+  const winText = document.getElementById('victory-text');
+  const winName = document.getElementById('winner-name');
+  const winLogo = document.getElementById('winner-logo');
+  const winCatch = document.getElementById('winner-catchphrase');
+  const buyBtn = document.getElementById('btn-buy-token');
+
+  if (!overlay) return;
+
+  const isPlayer = winnerNum === 1;
+  winText.textContent = isPlayer ? 'YOU WIN!' : 'K.O.';
+  winText.style.color = isPlayer ? 'var(--neon-blue)' : 'var(--neon-pink)';
+
+  if (token) {
+    winName.textContent = (token.symbol || token.name || 'DEGEN').toUpperCase();
+    if (winLogo) winLogo.src = token.logoURI || '';
+    
+    // Catchphrase from personality
+    const personality = window.generatePersonality ? window.generatePersonality(token) : null;
+    if (winCatch && personality) {
+      const phrase = personality.taunts[Math.floor(Math.random() * personality.taunts.length)];
+      winCatch.textContent = `"${phrase}"`;
+    }
+
+    // Buy CTA
+    if (buyBtn) {
+      buyBtn.style.display = 'block';
+      buyBtn.textContent = `BUY $${token.symbol} 🛒`;
+      buyBtn.onclick = () => window.open(token.url || `https://dexscreener.com/solana/${token.mint}`, '_blank');
+    }
+  } else {
+    winName.textContent = isPlayer ? 'CHAD' : 'BOT';
+    if (buyBtn) buyBtn.style.display = 'none';
+  }
+
+  overlay.classList.remove('hidden');
+  overlay.style.display = 'flex';
+  
+  if (window.effects) window.effects.addCoinRain();
+};
+
+window.shareVictory = function() {
+  const symbol = window.lastOpponentSymbol || 'MEME';
+  const text = `I just SMASHED $${symbol} in the $SMF Stick Fight Arena! 🥊🔥\n\nWho's next? Play at ${window.location.origin}\n\n#Solana #MemeFighter #SMF`;
+  const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+  window.open(url, '_blank');
+};
+
+window.showMultiplayer = function() {
+  const overlay = document.getElementById('victory-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  showScreen('multiplayer');
+};

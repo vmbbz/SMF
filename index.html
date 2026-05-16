@@ -9,78 +9,171 @@
     :root { 
       --neon-green: #00ff9d; 
       --neon-pink: #ff00ff;
-      --dg-grad-start: #00ff9d;
-      --dg-grad-end: #ff00ff;
-      --dg-primary: #fff;
-      --dg-secondary: #ccc;
-      --dg-almost-blk: #111;
-      --dg-bg: #000;
-      --dg-charcoal: #222;
-      --dg-border: #333;
-      --dg-pebble: #444;
-      --dg-slate: #555;
-      --dg-text: #fff;
-      --dg-danger: #ff0000;
+      --neon-blue: #00d4ff;
+      
+      /* DG System Mapping */
+      --dg-bg: #050505;
+      --dg-grad-start: var(--neon-green);
+      --dg-grad-end: var(--neon-pink);
+      --dg-primary: var(--neon-green);
+      --dg-secondary: var(--neon-pink);
+      --dg-border: var(--neon-blue);
+      --dg-text: #ffffff;
+      --dg-charcoal: #111;
+      --dg-pebble: #222;
+      --dg-slate: #888;
+      --dg-almost-blk: #000;
+      --dg-danger: #ff4444;
+
+      --glass-bg: rgba(10, 10, 15, 0.85);
+      --glass-border: rgba(255, 255, 255, 0.1);
     }
     * { margin:0; padding:0; box-sizing:border-box; }
     body {
-      background: #000;
+      background: var(--dg-bg);
       font-family: 'Press Start 2P', system-ui;
       color: #fff;
       overflow: hidden;
       height: 100vh;
       position: relative;
     }
-    #game { width: 100vw; height: 100vh; display: block; image-rendering: pixelated; }
     
-    /* HIDE ORIGINAL DEEPGRAM SCREENS */
-    #onboarding, #leaderboard, #match-results, .mode-select, .character-select { display: none !important; }
+    #game-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      background: url('assets/smf-bg.jpg') no-repeat center center;
+      background-size: cover;
+    }
     
-    /* MEME PANEL */
-    #meme-panel {
+    #game { 
+      width: 100%; 
+      height: 100%; 
+      display: block; 
+      image-rendering: pixelated;
+      background: rgba(0,0,0,0.3);
+    }
+    
+    /* UNIFIED NAVIGATION & SCREENS */
+    .screen {
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      background: rgba(10,10,10,0.95);
-      border: 3px solid #fff;
-      border-radius: 20px;
-      padding: 25px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      border-radius: 24px;
+      padding: 40px;
       z-index: 1000;
-      max-width: 400px;
+      max-width: 450px;
       width: 90%;
       text-align: center;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 20px rgba(0,255,157,0.1);
+      transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
-    h1 { font-size: 24px; margin-bottom: 20px; color: #fff; text-shadow: 0 0 15px var(--neon-pink); }
-    button {
-      background: rgba(255,255,255,0.1);
+    
+    .screen.hidden {
+      display: none !important;
+      opacity: 0;
+      transform: translate(-50%, -40%) scale(0.9);
+    }
+    
+    .premium-btn {
+      background: linear-gradient(135deg, rgba(255,255,255,0.1), rgba(255,255,255,0.05));
       color: #fff;
-      border: 2px solid rgba(255,255,255,0.3);
-      padding: 18px 24px;
-      margin: 12px 0;
-      font-size: 16px;
+      border: 1px solid rgba(255,255,255,0.2);
+      padding: 20px;
+      margin: 10px 0;
+      font-size: 14px;
       width: 100%;
-      border-radius: 15px;
+      border-radius: 16px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 1px;
       transition: all 0.3s;
-      backdrop-filter: blur(10px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
     }
-    button:hover {
-      background: rgba(255,255,255,0.2);
-      border-color: rgba(255,255,255,0.5);
-      transform: translateY(-2px);
+    
+    .premium-btn:hover {
+      background: linear-gradient(135deg, var(--neon-green), var(--neon-blue));
+      border-color: transparent;
+      color: #000;
+      transform: translateY(-3px) scale(1.02);
+      box-shadow: 0 10px 20px rgba(0,255,157,0.3);
     }
+    
+    .premium-btn.pink:hover {
+      background: linear-gradient(135deg, var(--neon-pink), #ff0055);
+      box-shadow: 0 10px 20px rgba(255,0,255,0.3);
+    }
+    
     input {
       width: 100%;
-      padding: 16px;
-      margin: 12px 0;
-      background: #111;
-      border: 2px solid var(--neon-green);
-      color: #fff;
-      font-size: 15px;
-      border-radius: 12px;
+      padding: 18px;
+      margin: 15px 0;
+      background: rgba(0,0,0,0.5);
+      border: 1px solid var(--glass-border);
+      color: var(--neon-green);
+      font-size: 14px;
+      border-radius: 14px;
+      outline: none;
+      font-family: inherit;
     }
-    #status { margin-top: 15px; font-size: 13px; min-height: 22px; color: var(--neon-green); }
+    
+    input:focus {
+      border-color: var(--neon-green);
+      box-shadow: 0 0 15px rgba(0,255,157,0.2);
+    }
+    
+    #victory-overlay {
+      background: radial-gradient(circle, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.95) 100%);
+      backdrop-filter: blur(12px);
+      z-index: 2000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .ko-text {
+      font-size: 110px;
+      font-weight: 900;
+      font-style: italic;
+      color: var(--neon-pink);
+      text-shadow: 0 0 40px var(--neon-pink), 0 0 10px #fff;
+      margin-top: -50px;
+      margin-bottom: 20px;
+      letter-spacing: -5px;
+      animation: punchIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    #victory-token-info {
+      display: flex;
+      align-items: center;
+      gap: 30px;
+      background: rgba(255,255,255,0.03);
+      padding: 40px;
+      border-radius: 30px;
+      border: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 40px;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+    }
+    
+    @keyframes punchIn {
+      0% { transform: scale(3); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    
+    #status { height: 20px; font-size: 11px; margin-top: 10px; color: var(--neon-blue); }
+    
+    /* Original screens - ensure they fit theme */
+    #multiplayer-menu, #character-select, #join-room, #room-lobby, #match-results, #leaderboard, #onboarding {
+      display: block; /* reset display:none */
+    }
     
     /* Mobile controls */
     #mobile-controls {
@@ -108,19 +201,43 @@
   </style>
 </head>
 <body>
-  <canvas id="game"></canvas>
+  <div id="game-container">
+    <canvas id="game"></canvas>
+  </div>
 
-  <!-- MEME PANEL -->
-  <div id="meme-panel">
-    <div style="text-align:center;margin-bottom:25px;">
-      <img src="assets/smf-logo.png" alt="$SMF" style="height:60px;margin-bottom:10px;">
-      <div style="font-size:28px;color:#fff;font-weight:bold;">STICK|LASH</div>
+  <!-- MEME PANEL (Main Menu) -->
+  <div id="meme-panel" class="screen">
+    <div style="text-align:center;margin-bottom:30px;">
+      <img src="assets/smf-logo.png" alt="$SMF" style="height:80px;margin-bottom:15px;filter: drop-shadow(0 0 10px var(--neon-green));">
+      <div style="font-size:24px;color:#fff;font-weight:bold;letter-spacing:2px;text-shadow: 0 0 10px var(--neon-pink);">STICK|LASH</div>
     </div>
-    <button onclick="startTrendingMode()">TRENDING ARENA 🔥</button>
-    <button onclick="startEndlessMode()">ENDLESS PUMP STREAM</button>
-    <input id="mint-input" placeholder="PASTE $TOKEN MINT">
-    <button onclick="startCustomFight()">1v1 THIS TOKEN</button>
+    <button class="premium-btn" onclick="startTrendingMode()">TRENDING ARENA 🔥</button>
+    <button class="premium-btn" onclick="startEndlessMode()">ENDLESS PUMP STREAM</button>
+    <div style="display:flex;gap:10px;margin:10px 0;">
+      <input id="mint-input" placeholder="TOKEN MINT..." style="margin:0;flex:1;">
+      <button class="premium-btn" onclick="startCustomFight()" style="width:auto;margin:0;padding:10px 20px;">FIGHT</button>
+    </div>
+    <button class="premium-btn pink" onclick="showMultiplayer()">MULTIPLAYER 🌐</button>
     <div id="status"></div>
+  </div>
+
+  <!-- VICTORY OVERLAY -->
+  <div id="victory-overlay" class="screen hidden">
+    <div id="victory-text" class="ko-text">YOU WIN!</div>
+    
+    <div id="victory-token-info">
+      <img id="winner-logo" src="" style="width:140px;height:140px;border-radius:50%;border:4px solid var(--neon-green);box-shadow:0 0 30px var(--neon-green);">
+      <div style="text-align: left;">
+        <div id="winner-name" style="font-size:42px;font-weight:900;color:#fff;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;">PLAYER</div>
+        <div id="winner-catchphrase" style="font-style:italic;color:var(--neon-blue);font-size:22px;max-width:400px;line-height:1.2;text-shadow:0 0 10px var(--neon-blue);"></div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:15px;">
+      <button id="btn-buy-token" class="premium-btn" style="background:var(--neon-blue);color:#000;min-width:180px;font-weight:900;">BUY $TICKER 🛒</button>
+      <button class="premium-btn pink" onclick="shareVictory()" style="min-width:180px;">SHARE TO X 🚀</button>
+      <button class="premium-btn" onclick="location.reload()" style="background:#333;min-width:180px;">REMATCH 🥊</button>
+    </div>
   </div>
 
   <div id="mobile-controls">
@@ -147,17 +264,32 @@
 
     // ================== MAIN MEME FUNCTIONS ==================
     window.startTrendingMode = async () => {
-      const status = document.getElementById('status');
-      status.innerHTML = 'Loading trending tokens...';
+    const status = document.getElementById('status');
+    if (status) status.innerHTML = 'Fetching trending tokens...';
+    
+    try {
+      const { getTrendingTokens } = await import('./src/token-utils.js');
       const tokens = await getTrendingTokens(8);
-      if (tokens.length === 0) {
-        status.innerHTML = 'No tokens matched filter — check console for raw data';
-        return;
-      }
-      const token = tokens[Math.floor(Math.random() * tokens.length)];
-      status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
-      await loadOpponent(token);
-    };
+      if (!tokens || tokens.length === 0) throw new Error('No tokens found');
+      
+      const randomToken = tokens[Math.floor(Math.random() * tokens.length)];
+      if (status) status.innerHTML = `Fighting <strong>$${randomToken.symbol}</strong>!`;
+      
+      // Use unified global setter from main.js
+      if (window.setGameMode) window.setGameMode(undefined, 4); // LLM Mode
+      
+      await window.loadOpponent(randomToken);
+    } catch (err) {
+      console.error('Trending mode failed:', err);
+      if (status) status.innerHTML = 'Failed to load tokens.';
+    } finally {
+      // FORCE HIDE panel to unblock game
+      const memePanel = document.getElementById('meme-panel');
+      if (memePanel) memePanel.classList.add('hidden');
+      const canvas = document.getElementById('game');
+      if (canvas) canvas.classList.add('active');
+    }
+  };
 
     window.startEndlessMode = async () => {
       const status = document.getElementById('status');
@@ -185,83 +317,7 @@
     };
 
     // ================== CORE FIGHT STARTER ==================
-    async function loadOpponent(token) {
-      const status = document.getElementById('status');
-      status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
-
-      console.log('%c🔥 Starting fight vs', token.symbol, token);
-
-      // ←←← THIS IS THE MISSING PIECE
-      if (typeof startFight === 'function') {
-        startFight();                    // creates window.game
-      } else if (typeof window.startFight === 'function') {
-        window.startFight();
-      }
-
-      // Now wait for the game object and player 2 (opponent)
-      let attempts = 0;
-      while (attempts < 120) {
-        if (window.game && window.game.p2) {
-          console.log('✅ Game and player 2 ready after', attempts, 'attempts');
-          break;
-        }
-        await new Promise(r => setTimeout(r, 50));
-        attempts++;
-      }
-
-      if (!window.game || !window.game.p2) {
-        status.innerHTML = 'Game not ready — refresh page';
-        console.error('❌ Game object still not ready after', attempts, 'attempts');
-        console.log('window.game exists:', !!window.game);
-        console.log('window.game.p2 exists:', !!(window.game && window.game.p2));
-        return;
-      }
-
-      const opponent = window.game.p2;
-      await opponent.loadTokenHead(token);
-
-      // HIDE MEME PANEL
-      const memePanel = document.getElementById('meme-panel');
-      if (memePanel) memePanel.style.display = 'none';
-
-      status.innerHTML = `FIGHTING ${token.symbol} — GO!`;
-      console.log('%c🚀 FIGHT STARTED vs ' + token.symbol, 'color:#ff00ff;font-weight:bold');
-
-      // Market sauce
-      let volumeBoost = 1;
-      try {
-        const res = await fetch(`https://api.dexscreener.com/latest/dex/pairs/solana/${token.mint}`);
-        const data = await res.json();
-        volumeBoost = Math.min(2, 1 + (data.pairs?.[0]?.volume?.m5 || 0) / 500000);
-      } catch(e) {}
-
-      if (opponent.healthMax) opponent.healthMax = Math.floor(opponent.healthMax * volumeBoost);
-      if (opponent.health) opponent.health = Math.floor(opponent.health * volumeBoost);
-      opponent.speed = (opponent.speed || 1) * volumeBoost;
-
-      // Personality TTS
-      if (opponent.personality && opponent.personality.taunts && opponent.personality.taunts.length > 0) {
-        const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
-        utterance.pitch = opponent.personality.pitch || 1;
-        utterance.rate = opponent.personality.rate || 1;
-        speechSynthesis.speak(utterance);
-      }
-
-      // Force start the fight (multiple fallbacks)
-      console.log('%c🚀 Forcing fight start vs $' + token.symbol, 'color:#ff00ff;font-weight:bold');
-
-      if (window.game && typeof window.game.start === 'function') {
-        window.game.start();
-      } else if (typeof startFight === 'function') {
-        startFight();
-      } else if (typeof window.startFight === 'function') {
-        window.startFight();
-      }
-
-      status.innerHTML = `FIGHTING <strong>$${token.symbol}</strong> — GO!`;
-    }
-
-    window.loadOpponent = loadOpponent;   // make it global
+    // loadOpponent is now handled by main.js
 
     window.sendAction = (action) => {
       if (window.inputManager && typeof window.inputManager.handleAction === 'function') {
@@ -279,9 +335,33 @@
   </script>
 
   <!-- ORIGINAL GAME FILES -->
+  <script type="module" src="./src/effects.js"></script>
   <script type="module" src="./src/fighter.js"></script>
   <script type="module" src="./src/game.js"></script>
-  <script type="module" src="/src/main.js"></script>
+  <script type="module" src="./src/main.js"></script>
+
+  <!-- Local Mock for Static Server AI -->
+  <script>
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      if (args[0] === '/api/llm/command') {
+        console.log('[Mock] Intercepted AI command request');
+        const fallbackCommands = [
+          'forward', 'back', 'jump', 'light punch', 'heavy punch', 
+          'dash forward', 'hadouken', 'crouch', 'medium kick'
+        ];
+        const plan = [];
+        for (let i = 0; i < 5; i++) {
+          plan.push(fallbackCommands[Math.floor(Math.random() * fallbackCommands.length)]);
+        }
+        return new Response(JSON.stringify({ plan, fallback: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      return originalFetch(...args);
+    };
+  </script>
 
 <!-- html2canvas for screenshot capture -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -289,34 +369,56 @@
 <script>
 window.captureVictory = async (winner) => {
   const status = document.getElementById('status');
-  status.innerHTML = `${winner} WINS! Capturing...`;
+  status.innerHTML = `${winner} WINS!`;
 
-  // Capture the canvas directly (avoids font CORS issues)
+  // Show the premium victory overlay
+  const overlay = document.getElementById('victory-overlay');
+  const winnerName = document.getElementById('winner-name');
+  const winnerLogo = document.getElementById('winner-logo');
+  
+  if (winner === 'P1') {
+    winnerName.textContent = 'YOU ABSOLUTELY SMASHED IT!';
+    winnerLogo.src = 'assets/smf-logo.png';
+    winnerLogo.style.borderColor = 'var(--neon-green)';
+    winnerLogo.style.boxShadow = '0 0 30px var(--neon-green)';
+  } else {
+    winnerName.textContent = `$${window.lastOpponentSymbol || 'MEME'} WHOOPED YOU!`;
+    // use opponent logo if available
+    if (window.lastOpponentLogo) winnerLogo.src = window.lastOpponentLogo;
+    winnerLogo.style.borderColor = 'var(--neon-pink)';
+    winnerLogo.style.boxShadow = '0 0 30px var(--neon-pink)';
+    
+    // Show BUY link for the opponent
+    const buyBtn = document.getElementById('btn-buy-token');
+    if (buyBtn && window.lastOpponentMint) {
+      buyBtn.style.display = 'flex';
+      buyBtn.textContent = `BUY $${window.lastOpponentSymbol || 'MEME'} 🛒`;
+      buyBtn.onclick = () => window.open(`https://dexscreener.com/solana/${window.lastOpponentMint}`, '_blank');
+    }
+  }
+  
+  overlay.classList.remove('hidden');
+
+  // Trigger coin rain
+  if (window.effects) window.effects.addCoinRain();
+};
+
+window.shareVictory = async () => {
   const canvas = document.getElementById('game');
   
-  // Create a temporary canvas to copy the game canvas
-  const tempCanvas = document.createElement('canvas');
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCanvas.width = canvas.width * 2;
-  tempCanvas.height = canvas.height * 2;
+  // Custom text based on win/loss
+  const symbol = window.lastOpponentSymbol || 'MEME';
+  const text = `🥋 I just BATTLED $${symbol} in @StickLash! Solana's most viral fighting game. Join the arena: smf.sticklash.com #Solana #MemeFight`;
   
-  // Scale and copy the game canvas
-  tempCtx.scale(2, 2);
-  tempCtx.drawImage(canvas, 0, 0);
-  
-  const screenshot = tempCanvas;
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+};
 
-  // Download locally
-  const link = document.createElement('a');
-  link.download = `I_just_defeated_${window.lastOpponentSymbol || 'MEME'}_in_SMF.png`;
-  link.href = screenshot.toDataURL('image/png');
-  link.click();
-
-  // Auto post to X with meme text
-  const tweetText = `I just defeated $${window.lastOpponentSymbol || 'MEME'} in stickman fight. $SMF tech is cool af 🔥 https://smf.sticklash.com`;
-  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`, '_blank');
-
-  status.innerHTML = `${winner} WINS! Screenshot + X post ready!`;
+window.showMultiplayer = () => {
+  const memePanel = document.getElementById('meme-panel');
+  if (memePanel) memePanel.classList.add('hidden');
+  if (typeof window.showScreen === 'function') {
+    window.showScreen('multiplayer');
+  }
 };
 </script>
 </body>
