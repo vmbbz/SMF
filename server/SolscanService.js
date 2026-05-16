@@ -184,6 +184,7 @@ class SolscanService {
                     socials,
                     marketCap: marketInfo.market_cap_fully_diluted || 0,
                     volume24h: marketInfo.volume_24h || 0,
+                    liquidity: marketInfo.liquidity_usd || marketInfo.liquidity || 0,
                     priceUsd: marketInfo.price_usd || 0,
                     priceChange24h: marketInfo.price_change_24h || 0,
                     solscanUrl: `https://solscan.io/token/${token.address}`,
@@ -243,7 +244,9 @@ class SolscanService {
                     source: { fetchedAt: new Date().toISOString(), metadataUri: metadata.metadata_uri }
                 },
                 priceUsd: marketInfo.price_usd || 0,
-                liquidity: marketInfo.liquidity || 0,
+                liquidity: marketInfo.liquidity_usd || marketInfo.liquidity || 0,
+                volume24h: marketInfo.volume_24h || 0,
+                priceChange24h: marketInfo.price_change_24h || 0,
                 fullyDilutedValuation: marketCap,
                 bondingCurveProgress: status === 'graduated' ? 100 : Math.min((marketCap / 69000) * 100, 99.9),
                 graduatedAt: status === 'graduated' ? new Date().toISOString() : undefined,

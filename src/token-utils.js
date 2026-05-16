@@ -28,10 +28,10 @@ async function getTokenByMint(mint) {
     if (!data) throw new Error('Token not found');
     
     return {
-      mint: data.tokenAddress || mint,
-      symbol: data.symbol || '$UNKNOWN',
-      name: data.name || 'Unknown Meme',
-      logoURI: data.logo || `assets/smf-logo.png`,
+      mint: data.price?.data?.tokenAddress || data.holders?.tokenAddress || mint,
+      symbol: data.symbol || data.price?.data?.symbol || '$UNKNOWN',
+      name: data.price?.data?.name || data.holders?.tokenName || 'Unknown Meme',
+      logoURI: data.holders?.tokenLogo || data.price?.data?.logo || `assets/smf-logo.png`,
       marketCap: data.holders?.marketCap || 0,
       volume24h: data.holders?.totalVolume?.['24h'] || 0,
       priceChange24h: data.holders?.pricePercentChange?.['24h'] || 0,

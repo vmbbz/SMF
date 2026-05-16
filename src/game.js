@@ -332,8 +332,8 @@ export class Game {
     const d2 = f2.getAttackData();
     f1.attackHasHit = true;
     f2.attackHasHit = true;
-    if (d1) f2.applyHit(d1, 0.5, f1.x);
-    if (d2) f1.applyHit(d2, 0.5, f2.x);
+    if (d1) f2.applyHit(d1, 0.5 * (f1.damageMultiplier || 1), f1.x);
+    if (d2) f1.applyHit(d2, 0.5 * (f2.damageMultiplier || 1), f2.x);
 
     // Clash spark at midpoint
     const cx = (h1.x + h1.w / 2 + h2.x + h2.w / 2) / 2;
@@ -403,8 +403,9 @@ export class Game {
         ),
       );
     } else {
-      defender.applyHit(hitData, multiplier, attacker.x);
-      const totalDmg = Math.round(hitData.damage * multiplier * 10) / 10;
+      const finalMultiplier = multiplier * (attacker.damageMultiplier || 1);
+      defender.applyHit(hitData, finalMultiplier, attacker.x);
+      const totalDmg = Math.round(hitData.damage * finalMultiplier * 10) / 10;
       let color = "#ffcc00";
       let text = `${totalDmg}`;
       let logText = `${totalDmg} dmg`;
@@ -566,15 +567,16 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
           this._logEvent('BLOCKED', '#4488ff', atkSide);
           if (this.sfx) this.sfx.block();
         } else {
-          target.health = Math.max(0, target.health - PROJECTILE_DAMAGE);
+          const finalProjDmg = Math.round(PROJECTILE_DAMAGE * (attacker.damageMultiplier || 1));
+          target.health = Math.max(0, target.health - finalProjDmg);
           target.state = 'hitstun';
           target.stunFrames = PROJECTILE_HITSTUN;
           const dir = target.x > attacker.x ? 1 : -1;
           target.vx = dir * 200;
           target.currentAttack = null;
 
-          this.hitSparks.push({ x: proj.x, y: proj.y, life: 0.5, color: DG.primary, text: `${PROJECTILE_DAMAGE}` });
-          this._logEvent(`${PROJECTILE_DAMAGE} dmg`, DG.primary, atkSide);
+          this.hitSparks.push({ x: proj.x, y: proj.y, life: 0.5, color: DG.primary, text: `${finalProjDmg}` });
+          this._logEvent(`${finalProjDmg} dmg`, DG.primary, atkSide);
           if (this.sfx) this.sfx.hit();
         }
 

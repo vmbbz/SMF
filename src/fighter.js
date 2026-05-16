@@ -252,23 +252,28 @@ export class Fighter {
   }
 
 
-  applyMarketStats(pairData) {
-    if (!pairData) return;
-    this.marketData = pairData;
+  applyMarketStats(token) {
+    if (!token) return;
+    this.marketData = token;
     
-    // Scale health by volume (m5)
-    const vol = pairData.volume?.m5 || 0;
-    const hpBoost = Math.min(1.5, 1 + vol / 100000);
+    // Scale health by volume24h
+    const vol = token.volume24h || 0;
+    const hpBoost = Math.max(0.8, Math.min(1.5, 1 + vol / 500000));
     this.healthMax = Math.floor(200 * hpBoost);
     this.health = this.healthMax;
     
     // Scale speed by 24h price change
-    const change = pairData.priceChange?.h24 || 0;
-    const speedBoost = Math.min(1.3, 1 + Math.max(0, change) / 100);
+    const change = token.priceChange24h || 0;
+    const speedBoost = Math.max(0.8, Math.min(1.3, 1 + change / 100));
     this.walkSpeed = 4 * speedBoost;
     this.dashSpeed = 12 * speedBoost;
     
-    console.log(`📈 Market Scaling applied to ${this.tokenData?.symbol}: HP x${hpBoost.toFixed(2)}, Spd x${speedBoost.toFixed(2)}`);
+    // Scale damage by liquidity
+    const liq = token.liquidity || 0;
+    const dmgBoost = Math.max(0.8, Math.min(1.5, 1 + liq / 200000));
+    this.damageMultiplier = dmgBoost;
+    
+    console.log(`📈 Market Scaling applied to ${this.tokenData?.symbol}: HP x${hpBoost.toFixed(2)}, Spd x${speedBoost.toFixed(2)}, Dmg x${dmgBoost.toFixed(2)}`);
   }
 
   update(dt, actions, justPressed, opponent, stageLeft, stageRight) {

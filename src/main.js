@@ -339,16 +339,14 @@ window.loadOpponent = async function(token) {
   const opponent = game.p2;
   // Phase 3: Data Enrichment
   try {
-    const pairData = await enrichTokenData(token.mint);
-    if (pairData) {
-      opponent.applyMarketStats(pairData);
-      // Enrich token object with market data for UI
-      token.name = pairData.extractedName || token.name;
-      token.symbol = pairData.extractedSymbol || token.symbol;
-      token.priceChangeH24 = pairData.priceChange?.h24;
-      token.volumeH24 = pairData.volume?.h24;
-      token.liquidity = pairData.liquidity?.usd;
-    }
+    // We already have enriched Solscan data in token
+    opponent.applyMarketStats(token);
+    
+    // Fallbacks if token doesn't have names
+    token.name = token.name || 'Unknown Meme';
+    token.symbol = token.symbol || 'MEME';
+    
+    console.log(`[Game] Loaded opponent: ${token.name} (${token.symbol})`);
   } catch (e) {
     console.error('Enrichment failed', e);
   }
