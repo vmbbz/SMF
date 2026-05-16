@@ -1,4 +1,5 @@
 import { Actions } from "./input.js";
+import { calculateFighterPower } from "./token-power-scaling.js";
 import { Fighter, HADOUKEN_DATA } from "./fighter.js";
 import { DG } from "./ui.js";
 
@@ -679,30 +680,53 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     const h = this.logicalH;
     
     ctx.save();
-    ctx.font = 'bold 32px system-ui';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     
-    // Draw P2 Stats (Opponent)
-    if (this.p2.tokenData) {
-      const td = this.p2.tokenData;
-      ctx.fillStyle = DG.secondary || '#ff00ff';
-      ctx.fillText(`VS ${td.name || td.symbol}`, w / 2, h / 2 - 100);
+    // Helper to draw a stat card
+    const drawCard = (x, y, title, token, isP1) => {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.strokeStyle = isP1 ? 'var(--neon-green)' : 'var(--neon-pink)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x - 150, y - 100, 300, 200, 15);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
       
-      ctx.font = '20px monospace';
+      // Title
+      ctx.font = 'bold 24px system-ui';
+      ctx.fillStyle = isP1 ? 'var(--neon-green)' : 'var(--neon-pink)';
+      ctx.fillText(title, x, y - 70);
+      
+      if (!token) {
+        ctx.font = '20px monospace';
+        ctx.fillStyle = '#888';
+        ctx.fillText('NO MARKET DATA', x, y);
+        return;
+      }
+
+      const power = calculateFighterPower(token);
+      
+      ctx.font = 'bold 36px system-ui';
       ctx.fillStyle = '#fff';
-      const stats = [
-        `PRICE CHG: ${td.priceChangeH24 ? td.priceChangeH24.toFixed(2) + '%' : '??%'}`,
-        `VOLUME: $${td.volumeH24 ? (td.volumeH24 / 1000).toFixed(1) + 'K' : '??'}`,
-        `LIQUIDITY: $${td.liquidity ? (td.liquidity / 1000).toFixed(1) + 'K' : '??'}`
-      ];
-      ctx.font = 'bold 24px monospace';
-      stats.forEach((s, i) => {
-        const color = s.includes('-') ? '#ff4444' : '#00ff9d';
-        ctx.fillStyle = s.includes(':') ? '#fff' : color;
-        ctx.fillText(s, w / 2, h / 2 - 20 + i * 40);
-      });
-    }
+      ctx.fillText(power.rating, x, y - 30);
+      
+      ctx.font = '16px monospace';
+      ctx.fillStyle = '#aaa';
+      ctx.fillText(`MCAP: $${token.marketCap ? (token.marketCap/1000).toFixed(1)+'K' : '??'}`, x, y + 10);
+      ctx.fillText(`VOL: $${token.volume24h ? (token.volume24h/1000).toFixed(1)+'K' : '??'}`, x, y + 35);
+      ctx.fillText(`CHG: ${token.priceChange24h ? token.priceChange24h.toFixed(2)+'%' : '??%'}`, x, y + 60);
+      ctx.fillText(`HLD: ${token.holders || 100}`, x, y + 85);
+    };
+
+    drawCard(w / 4, h / 2, 'P1 CHALLENGER', this.p1.marketData || this.p1.tokenData, true);
+    drawCard(3 * w / 4, h / 2, 'P2 OPPONENT', this.p2.marketData || this.p2.tokenData, false);
+    
+    ctx.font = 'bold 48px system-ui';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('VS', w / 2, h / 2);
+
     ctx.restore();
   }
   _draw() {

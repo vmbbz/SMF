@@ -132,6 +132,7 @@ class SolscanService {
                 totalVolume: {
                     '24h': marketInfo.volume_24h || 0,
                 },
+                holders: metadata.holder || 100,
             };
             
             return {
@@ -182,6 +183,7 @@ class SolscanService {
                     description: metadata.description,
                     website: metadata.website,
                     socials,
+                    holders: metadata.holder || 100,
                     marketCap: marketInfo.market_cap_fully_diluted || 0,
                     volume24h: marketInfo.volume_24h || 0,
                     liquidity: marketInfo.liquidity_usd || marketInfo.liquidity || 0,
@@ -250,6 +252,7 @@ class SolscanService {
                 fullyDilutedValuation: marketCap,
                 bondingCurveProgress: status === 'graduated' ? 100 : Math.min((marketCap / 69000) * 100, 99.9),
                 graduatedAt: status === 'graduated' ? new Date().toISOString() : undefined,
+                holders: metadata.holder || 100,
                 logo,
                 solscanUrl: `https://solscan.io/token/${tokenAddress}`,
                 dexscreenerUrl: `https://dexscreener.com/solana/${tokenAddress}`,

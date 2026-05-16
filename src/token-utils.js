@@ -36,6 +36,7 @@ async function getTokenByMint(mint) {
       volume24h: data.holders?.totalVolume?.['24h'] || 0,
       priceChange24h: data.holders?.pricePercentChange?.['24h'] || 0,
       liquidity: data.holders?.totalLiquidityUsd || 0,
+      holders: data.holders?.holders || 100,
     };
   } catch (e) {
     console.error("Failed to fetch token by mint:", e);

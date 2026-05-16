@@ -1,4 +1,5 @@
 import { Actions } from "./input.js";
+import { calculateFighterPower } from "./token-power-scaling.js";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -256,24 +257,15 @@ export class Fighter {
     if (!token) return;
     this.marketData = token;
     
-    // Scale health by volume24h
-    const vol = token.volume24h || 0;
-    const hpBoost = Math.max(0.8, Math.min(1.5, 1 + vol / 500000));
-    this.healthMax = Math.floor(200 * hpBoost);
-    this.health = this.healthMax;
-    
-    // Scale speed by 24h price change
-    const change = token.priceChange24h || 0;
-    const speedBoost = Math.max(0.8, Math.min(1.3, 1 + change / 100));
-    this.walkSpeed = 4 * speedBoost;
-    this.dashSpeed = 12 * speedBoost;
-    
-    // Scale damage by liquidity
-    const liq = token.liquidity || 0;
-    const dmgBoost = Math.max(0.8, Math.min(1.5, 1 + liq / 200000));
-    this.damageMultiplier = dmgBoost;
-    
-    console.log(`📈 Market Scaling applied to ${this.tokenData?.symbol}: HP x${hpBoost.toFixed(2)}, Spd x${speedBoost.toFixed(2)}, Dmg x${dmgBoost.toFixed(2)}`);
+    const power = calculateFighterPower(token);
+
+    this.healthMax = power.health;
+    this.health = power.health;
+    this.damageMultiplier = power.damageMult;
+    this.walkSpeed = WALK_SPEED * power.speedMult;
+    this.dashSpeed = DASH_SPEED * power.speedMult;
+
+    console.log(`[Fighter] ${token.symbol} powered up → ${power.rating} (H:${power.health} D:${power.damageMult.toFixed(2)} S:${power.speedMult.toFixed(2)})`);
   }
 
   update(dt, actions, justPressed, opponent, stageLeft, stageRight) {

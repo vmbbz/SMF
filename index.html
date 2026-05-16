@@ -233,12 +233,27 @@
       margin: 0 5px;
       backdrop-filter: blur(5px);
     }
+    .victory-card, .token-pill {
+      transition: all 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+      touch-action: manipulation;
+    }
+
+    .marquee {
+      overflow: hidden;
+      white-space: nowrap;
+      display: flex;
+      gap: 16px;
+    }
   </style>
 </head>
 <body>
   <div id="game-container">
     <canvas id="game"></canvas>
   </div>
+
+  <!-- TRENDING STRIP (Floor level) -->
+  <div id="trending-strip" class="trending-strip" style="position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.6) 100%); border-top: 2px solid var(--neon-pink); padding: 10px 20px; z-index: 500; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(255,0,255,0.1);"></div>
+
 
   <!-- MEME PANEL (Main Menu) -->
   <div id="meme-panel" class="screen">
@@ -304,6 +319,10 @@
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
   <script src="./src/loser-card.js"></script>
   
+  <script type="module" src="./src/token-power-scaling.js"></script>
+  <script type="module" src="./src/solscan-trending.js"></script>
+  <script type="module" src="./src/trending-strip.js"></script>
+  
   <script type="module">
     import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';
     import { Effects } from './src/effects.js';
@@ -359,14 +378,25 @@
     window.startCustomFight = async () => {
       const mint = document.getElementById('mint-input').value.trim();
       if (!mint) return alert('Paste a mint address!');
+      await window.fightToken(mint);
+    };
+
+    window.fightToken = async (mint) => {
       const status = document.getElementById('status');
-      status.innerHTML = 'Loading token...';
+      if (status) status.innerHTML = 'Loading token...';
       try {
         const token = await getTokenByMint(mint);
-        status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
+        if (status) status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
+        
+        // Hide panel
+        const memePanel = document.getElementById('meme-panel');
+        if (memePanel) memePanel.classList.add('hidden');
+        const canvas = document.getElementById('game');
+        if (canvas) canvas.classList.add('active');
+        
         await loadOpponent(token);
       } catch (e) {
-        status.innerHTML = 'Token not found 😢';
+        if (status) status.innerHTML = 'Token not found 😢';
       }
     };
 
@@ -383,6 +413,9 @@
     window.addEventListener('load', () => {
       if ('ontouchstart' in window) {
         document.getElementById('mobile-controls').style.display = 'flex';
+      }
+      if (window.trendingStrip) {
+        window.trendingStrip.init();
       }
       console.log('%c✅ $SMF STICK LASH FULLY LOADED — READY TO FIGHT', 'color:#ff00ff;font-size:18px');
     });
