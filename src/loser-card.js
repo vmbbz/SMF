@@ -25,22 +25,26 @@ window.switchLoserTab = function(tabIndex) {
     // ABOUT TAB
     content.innerHTML = `
       <div class="about-tab" style="animation: punchIn 0.3s ease;">
-        <img src="${token.logoURI || 'assets/smf-logo.png'}" class="banner" style="width:80px;height:80px;border-radius:50%;border:2px solid var(--neon-pink);margin-bottom:10px;">
+        <img src="${token.logoURI || ''}" class="banner" style="width:80px;height:80px;border-radius:50%;border:2px solid var(--neon-pink);margin-bottom:10px;">
         <h2 style="font-size:20px;font-weight:900;color:#fff;margin-bottom:10px;">$${(token.symbol || 'MEME').toUpperCase()} <span class="loser-badge" style="background:var(--neon-pink);color:#000;font-size:10px;padding:2px 6px;border-radius:4px;vertical-align:middle;">LOSER</span></h2>
         
-        <p class="power-stat" style="font-size:12px;color:var(--neon-blue);margin-bottom:15px;">In-game power: <strong style="color:#fff;">${(Math.random()*1.5 + 0.8).toFixed(1)}x damage</strong></p>
-        
+        <div class="power-rating" style="font-size:12px;color:var(--neon-blue);margin-bottom:15px;background:rgba(0,212,255,0.1);padding:5px;border-radius:6px;border:1px dashed var(--neon-blue);">
+          <strong>IN-GAME POWER:</strong> 
+          <span class="power-value" style="color:#fff;font-weight:bold;font-size:14px;">${calculatePowerLevel(token)}</span>
+        </div>
+
         <div class="market-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10px;background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;margin-bottom:15px;text-align:left;">
           <div><span style="color:var(--neon-pink);">MCAP</span><br><strong style="font-size:12px;color:#fff;">$${(token.marketCap || 0).toLocaleString()}</strong></div>
-          <div><span style="color:var(--neon-pink);">24h Vol</span><br><strong style="font-size:12px;color:#fff;">$${(token.volume24h || 0).toLocaleString()}</strong></div>
-          <div style="grid-column: span 2;"><span style="color:var(--neon-pink);">Liquidity</span><br><strong style="font-size:12px;color:#fff;">$${(token.liquidity || 0).toLocaleString()}</strong></div>
+          <div><span style="color:var(--neon-pink);">24h VOL</span><br><strong style="font-size:12px;color:#fff;">$${(token.volume24h || 0).toLocaleString()}</strong></div>
+          <div><span style="color:var(--neon-pink);">LIQUIDITY</span><br><strong style="font-size:12px;color:#fff;">$${(token.liquidity || 0).toLocaleString()}</strong></div>
+          <div><span style="color:var(--neon-pink);">24H CHANGE</span><br><strong style="font-size:12px;color:${(token.priceChange24h || 0) > 0 ? 'var(--neon-green)' : 'var(--neon-pink)'};">${(token.priceChange24h || 0).toFixed(2)}%</strong></div>
         </div>
-        
+
         <button onclick="navigator.clipboard.writeText('${token.mint || ''}')" style="background:transparent;border:1px dashed var(--neon-blue);color:var(--neon-blue);padding:8px 15px;border-radius:8px;font-size:10px;cursor:pointer;width:100%;margin-bottom:15px;font-family:inherit;">📋 Copy Address</button>
         
         <div class="ctas" style="display:flex;gap:10px;">
-          <button onclick="window.open('https://pump.fun/${token.mint}', '_blank')" style="flex:1;background:#fff;color:#000;border:none;padding:10px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;">PUMP.FUN</button>
-          <button onclick="window.open('https://dexscreener.com/solana/${token.mint}', '_blank')" style="flex:1;background:var(--neon-green);color:#000;border:none;padding:10px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;">DEXSCREENER</button>
+          <a href="https://pump.fun/${token.mint}" target="_blank" class="pump-btn" style="flex:1;background:#fff;color:#000;border:none;padding:10px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center;">PUMP.FUN</a>
+          <a href="${token.dexscreenerUrl || `https://dexscreener.com/solana/${token.mint}`}" target="_blank" class="dex-btn" style="flex:1;background:var(--neon-green);color:#000;border:none;padding:10px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center;">DEXSCREENER</a>
         </div>
       </div>
     `;
@@ -94,3 +98,10 @@ window.switchLoserTab = function(tabIndex) {
     `;
   }
 };
+
+function calculatePowerLevel(token) {
+  const volScore = Math.min(2.0, (token.volume24h || 0) / 50000);
+  const changeScore = Math.max(0.5, 1 + (token.priceChange24h || 0) / 100);
+  const liqScore = Math.min(1.8, 1 + (token.liquidity || 0) / 100000);
+  return (volScore * changeScore * liqScore).toFixed(1) + 'x';
+}
