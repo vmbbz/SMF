@@ -2088,12 +2088,19 @@ window.startFight = startFight;
 // Premium Victory & Social (Phase 3)
 // ─────────────────────────────────────────────
 
-window.showVictoryOverlay = function(winnerNum, token) {
+window.showVictoryOverlay = function(winnerNum, token, loserToken) {
   const overlay = document.getElementById('victory-overlay');
   const winText = document.getElementById('victory-text');
+  
+  // Winner Card
   const winName = document.getElementById('winner-name');
   const winLogo = document.getElementById('winner-logo');
   const winCatch = document.getElementById('winner-catchphrase');
+  
+  // Loser Card
+  const loseName = document.getElementById('loser-name');
+  const loseLogo = document.getElementById('loser-logo');
+  
   const buyBtn = document.getElementById('btn-buy-token');
 
   if (!overlay) return;
@@ -2101,10 +2108,23 @@ window.showVictoryOverlay = function(winnerNum, token) {
   const isPlayer = winnerNum === 1;
   winText.textContent = isPlayer ? 'YOU WIN!' : 'K.O.';
   winText.style.color = isPlayer ? 'var(--neon-blue)' : 'var(--neon-pink)';
+  
+  // Reset text styles
+  winText.style.transform = 'scale(1)';
+  winText.style.fontSize = ''; // revert to ko-text original
+  
+  // Reset cards state to default (winner front, loser back)
+  if (window.winnerFront === false) {
+    if (window.toggleCards) window.toggleCards();
+  }
+  const lc = document.getElementById('loser-card');
+  const toggleBtn = document.getElementById('btn-toggle-victory');
+  if (lc) lc.style.opacity = '0'; // Hide loser card initially
+  if (toggleBtn) toggleBtn.style.opacity = '0'; 
 
   if (token) {
     winName.textContent = (token.symbol || token.name || 'DEGEN').toUpperCase();
-    if (winLogo) winLogo.src = token.logoURI || '';
+    if (winLogo) winLogo.src = token.logoURI || 'assets/smf-logo.png';
     
     // Catchphrase from personality
     const personality = window.generatePersonality ? window.generatePersonality(token) : null;
@@ -2113,21 +2133,48 @@ window.showVictoryOverlay = function(winnerNum, token) {
       winCatch.textContent = `"${phrase}"`;
     }
 
-    // Buy CTA
-    if (buyBtn) {
+    // Buy CTA (Use Loser's token to buy if we beat them, or Winner's if we lost)
+    // Wait, typically you buy the token of the MEME.
+    // If we are playing as PLAYER, we don't have a token.
+    const memeToken = isPlayer ? loserToken : token;
+    
+    if (buyBtn && memeToken) {
       buyBtn.style.display = 'block';
-      buyBtn.textContent = `BUY $${token.symbol} 🛒`;
-      buyBtn.onclick = () => window.open(token.url || `https://dexscreener.com/solana/${token.mint}`, '_blank');
+      buyBtn.textContent = `BUY $${memeToken.symbol} 🛒`;
+      buyBtn.onclick = () => window.open(memeToken.url || `https://dexscreener.com/solana/${memeToken.mint}`, '_blank');
+      window.lastOpponentSymbol = memeToken.symbol;
+    } else {
+      if (buyBtn) buyBtn.style.display = 'none';
+      window.lastOpponentSymbol = 'MEME';
     }
   } else {
-    winName.textContent = isPlayer ? 'CHAD' : 'BOT';
+    winName.textContent = isPlayer ? 'CHAD' : 'MEME';
+    winLogo.src = 'assets/smf-logo.png';
     if (buyBtn) buyBtn.style.display = 'none';
+    window.lastOpponentSymbol = 'MEME';
+  }
+  
+  // Populate Loser Token
+  if (loserToken) {
+    loseName.textContent = (loserToken.symbol || loserToken.name || 'MEME').toUpperCase();
+    if (loseLogo) loseLogo.src = loserToken.logoURI || 'assets/smf-logo.png';
+  } else {
+    loseName.textContent = isPlayer ? 'STAY POOR' : 'CHAD';
+    if (loseLogo) loseLogo.src = 'assets/smf-logo.png';
   }
 
   overlay.classList.remove('hidden');
   overlay.style.display = 'flex';
   
   if (window.effects) window.effects.addCoinRain();
+  
+  // 3-second reveal timer
+  setTimeout(() => {
+    winText.style.transform = 'scale(0.8)';
+    winText.style.fontSize = '40px';
+    if (lc) lc.style.opacity = '1';
+    if (toggleBtn) toggleBtn.style.opacity = '1';
+  }, 2500);
 };
 
 window.shareVictory = function() {

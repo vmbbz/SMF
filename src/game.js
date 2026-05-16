@@ -929,7 +929,8 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
   _drawHUD() {
     const { ctx } = this;
     const w = this.logicalW;
-    const maxHealth = 100;
+    const p1MaxHealth = this.p1.healthMax || 100;
+    const p2MaxHealth = this.p2.healthMax || 100;
     const timerWidth = 60;
     const margin = 40;
     const gap = 10;
@@ -942,7 +943,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     const p1BarX = margin;
     ctx.fillStyle = DG.charcoal;
     ctx.fillRect(p1BarX, barY, barW, barH);
-    const p1Pct = this.p1.health / maxHealth;
+    const p1Pct = Math.max(0, Math.min(1, this.p1.health / p1MaxHealth));
     if (p1Pct > 0.25) {
       const g1 = ctx.createLinearGradient(p1BarX, 0, p1BarX + barW, 0);
       g1.addColorStop(0, DG.gradStart || '#00ff9d');
@@ -960,7 +961,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     const p2BarX = w - margin - barW;
     ctx.fillStyle = DG.charcoal;
     ctx.fillRect(p2BarX, barY, barW, barH);
-    const p2Pct = this.p2.health / maxHealth;
+    const p2Pct = Math.max(0, Math.min(1, this.p2.health / p2MaxHealth));
     if (p2Pct > 0.25) {
       const g2 = ctx.createLinearGradient(p2BarX, 0, p2BarX + barW, 0);
       g2.addColorStop(0, DG.gradEnd || '#ff00ff');
@@ -1015,8 +1016,9 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
         this.victoryOverlayTriggered = true;
         const winnerNum = (this.p1.health > this.p2.health) ? 1 : 2;
         const winner = winnerNum === 1 ? this.p1 : this.p2;
+        const loser = winnerNum === 1 ? this.p2 : this.p1;
         if (window.showVictoryOverlay) {
-          window.showVictoryOverlay(winnerNum, winner.tokenData);
+          window.showVictoryOverlay(winnerNum, winner.tokenData, loser.tokenData);
         }
       }
 
