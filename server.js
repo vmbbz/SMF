@@ -48,7 +48,7 @@ app.get('/api/token/:mint', async (req, res) => {
     try {
         const mint = req.params.mint;
         // In the future, we can add `enrichToken` equivalent here
-        const details = await solscanService.fetchTokenDetails(mint);
+        const details = await solscanService.getCachedToken(mint);
         res.json(details);
     } catch (error) {
         console.error('Error fetching token details:', error);

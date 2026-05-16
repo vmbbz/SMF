@@ -24,6 +24,8 @@ class SolscanService {
             }
         });
 
+        this.tokenCache = new Map(); // mint → {data, timestamp}
+
         if (!SOLSCAN_API_KEY) {
             console.warn('[SolscanService] SOLSCAN_API_KEY is not configured. Solscan features will be unavailable.');
         }
@@ -82,6 +84,21 @@ class SolscanService {
         };
         const result = await this.makeRequest('/market/candles', params);
         return result || [];
+    }
+
+    async getCachedToken(mint) {
+        const cached = this.tokenCache.get(mint);
+        if (cached && Date.now() - cached.timestamp < 60000) {
+            console.log(`[SolscanService] Cache HIT for ${mint}`);
+            return cached.data;
+        }
+
+        console.log(`[SolscanService] Cache MISS for ${mint}. Fetching fresh...`);
+        const data = await this.fetchTokenDetails(mint);
+        if (data) {
+            this.tokenCache.set(mint, { data, timestamp: Date.now() });
+        }
+        return data;
     }
 
     async fetchTokenDetails(tokenAddress) {

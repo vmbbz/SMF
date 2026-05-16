@@ -1,3 +1,21 @@
+const CACHE_KEY = 'smf_token_cache';
+const CACHE_TTL = 60000;
+
+export function getCachedToken(mint) {
+  const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+  const entry = cache[mint];
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
+    return entry.data;
+  }
+  return null;
+}
+
+export function setCachedToken(mint, data) {
+  const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
+  cache[mint] = { data, timestamp: Date.now() };
+  localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+}
+
 async function getTrendingTokens(count = 8) {
   try {
     const res = await fetch(`/api/trending?count=${count}`);
@@ -22,12 +40,15 @@ async function getTrendingTokens(count = 8) {
 }
 
 async function getTokenByMint(mint) {
+  const cached = getCachedToken(mint);
+  if (cached) return cached;
+
   try {
     const res = await fetch(`/api/token/${mint}`);
     const data = await res.json();
     if (!data) throw new Error('Token not found');
     
-    return {
+    const mappedToken = {
       mint: data.price?.data?.tokenAddress || data.holders?.tokenAddress || mint,
       symbol: data.symbol || data.price?.data?.symbol || '$UNKNOWN',
       name: data.price?.data?.name || data.holders?.tokenName || 'Unknown Meme',
@@ -38,6 +59,9 @@ async function getTokenByMint(mint) {
       liquidity: data.holders?.totalLiquidityUsd || 0,
       holders: data.holders?.holders || 100,
     };
+    
+    setCachedToken(mint, mappedToken);
+    return mappedToken;
   } catch (e) {
     console.error("Failed to fetch token by mint:", e);
     return null;

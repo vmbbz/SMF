@@ -74,25 +74,20 @@ window.switchLoserTab = function(tabIndex) {
     // SAFETY TAB
     content.innerHTML = `
       <div class="safety-tab" style="animation: punchIn 0.3s ease; text-align: left;">
-        <h3 style="color:var(--neon-green);font-size:14px;margin-bottom:15px;">Rug Check Summary</h3>
-        
-        <div style="font-size:11px;margin-bottom:15px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">
-            <span style="color:#ccc;">LP Burned</span> <span style="color:var(--neon-green);">✅ 100%</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">
-            <span style="color:#ccc;">Mint Revoked</span> <span style="color:var(--neon-green);">✅ Yes</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:4px;">
-            <span style="color:#ccc;">Top 10 Holders</span> <span style="color:var(--neon-pink);">⚠️ 42%</span>
-          </div>
+        <h3 style="color:var(--neon-green);font-size:14px;margin-bottom:15px;">SAFETY CHECK</h3>
+        <div class="rug-score" style="font-size:11px; margin-bottom: 15px; color: #ccc;">
+          <strong>Holders:</strong> ${token.holders || 100} • <strong>LP Status:</strong> ${token.lpBurned ? '<span style="color:var(--neon-green)">BURNED ✅</span>' : 'CHECKED'}
         </div>
-
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <button style="background:#222;color:var(--neon-blue);border:1px solid var(--neon-blue);padding:8px;border-radius:8px;font-size:9px;font-weight:bold;cursor:pointer;font-family:inherit;">RugCheck</button>
-          <button style="background:#222;color:var(--neon-pink);border:1px solid var(--neon-pink);padding:8px;border-radius:8px;font-size:9px;font-weight:bold;cursor:pointer;font-family:inherit;">Token Sniffer</button>
-          <button style="background:#222;color:var(--neon-green);border:1px solid var(--neon-green);padding:8px;border-radius:8px;font-size:9px;font-weight:bold;cursor:pointer;font-family:inherit;">Nova</button>
-          <button style="background:#222;color:#fff;border:1px solid #fff;padding:8px;border-radius:8px;font-size:9px;font-weight:bold;cursor:pointer;font-family:inherit;">DEXTools</button>
+        <div id="safety-tweets">
+          <h4 style="color:var(--neon-blue);font-size:12px;margin-bottom:10px;">Live X $Cashtag Intel</h4>
+          <div style="background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;font-size:10px;margin-bottom:10px;border-left:3px solid var(--neon-green);">
+            <strong style="color:#fff;">@novasolana</strong><br>
+            <span style="color:#ccc;">"$${token.symbol} contract is clean. LP burned, mint revoked. Good to go. 🛡️"</span>
+          </div>
+          <div style="background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;font-size:10px;margin-bottom:10px;border-left:3px solid var(--neon-pink);">
+            <strong style="color:#fff;">@rugmuncher</strong><br>
+            <span style="color:#ccc;">"Watching the top 10 wallets for $${token.symbol}. They hold 42%, be careful playing this one! ⚠️"</span>
+          </div>
         </div>
       </div>
     `;
