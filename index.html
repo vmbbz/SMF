@@ -143,6 +143,37 @@
       box-shadow: 0 30px 60px rgba(0,0,0,0.9), 0 0 30px rgba(0,255,157,0.15);
     }
     
+    .loser-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 15px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding-bottom: 10px;
+    }
+    
+    .loser-tabs button {
+      background: transparent;
+      color: #888;
+      border: none;
+      font-family: inherit;
+      font-size: 10px;
+      cursor: pointer;
+      padding: 5px 10px;
+      transition: all 0.3s ease;
+      border-radius: 6px;
+    }
+    
+    .loser-tabs button.active {
+      color: #fff;
+      background: rgba(255,0,255,0.2);
+      box-shadow: 0 0 10px rgba(255,0,255,0.3);
+    }
+    
+    .loser-tabs button:hover {
+      color: #fff;
+    }
+    
     .ko-text {
       font-size: 110px;
       font-weight: 900;
@@ -231,10 +262,15 @@
     
     <div class="cards-container" style="position: relative; width: 100%; height: 280px; margin-top: 15px; perspective: 1200px;">
       <!-- LOSER CARD -->
-      <div id="loser-card" class="victory-card loser" onclick="toggleCards()" style="position: absolute; top: 20px; left: 50%; transform: translateX(-35%) scale(0.9) rotate(-6deg); z-index: 1; transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; filter: brightness(0.3); opacity: 0; background: rgba(15,15,15,0.95); border: 2px solid white; border-radius: 16px; padding: 20px; text-align: center; width: 240px; max-width: 90%; box-sizing: border-box; box-shadow: 0 0 20px var(--neon-pink);">
-        <div class="card-header" style="color: var(--neon-pink); font-size: 12px; font-weight: bold; margin-bottom: 10px; letter-spacing: 2px;">LOSER</div>
-        <img id="loser-logo" src="" style="width:70px;height:70px;border-radius:50%;border:2px solid var(--neon-pink);">
-        <div id="loser-name" style="font-size:20px;font-weight:900;color:#fff;margin-top:10px;text-transform:uppercase;">MEME</div>
+      <div id="loser-card" class="victory-card loser" onclick="if(event.target.tagName!=='BUTTON' && !event.target.closest('button')) toggleCards()" style="position: absolute; top: 20px; left: 50%; transform: translateX(-35%) scale(0.9) rotate(-6deg); z-index: 1; transition: all 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; filter: brightness(0.3); opacity: 0; background: rgba(15,15,15,0.95); border: 2px solid white; border-radius: 16px; padding: 20px; text-align: center; width: 280px; max-width: 90%; box-sizing: border-box; box-shadow: 0 0 20px var(--neon-pink); overflow-y: auto; max-height: 100%;">
+        <div class="loser-tabs">
+          <button onclick="switchLoserTab(0)" class="active">ABOUT</button>
+          <button onclick="switchLoserTab(1)">SOCIAL</button>
+          <button onclick="switchLoserTab(2)">SAFETY</button>
+        </div>
+        <div id="loser-tab-content">
+          <!-- Populated by renderLoserCard() -->
+        </div>
       </div>
 
       <!-- WINNER CARD -->
@@ -266,6 +302,7 @@
   </div>
 
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+  <script src="./src/loser-card.js"></script>
   
   <script type="module">
     import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';

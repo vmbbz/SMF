@@ -2154,13 +2154,12 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
     window.lastOpponentSymbol = 'MEME';
   }
   
-  // Populate Loser Token
-  if (loserToken) {
-    loseName.textContent = (loserToken.symbol || loserToken.name || 'MEME').toUpperCase();
-    if (loseLogo) loseLogo.src = loserToken.logoURI || 'assets/smf-logo.png';
-  } else {
-    loseName.textContent = isPlayer ? 'STAY POOR' : 'CHAD';
-    if (loseLogo) loseLogo.src = 'assets/smf-logo.png';
+  // Populate Loser Token via 3-Tab Logic
+  if (window.renderLoserCard) {
+    window.renderLoserCard(loserToken || { 
+      symbol: isPlayer ? 'STAY POOR' : 'CHAD', 
+      logoURI: 'assets/smf-logo.png' 
+    });
   }
 
   overlay.classList.remove('hidden');
