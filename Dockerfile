@@ -19,6 +19,7 @@ COPY matchmaking.py .
 COPY room_cleanup.py .
 COPY room_manager.py .
 COPY signaling.py .
+COPY solscan_service.py .
 COPY game_engine/ game_engine/
 COPY index.html .
 COPY src/ src/

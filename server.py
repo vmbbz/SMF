@@ -16,8 +16,11 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-from urllib.parse import parse_qs, urlencode
+from typing import Any, List, Dict, Optional
+from urllib.parse import parse_qs, urlencode, quote
+from solscan_service import solscan_service
+
+SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
 
 import asyncpg  # type: ignore[import-untyped]
 import httpx
@@ -27,7 +30,7 @@ from deepgram.core.events import EventType
 from deepgram.listen.v2.types import ListenV2TurnInfo, ListenV2Connected, ListenV2FatalError
 from litestar import Litestar, Request, get, post, websocket
 from litestar.connection import WebSocket
-from litestar.response import ServerSentEvent
+from litestar.response import ServerSentEvent, Redirect
 from litestar.response.base import Response
 from litestar.static_files import create_static_files_router
 from litestar.exceptions import HTTPException
@@ -235,110 +238,9 @@ STT_KEYTERMS = [
 
 @websocket("/ws/stt")
 async def stt_proxy(socket: WebSocket) -> None:
-    """Proxy mic audio to Deepgram STT (Flux v2) and return transcription results."""
-    api_key = os.environ.get("DEEPGRAM_API_KEY")
-    if not api_key:
-        await socket.close(code=4000, reason="DEEPGRAM_API_KEY not set")
-        return
-
+    """Stubbed STT proxy to avoid Deepgram API dependencies in production."""
     await socket.accept()
-    print("[stt] Browser WebSocket accepted, connecting to Deepgram Flux...")
-
-    client = AsyncDeepgramClient(api_key=api_key)
-    audio_chunks = 0
-
-    try:
-        async with client.listen.v2.connect(
-            model="flux-general-en",
-            encoding="linear16",
-            sample_rate="16000",
-            keyterm=STT_KEYTERMS,
-        ) as dg:
-            print("[stt] Connected to Deepgram Flux v2")
-
-            # ── Event handler: forward Deepgram events → browser ──
-            async def on_message(message) -> None:
-                if isinstance(message, ListenV2TurnInfo):
-                    event = message.event
-                    transcript = message.transcript or ""
-                    # Log interesting events
-                    if transcript:
-                        print(f"[stt] ─── {event} (turn={int(message.turn_index)}) ───")
-                        print(f'[stt]   "{transcript}"')
-                        words = transcript.lower().split()
-                        matched = [w for w in words if w in _STT_KEYTERMS]
-                        unmatched = [w for w in words if w not in _STT_KEYTERMS]
-                        if matched:
-                            print(f"[stt]   actions: {' '.join(matched)}")
-                        if unmatched:
-                            print(f"[stt]   other:   {' '.join(unmatched)}")
-                    elif event in ("EndOfTurn", "EagerEndOfTurn"):
-                        print(f"[stt] ─── {event} (empty) ───")
-
-                    # Send to browser as JSON
-                    data = {
-                        "type": "TurnInfo",
-                        "event": event,
-                        "turn_index": message.turn_index,
-                        "transcript": transcript,
-                        "words": [{"word": w.word, "confidence": w.confidence} for w in (message.words or [])],
-                    }
-                    await socket.send_data(json.dumps(data), mode="text")
-
-                elif isinstance(message, ListenV2Connected):
-                    print(f"[stt] Deepgram connected: {message}")
-
-                elif isinstance(message, ListenV2FatalError):
-                    print(f"[stt] Deepgram FATAL: {message}")
-                    await socket.send_data(json.dumps({
-                        "type": "Error",
-                        "message": str(message),
-                    }), mode="text")
-
-            def on_error(error) -> None:
-                print(f"[stt] Deepgram error: {type(error).__name__}: {error}")
-
-            def on_close(_) -> None:
-                print("[stt] Deepgram connection closed")
-
-            dg.on(EventType.MESSAGE, on_message)
-            dg.on(EventType.ERROR, on_error)
-            dg.on(EventType.CLOSE, on_close)
-
-            # ── Audio forwarder: browser → Deepgram ──
-            async def forward_audio():
-                nonlocal audio_chunks
-                try:
-                    while True:
-                        data = await socket.receive_data(mode="binary")
-                        if data:
-                            audio_chunks += 1
-                            if audio_chunks == 1:
-                                print(f"[stt] First audio chunk ({len(data)} bytes)")
-                            elif audio_chunks % 100 == 0:
-                                print(f"[stt] Audio chunks: {audio_chunks}")
-                            await dg.send_media(data)
-                except Exception as e:
-                    print(f"[stt] Audio forwarding ended: {type(e).__name__}: {e}")
-
-            # Run audio forwarding + SDK listener concurrently
-            audio_task = asyncio.create_task(forward_audio())
-            try:
-                await dg.start_listening()
-            finally:
-                audio_task.cancel()
-
-    except Exception as e:
-        print(f"[stt] Connection error: {type(e).__name__}: {e}")
-        try:
-            await socket.send_data(json.dumps({
-                "type": "Error",
-                "message": f"Deepgram connection failed: {e}",
-            }), mode="text")
-        except Exception:
-            pass
-
-    print(f"[stt] Disconnected (sent {audio_chunks} audio chunks)")
+    await socket.close(code=4000, reason="Voice STT is disabled in production.")
 
 
 # ─────────────────────────────────────────────
@@ -625,41 +527,8 @@ async def _llm_openai(
 
 @post("/api/voice/llm")
 async def voice_llm(data: dict[str, Any]) -> dict:
-    """Send conversation to Anthropic and return the response text."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
-
-    messages = data.get("messages", [])
-    system = data.get("system", "")
-
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 100,
-                "system": system,
-                "messages": messages,
-            },
-        )
-
-    if resp.status_code != 200:
-        print(f"[llm] Anthropic error {resp.status_code}: {resp.text}")
-        raise HTTPException(status_code=502, detail="LLM request failed")
-
-    result = resp.json()
-    text = ""
-    for block in result.get("content", []):
-        if block.get("type") == "text":
-            text += block["text"]
-
-    return {"text": text}
+    """Stubbed Voice LLM endpoint."""
+    return {"text": "Voice mode is currently disabled."}
 
 
 # ─────────────────────────────────────────────
@@ -668,36 +537,8 @@ async def voice_llm(data: dict[str, Any]) -> dict:
 
 @post("/api/voice/tts")
 async def voice_tts(data: dict[str, Any]) -> Response:
-    """Convert text to speech via Deepgram TTS, return audio bytes."""
-    api_key = os.environ.get("DEEPGRAM_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="DEEPGRAM_API_KEY not set")
-
-    text = data.get("text", "")
-    if not text:
-        raise HTTPException(status_code=400, detail="text required")
-
-    tts_url = f"{DG_TTS_URL}?model=aura-2-thalia-en&encoding=linear16&sample_rate=24000&container=none"
-
-    async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(
-            tts_url,
-            headers={
-                "Authorization": f"Token {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={"text": text},
-        )
-
-    if resp.status_code != 200:
-        print(f"[tts] Deepgram TTS error {resp.status_code}: {resp.text}")
-        raise HTTPException(status_code=502, detail="TTS request failed")
-
-    return Response(
-        content=resp.content,
-        media_type="audio/raw",
-        headers={"Content-Type": "audio/raw"},
-    )
+    """Stubbed Voice TTS endpoint."""
+    return Response(content=b"", status_code=400, media_type="audio/raw")
 
 
 # ─────────────────────────────────────────────
@@ -748,6 +589,55 @@ async def health() -> dict:
 async def favicon() -> Response:
     # Return empty 204 to prevent 404 errors
     return Response(content="", status_code=204)
+
+# ─────────────────────────────────────────────
+# Solscan & Spotify Discovery Engine Endpoints
+# ─────────────────────────────────────────────
+
+@get("/api/trending")
+async def api_trending(count: int = 12) -> List[Dict[str, Any]]:
+    return await solscan_service.fetch_trending_tokens(count)
+
+@get("/api/graduates")
+async def api_graduates(count: int = 8) -> List[Dict[str, Any]]:
+    return await solscan_service.fetch_launchpad_tokens('graduated', count)
+
+@get("/api/token/{mint:str}")
+async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
+    return await solscan_service.get_cached_token(mint)
+
+@get("/api/spotify/login")
+async def spotify_login(request: Request) -> Response[Any]:
+    if not SPOTIFY_CLIENT_ID:
+        return Response(content="Spotify integration not configured.", status_code=500, media_type="text/plain")
+    scopes = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state'
+    base = os.environ.get("BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/auth/spotify/callback"
+    url = (
+        f"https://accounts.spotify.com/authorize"
+        f"?client_id={SPOTIFY_CLIENT_ID}"
+        f"&response_type=token"
+        f"&redirect_uri={quote(redirect_uri)}"
+        f"&scope={scopes.replace(' ', '%20')}"
+    )
+    return Redirect(url)
+
+@get("/auth/spotify/callback")
+async def spotify_callback() -> Response[str]:
+    html_content = """
+        <html><body><script>
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            const token = params.get('access_token');
+            if (token) {
+                localStorage.setItem('spotify_access_token', token);
+                window.location.href = '/';
+            } else {
+                document.body.innerHTML = 'Spotify connection failed. Please make sure you have the client ID configured. <br><a href="/">Return to Game</a>';
+            }
+        </script></body></html>
+    """
+    return Response(content=html_content, media_type="text/html")
 
 
 @get("/")
@@ -2040,6 +1930,11 @@ app = Litestar(
         matchmaking_cancel_endpoint,
         leaderboard,
         get_elo,
+        api_trending,
+        api_graduates,
+        api_token_details,
+        spotify_login,
+        spotify_callback,
         create_static_files_router(path="/src", directories=[ROOT / "src"]),
         create_static_files_router(path="/assets", directories=[ROOT / "assets"]),
         create_static_files_router(path="/", directories=[ROOT / ""]),
