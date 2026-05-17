@@ -2,6 +2,7 @@ import { Actions } from "./input.js";
 import { calculateFighterPower } from "./token-power-scaling.js";
 import { Fighter, HADOUKEN_DATA } from "./fighter.js";
 import { DG } from "./ui.js";
+import { LiveBoostSystem } from "./live-boost-system.js";
 
 // ─────────────────────────────────────────────
 // Projectile constants
@@ -162,6 +163,11 @@ export class Game {
   showFightAlert() {
     this.waitingForProviders = false;
     this.fightAlert = this.fightAlertDuration;
+    
+    if (this.p2.tokenData) {
+      window.liveBoostSystem = new LiveBoostSystem(this);
+      window.liveBoostSystem.start(this.p2, this.p2.tokenData);
+    }
   }
 
   _loop(timestamp) {
@@ -212,6 +218,7 @@ export class Game {
     if (this.roundTimer <= 0) {
       this.roundTimer = 0;
       this.roundOver = true;
+      if (window.liveBoostSystem) window.liveBoostSystem.stop();
       return;
     }
 
@@ -506,19 +513,25 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
   _handleProjectileSpawn(fighter, owner) {
     for (const evt of fighter.events) {
       if (evt === 'hadouken:fire') {
-        // Only one active projectile per player
         const hasActive = this.projectiles.some(p => p.owner === owner && p.active);
-        if (!hasActive) {
+        const variant = fighter.nextHadoukenVariant || 'default';
+        
+        // Only one active projectile normally, but bypass if overdrive variant
+        if (!hasActive || variant !== 'default') {
           const skeleton = fighter._buildSkeleton();
           const hand = fighter._localToWorld(skeleton.handFront[0], skeleton.handFront[1]);
+          // Add random y offset if overdrive for chaotic spam
+          const yOffset = variant !== 'default' ? (Math.random() * 60 - 30) : 0;
           this.projectiles.push({
             x: hand[0],
-            y: hand[1],
+            y: hand[1] + yOffset,
             vx: fighter.facing * PROJECTILE_SPEED,
             owner,
             active: true,
             animTimer: 0,
+            variant: variant
           });
+          fighter.nextHadoukenVariant = null;
         }
       }
     }
@@ -583,6 +596,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
 
         if (target.health <= 0) {
           this.roundOver = true;
+          if (window.liveBoostSystem) window.liveBoostSystem.stop();
         }
       }
     }
@@ -596,35 +610,52 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
 
     // Pulsing glow
     const pulse = 1 + Math.sin(proj.animTimer * 15) * 0.15;
-    const radius = 12 * pulse;
+    let radius = 12 * pulse;
+    const variant = proj.variant || 'default';
 
-    // Outer glow (Deepgram brand teal)
+    let primaryColor = DG.primary || '#00ff9d';
+    let gradStart = DG.gradStart || '#00ff9d';
+    let gradEnd = DG.gradEnd || '#ff00ff';
+
+    if (variant === 'fire') {
+      primaryColor = '#ff4500'; gradStart = '#ff8c00'; gradEnd = '#ff0000';
+      radius *= 1.2;
+    } else if (variant === 'plasma') {
+      primaryColor = '#00ffff'; gradStart = '#ffffff'; gradEnd = '#00bfff';
+    } else if (variant === 'void') {
+      primaryColor = '#4b0082'; gradStart = '#8a2be2'; gradEnd = '#000000';
+      radius *= 1.5;
+    } else if (variant === 'electric') {
+      primaryColor = '#ffff00'; gradStart = '#ffffff'; gradEnd = '#ffcc00';
+    }
+
+    // Outer glow
     ctx.globalAlpha = 0.3;
     const glow = ctx.createRadialGradient(proj.x, proj.y, 0, proj.x, proj.y, radius * 2.5);
-    glow.addColorStop(0, DG.primary || '#00ff9d');
+    glow.addColorStop(0, primaryColor);
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, radius * 2.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // Core energy ball (white center → teal → green edge)
+    // Core energy ball
     ctx.globalAlpha = 0.9;
     const core = ctx.createRadialGradient(proj.x, proj.y, 0, proj.x, proj.y, radius);
     core.addColorStop(0, '#ffffff');
-    core.addColorStop(0.35, DG.gradStart || '#00ff9d');
-    core.addColorStop(1, DG.gradEnd || '#ff00ff');
+    core.addColorStop(0.35, gradStart);
+    core.addColorStop(1, gradEnd);
     ctx.fillStyle = core;
     ctx.beginPath();
     ctx.arc(proj.x, proj.y, radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Trailing gradient behind the ball
+    // Trailing gradient
     const trailLen = 35;
     const trailDir = proj.vx > 0 ? -1 : 1;
     ctx.globalAlpha = 0.25;
     const trail = ctx.createLinearGradient(proj.x, proj.y, proj.x + trailDir * trailLen, proj.y);
-    trail.addColorStop(0, DG.primary || '#00ff9d');
+    trail.addColorStop(0, primaryColor);
     trail.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = trail;
     ctx.fillRect(
@@ -635,6 +666,17 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     );
 
     ctx.restore();
+  }
+
+  showFloatingText(text, color) {
+    this.hitSparks.push({
+      x: this.p2.x,
+      y: this.p2.y - 120, // Float high above
+      life: 2.0, // Last 2 seconds
+      color: color,
+      text: text,
+      isHuge: true
+    });
   }
 
   _drawBackground(ctx, w, h) {
@@ -821,6 +863,8 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     }
     this.p1.draw(ctx);
     this.p2.draw(ctx);
+    if (this.p1.effects) this.p1.effects.update(this._dt, ctx);
+    if (this.p2.effects) this.p2.effects.update(this._dt, ctx);
     this.p1.drawHitboxes(ctx);
     this.p2.drawHitboxes(ctx);
 
@@ -848,7 +892,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
 
       if (spark.text) {
         ctx.globalAlpha = alpha;
-        ctx.font = "bold 14px monospace";
+        ctx.font = spark.isHuge ? "bold 24px monospace" : "bold 14px monospace";
         ctx.textAlign = "center";
         ctx.fillStyle = spark.color;
         ctx.fillText(spark.text, spark.x, spark.y - 12 - rise);

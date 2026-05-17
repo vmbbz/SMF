@@ -276,6 +276,31 @@ export class Fighter {
     // Tick hadouken cooldown
     if (this.hadoukenCooldown > 0) this.hadoukenCooldown -= dt;
 
+    if (this.isStunned) {
+      if (this.stunFrames > 0) {
+        this.stunFrames -= frames;
+        if (this.stunFrames <= 0) {
+          this.stunFrames = 0;
+          this.isStunned = false;
+          this.state = "idle";
+        }
+      }
+      
+      if (this.currentAttack) {
+        this.state = "attack";
+        this.attackFrame += frames;
+        const data = this.currentAttack === Actions.HADOUKEN ? HADOUKEN_DATA : ATTACK_DATA[this.currentAttack];
+        if (this.attackFrame >= data.startup + data.active + data.recovery) {
+          this.state = "idle";
+          this.currentAttack = null;
+        }
+      } else {
+        this.state = "hitstun";
+      }
+      this._applyPhysics(dt, stageLeft, stageRight, opponent);
+      return;
+    }
+
     // Progress somersault
     if (this.isFlipping && !this.grounded) {
       this.flipAngle += dt * Math.PI * 4; // full rotation in ~0.5s
@@ -883,10 +908,14 @@ export class Fighter {
   }
 
   _drawLimb(ctx, from, to) {
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.shadowColor = 'transparent';
     ctx.beginPath();
     ctx.moveTo(from[0], from[1]);
     ctx.lineTo(to[0], to[1]);
     ctx.stroke();
+    ctx.restore();
   }
 
   _buildSkeleton() {
