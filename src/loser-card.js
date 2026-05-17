@@ -1,44 +1,47 @@
-window.currentLoserToken = null;
+window.currentRichToken = null;
+window.isRichWinner = false;
 
-window.renderLoserCard = function(token) {
-  window.currentLoserToken = token;
-  const content = document.getElementById('loser-tab-content');
+window.renderRichCard = function(token, isWinner) {
+  window.currentRichToken = token;
+  window.isRichWinner = isWinner;
+  const content = document.getElementById('rich-tab-content');
   if (!content) return;
 
-  // Render catchphrase element if it doesn't exist
-  let catchphraseEl = document.getElementById('loser-catchphrase');
+  let catchphraseEl = document.getElementById('rich-catchphrase');
   if (!catchphraseEl) {
     catchphraseEl = document.createElement('div');
-    catchphraseEl.id = 'loser-catchphrase';
-    catchphraseEl.style.cssText = 'font-style:italic;color:var(--neon-pink);font-size:12px;margin-top:15px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.2);';
+    catchphraseEl.id = 'rich-catchphrase';
+    catchphraseEl.style.cssText = `font-style:italic;color:${isWinner?'var(--neon-green)':'var(--neon-pink)'};font-size:12px;margin-top:15px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.2);`;
     content.parentElement.appendChild(catchphraseEl);
   }
   
-  const phrase = getCatchphrase(token);
+  const phrase = getCatchphrase(token, isWinner);
   catchphraseEl.innerHTML = `"${phrase}"`;
 
-  // Default to About tab
-  window.switchLoserTab(0);
+  window.switchRichTab(0);
 };
 
-window.switchLoserTab = function(tabIndex) {
-  const content = document.getElementById('loser-tab-content');
-  const tabs = document.querySelectorAll('.loser-tabs button');
-  if (!content || !window.currentLoserToken) return;
+window.switchRichTab = function(tabIndex) {
+  const content = document.getElementById('rich-tab-content');
+  const tabs = document.querySelectorAll('.rich-tabs button');
+  if (!content || !window.currentRichToken) return;
 
   tabs.forEach((t, i) => {
     if (i === tabIndex) t.classList.add('active');
     else t.classList.remove('active');
   });
 
-  const token = window.currentLoserToken;
+  const token = window.currentRichToken;
+  const isWinner = window.isRichWinner;
+  const mainColor = isWinner ? 'var(--neon-green)' : 'var(--neon-pink)';
+  const badgeText = isWinner ? 'WINNER' : 'LOSER';
 
   if (tabIndex === 0) {
     // ABOUT TAB
     content.innerHTML = `
       <div class="about-tab" style="animation: punchIn 0.3s ease;">
-        <img src="${token.logoURI || 'assets/smf-logo.png'}" class="banner" style="width:80px;height:80px;border-radius:50%;border:2px solid var(--neon-pink);margin-bottom:10px;object-fit:cover;">
-        <h2 style="font-size:20px;font-weight:900;color:#fff;margin-bottom:10px;">$${(token.symbol || 'MEME').toUpperCase()} <span class="loser-badge" style="background:var(--neon-pink);color:#000;font-size:10px;padding:2px 6px;border-radius:4px;vertical-align:middle;">LOSER</span></h2>
+        <img src="${token.logoURI || 'assets/smf-logo.png'}" class="banner" style="width:80px;height:80px;border-radius:50%;border:2px solid ${mainColor};margin-bottom:10px;object-fit:cover;">
+        <h2 style="font-size:20px;font-weight:900;color:#fff;margin-bottom:10px;">$${(token.symbol || 'MEME').toUpperCase()} <span class="loser-badge" style="background:${mainColor};color:#000;font-size:10px;padding:2px 6px;border-radius:4px;vertical-align:middle;">${badgeText}</span></h2>
         
         <div class="power-rating" style="font-size:12px;color:var(--neon-blue);margin-bottom:15px;background:rgba(0,212,255,0.1);padding:5px;border-radius:6px;border:1px dashed var(--neon-blue);">
           <strong>IN-GAME POWER:</strong> 
@@ -46,10 +49,10 @@ window.switchLoserTab = function(tabIndex) {
         </div>
 
         <div class="market-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10px;background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;margin-bottom:15px;text-align:left;">
-          <div><span style="color:var(--neon-pink);">MCAP</span><br><strong style="font-size:12px;color:#fff;">$${(token.marketCap || 0).toLocaleString()}</strong></div>
-          <div><span style="color:var(--neon-pink);">24h VOL</span><br><strong style="font-size:12px;color:#fff;">$${(token.volume24h || 0).toLocaleString()}</strong></div>
-          <div><span style="color:var(--neon-pink);">LIQUIDITY</span><br><strong style="font-size:12px;color:#fff;">$${(token.liquidity || 0).toLocaleString()}</strong></div>
-          <div><span style="color:var(--neon-pink);">24H CHANGE</span><br><strong style="font-size:12px;color:${(token.priceChange24h || 0) > 0 ? 'var(--neon-green)' : 'var(--neon-pink)'};">${(token.priceChange24h || 0).toFixed(2)}%</strong></div>
+          <div><span style="color:${mainColor};">MCAP</span><br><strong style="font-size:12px;color:#fff;">$${(token.marketCap || 0).toLocaleString()}</strong></div>
+          <div><span style="color:${mainColor};">24h VOL</span><br><strong style="font-size:12px;color:#fff;">$${(token.volume24h || 0).toLocaleString()}</strong></div>
+          <div><span style="color:${mainColor};">LIQUIDITY</span><br><strong style="font-size:12px;color:#fff;">$${(token.liquidity || 0).toLocaleString()}</strong></div>
+          <div><span style="color:${mainColor};">24H CHANGE</span><br><strong style="font-size:12px;color:${(token.priceChange24h || 0) > 0 ? 'var(--neon-green)' : 'var(--neon-pink)'};">${(token.priceChange24h || 0).toFixed(2)}%</strong></div>
         </div>
       </div>
     `;
@@ -102,8 +105,17 @@ function calculatePowerLevel(token) {
   return (holderScore * volScore * changeScore * liqScore).toFixed(1) + 'x';
 }
 
-function getCatchphrase(token) {
+function getCatchphrase(token, isWinner) {
   const symbol = (token.symbol || 'MEME').toUpperCase();
+  if (isWinner) {
+    return [
+      `$${symbol} dominates the arena!`,
+      `My chart goes up, you go down!`,
+      `100x incoming!`,
+      `Liquidated another CHAD.`,
+      `Can't fade the $${symbol} volume!`,
+    ][Math.floor(Math.random() * 5)];
+  }
   const phrases = [
     `You just got $${symbol}'d into the shadow realm!`,
     `My liquidity is thicker than your portfolio!`,

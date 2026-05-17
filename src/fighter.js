@@ -165,7 +165,6 @@ export class Fighter {
 
   if (tokenData.logoURI) {
     this.headImage = new Image();
-    this.headImage.crossOrigin = 'anonymous';
     this.headImage.src = tokenData.logoURI;
     
     await new Promise(resolve => {
@@ -184,7 +183,6 @@ export class Fighter {
 
   if (tokenData.coverImage) {
     this.headerImage = new Image();
-    this.headerImage.crossOrigin = 'anonymous';
     this.headerImage.src = tokenData.coverImage;
     await new Promise(resolve => {
       this.headerImage.onload = () => resolve();

@@ -2092,6 +2092,16 @@ initAuth().then(handledRoute => {
 // Expose startFight globally for meme mode
 window.startFight = startFight;
 
+window.toggleWeather = function() {
+  if (window.effects) window.effects.toggleWeather();
+  const btn = document.getElementById('btn-weather');
+  if (btn) {
+    const modes = { 'rain': '🌧️ RAIN', 'wind': '💨 WIND', 'snow': '❄️ SNOW', 'clear': '☀️ CLEAR' };
+    const curr = window.effects.weatherModes[window.effects.currentWeather];
+    btn.innerHTML = modes[curr] || 'WEATHER';
+  }
+};
+
 // ─────────────────────────────────────────────
 // Premium Victory & Social (Phase 3)
 // ─────────────────────────────────────────────
@@ -2100,74 +2110,64 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
   const overlay = document.getElementById('victory-overlay');
   const winText = document.getElementById('victory-text');
   
-  // Winner Card
-  const winName = document.getElementById('winner-name');
-  const winLogo = document.getElementById('winner-logo');
-  const winCatch = document.getElementById('winner-catchphrase');
-  
-  // Loser Card
-  const loseName = document.getElementById('loser-name');
-  const loseLogo = document.getElementById('loser-logo');
-  
+  const winContainer = document.getElementById('front-card-content');
+  const loseContainer = document.getElementById('back-card-content');
   const buyBtn = document.getElementById('btn-buy-token');
 
-  if (!overlay) return;
+  if (!overlay || !winContainer || !loseContainer) return;
 
   const isPlayer = winnerNum === 1;
   winText.textContent = isPlayer ? 'YOU WIN!' : 'K.O.';
   winText.style.color = isPlayer ? 'var(--neon-blue)' : 'var(--neon-pink)';
   
-  // Reset text styles
   winText.style.transform = 'scale(1)';
-  winText.style.fontSize = ''; // revert to ko-text original
+  winText.style.fontSize = ''; 
   
-  // Reset cards state to default (winner front, loser back)
-  if (window.winnerFront === false) {
-    if (window.toggleCards) window.toggleCards();
+  if (window.winnerFront === false && window.toggleCards) {
+    window.toggleCards();
   }
+  
   const lc = document.getElementById('loser-card');
-  const toggleBtn = document.getElementById('btn-toggle-victory');
   if (lc) lc.style.opacity = '0'; // Hide loser card initially
-  if (toggleBtn) toggleBtn.style.opacity = '0'; 
 
-  if (token) {
-    winName.textContent = (token.symbol || token.name || 'DEGEN').toUpperCase();
-    if (winLogo) winLogo.src = token.logoURI || 'assets/smf-logo.png';
-    
-    // Catchphrase from personality
-    const personality = window.generatePersonality ? window.generatePersonality(token) : null;
-    if (winCatch && personality) {
-      const phrase = personality.taunts[Math.floor(Math.random() * personality.taunts.length)];
-      winCatch.textContent = `"${phrase}"`;
-    }
-
-    // Buy CTA (Use Loser's token to buy if we beat them, or Winner's if we lost)
-    // Wait, typically you buy the token of the MEME.
-    // If we are playing as PLAYER, we don't have a token.
-    const memeToken = isPlayer ? loserToken : token;
-    
-    if (buyBtn && memeToken) {
-      buyBtn.style.display = 'block';
-      buyBtn.textContent = `BUY $${memeToken.symbol} 🛒`;
-      buyBtn.onclick = () => window.open(memeToken.url || `https://dexscreener.com/solana/${memeToken.mint}`, '_blank');
-      window.lastOpponentSymbol = memeToken.symbol;
+  // Helper to render Simple or Rich Card
+  const renderCard = (container, tokenData, isWinner) => {
+    if (tokenData && (tokenData.marketCap !== undefined || tokenData.liquidity !== undefined)) {
+      // RICH CARD
+      container.innerHTML = `
+        <div class="rich-tabs">
+          <button onclick="switchRichTab(0)" class="active">ABOUT</button>
+          <button onclick="switchRichTab(1)">SOCIAL</button>
+          <button onclick="switchRichTab(2)">SAFETY</button>
+        </div>
+        <div id="rich-tab-content"></div>
+      `;
+      if (window.renderRichCard) window.renderRichCard(tokenData, isWinner);
     } else {
-      if (buyBtn) buyBtn.style.display = 'none';
-      window.lastOpponentSymbol = 'MEME';
+      // SIMPLE HUMAN CARD
+      const name = isPlayer === isWinner ? 'CHAD' : 'MEME';
+      const color = isWinner ? 'var(--neon-green)' : 'var(--neon-pink)';
+      container.innerHTML = `
+        <div class="card-header" style="color:${color};font-size:14px;font-weight:bold;margin-bottom:15px;letter-spacing:3px;">${isWinner ? 'WINNER' : 'LOSER'}</div>
+        <img src="assets/smf-logo.png" style="width:100px;height:100px;border-radius:50%;border:4px solid ${color};">
+        <div style="font-size:32px;font-weight:900;color:#fff;margin-top:15px;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;">${name}</div>
+        <div style="font-style:italic;color:var(--neon-blue);font-size:16px;line-height:1.2;text-shadow:0 0 10px var(--neon-blue);">"I'll be back!"</div>
+      `;
     }
+  };
+
+  renderCard(winContainer, isPlayer ? null : token, true);
+  renderCard(loseContainer, isPlayer ? loserToken : null, false);
+
+  const memeToken = isPlayer ? loserToken : token;
+  if (buyBtn && memeToken) {
+    buyBtn.style.display = 'block';
+    buyBtn.textContent = `BUY $${memeToken.symbol} 🛒`;
+    buyBtn.onclick = () => window.open(memeToken.url || `https://dexscreener.com/solana/${memeToken.mint}`, '_blank');
+    window.lastOpponentSymbol = memeToken.symbol;
   } else {
-    winName.textContent = isPlayer ? 'CHAD' : 'MEME';
-    winLogo.src = 'assets/smf-logo.png';
     if (buyBtn) buyBtn.style.display = 'none';
     window.lastOpponentSymbol = 'MEME';
-  }
-  
-  // Populate Loser Token via 3-Tab Logic
-  if (window.renderLoserCard) {
-    window.renderLoserCard(loserToken || { 
-      symbol: isPlayer ? 'STAY POOR' : 'CHAD', 
-      logoURI: 'assets/smf-logo.png' 
-    });
   }
 
   overlay.classList.remove('hidden');
@@ -2180,7 +2180,6 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
     winText.style.transform = 'scale(0.8)';
     winText.style.fontSize = '40px';
     if (lc) lc.style.opacity = '1';
-    if (toggleBtn) toggleBtn.style.opacity = '1';
   }, 2500);
 };
 
