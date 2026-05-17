@@ -543,6 +543,11 @@ window.showMultiplayer = () => {
   }
 };
 </script>
+<script>
+  window.onSpotifyWebPlaybackSDKReady = () => {
+    console.log("Spotify Web Playback SDK is ready");
+  };
+</script>
 <script src="https://sdk.scdn.co/spotify-player.js"></script>
 <script type="module" src="./src/spotify-widget.js"></script>
 </body>
