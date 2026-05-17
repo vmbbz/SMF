@@ -95,7 +95,7 @@ export class SpotifyWidget {
       const track = state.track_window.current_track;
       const trackNameEl = document.getElementById('track-name');
       if (trackNameEl && track) {
-        trackNameEl.textContent = \`\${track.name} - \${track.artists[0].name}\`;
+        trackNameEl.textContent = `${track.name} - ${track.artists[0].name}`;
       }
     });
 

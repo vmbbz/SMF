@@ -34,8 +34,8 @@ export class TrendingStrip {
           ${this.isGraduatesOnly ? 'SHOW ALL TRENDING' : 'PUMP.FUN GRADUATES ONLY'}
         </button>
       </div>
-      <div class="marquee-container" style="overflow:hidden;white-space:nowrap;margin-top:10px;position:relative;">
-        <div class="marquee" id="${this.container.id}-inner" style="display:inline-block;animation:marquee 20s linear infinite;"></div>
+      <div class="marquee-container" style="overflow:hidden;white-space:nowrap;margin-top:10px;position:relative;width:100%;">
+        <div class="marquee" id="${this.container.id}-inner" style="display:inline-block;animation:marquee 40s linear infinite;"></div>
       </div>
     `;
     
@@ -45,8 +45,8 @@ export class TrendingStrip {
       style.id = 'marquee-style';
       style.innerHTML = `
         @keyframes marquee {
-          0% { transform: translateX(100%); }
-          100% { transform: translateX(-100%); }
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-50%); }
         }
         .token-pill {
           display: inline-flex;
@@ -98,13 +98,16 @@ export class TrendingStrip {
       return;
     }
 
-    inner.innerHTML = this.tokens.map(token => `
+    const itemsHtml = this.tokens.map(token => `
       <div class="token-pill" onclick="window.fightToken && window.fightToken('${token.mint}')">
         <img src="${token.logoURI || 'assets/smf-logo.png'}" alt="${token.symbol}">
         <span class="symbol">$${token.symbol}</span>
         <span class="power">⚔️ ${token.power?.rating || '1.0x'}</span>
       </div>
     `).join('');
+
+    // Duplicate list for continuous infinite marquee
+    inner.innerHTML = itemsHtml + itemsHtml;
   }
 }
 

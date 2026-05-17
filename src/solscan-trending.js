@@ -6,21 +6,7 @@ export async function getSolscanTrending(count = 12) {
     const res = await fetch(`/api/trending?count=${count}`);
     const tokens = await res.json();
     return tokens.map(t => {
-      const tokenObj = {
-        mint: t.tokenAddress,
-        symbol: t.symbol || 'MEME',
-        name: t.name || t.symbol || 'Unknown',
-        logoURI: t.logo,
-        marketCap: t.marketCap || 0,
-        volume24h: t.volume24h || 0,
-        priceChange24h: t.priceChange24h || 0,
-        liquidity: t.liquidity || 0,
-        holders: t.holders || 100,
-        dexscreenerUrl: t.dexscreenerUrl,
-        solscanUrl: t.solscanUrl,
-        platform: 'pumpfun',
-      };
-      return { ...tokenObj, power: calculateFighterPower(tokenObj) };
+      return { ...t, platform: 'pumpfun', power: calculateFighterPower(t) };
     });
   } catch (e) {
     console.error('[SolscanTrending] Failed:', e);
@@ -33,21 +19,7 @@ export async function getPumpFunGraduates(count = 8) {
     const res = await fetch(`/api/graduates?count=${count}`);
     const tokens = await res.json();
     return tokens.map(t => {
-      const tokenObj = {
-        mint: t.tokenAddress || t.metadata?.mintAddress,
-        symbol: t.symbol || 'MEME',
-        name: t.name || t.symbol || 'Unknown',
-        logoURI: t.logo,
-        marketCap: t.fullyDilutedValuation || 0,
-        volume24h: t.volume24h || 0,
-        priceChange24h: t.priceChange24h || 0,
-        liquidity: t.liquidity || 0,
-        holders: t.holders || 100,
-        dexscreenerUrl: t.dexscreenerUrl,
-        solscanUrl: t.solscanUrl,
-        platform: 'pumpfun',
-      };
-      return { ...tokenObj, power: calculateFighterPower(tokenObj) };
+      return { ...t, platform: 'pumpfun', power: calculateFighterPower(t) };
     });
   } catch (e) {
     console.error('[Graduates] Failed:', e);

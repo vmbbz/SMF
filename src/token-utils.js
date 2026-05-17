@@ -20,19 +20,7 @@ async function getTrendingTokens(count = 8) {
   try {
     const res = await fetch(`/api/trending?count=${count}`);
     const tokens = await res.json();
-    return tokens.map(t => ({
-      mint: t.tokenAddress,
-      symbol: t.symbol || 'MEME',
-      name: t.name || t.symbol || 'Unknown',
-      logoURI: t.logo,
-      marketCap: t.marketCap || 0,
-      volume24h: t.volume24h || 0,
-      priceChange24h: t.priceChange24h || 0,
-      liquidity: t.liquidity || 0,
-      dexscreenerUrl: t.dexscreenerUrl,
-      solscanUrl: t.solscanUrl,
-      platform: 'pumpfun',
-    }));
+    return tokens;
   } catch (e) {
     console.error("Trending fetch failed:", e);
     return [];
@@ -46,22 +34,10 @@ async function getTokenByMint(mint) {
   try {
     const res = await fetch(`/api/token/${mint}`);
     const data = await res.json();
-    if (!data) throw new Error('Token not found');
+    if (!data || !data.mint) throw new Error('Token not found');
     
-    const mappedToken = {
-      mint: data.price?.data?.tokenAddress || data.holders?.tokenAddress || mint,
-      symbol: data.symbol || data.price?.data?.symbol || '$UNKNOWN',
-      name: data.price?.data?.name || data.holders?.tokenName || 'Unknown Meme',
-      logoURI: data.holders?.tokenLogo || data.price?.data?.logo || `assets/smf-logo.png`,
-      marketCap: data.holders?.marketCap || 0,
-      volume24h: data.holders?.totalVolume?.['24h'] || 0,
-      priceChange24h: data.holders?.pricePercentChange?.['24h'] || 0,
-      liquidity: data.holders?.totalLiquidityUsd || 0,
-      holders: data.holders?.holders || 100,
-    };
-    
-    setCachedToken(mint, mappedToken);
-    return mappedToken;
+    setCachedToken(mint, data);
+    return data;
   } catch (e) {
     console.error("Failed to fetch token by mint:", e);
     return null;

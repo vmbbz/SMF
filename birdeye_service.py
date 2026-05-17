@@ -1,21 +1,27 @@
 import time
 import httpx
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
 class BirdeyeService:
     def __init__(self):
+        self.api_key = os.getenv("BIRDEYE_API_KEY")
+        self.base_url = "https://public-api.birdeye.so"
         self.client = httpx.AsyncClient(
-            base_url="https://public-api.birdeye.so",
+            base_url=self.base_url,
             headers={
-                "X-API-KEY": BIRDEYE_API_KEY,
+                "X-API-KEY": self.api_key or "",
                 "x-chain": "solana",
                 "accept": "application/json"
             },
-            timeout=8.0
+            timeout=15.0
         )
         self.cache = {}  # mint -> {data, ts}
+        self.list_cache = {} # "trending"|"graduated" -> (data, timestamp)
 
     async def get_cached_token(self, mint: str):
         cached = self.cache.get(mint)
@@ -53,25 +59,36 @@ class BirdeyeService:
 
     # Trending
     async def fetch_trending_tokens(self, limit=12):
+        cached = self.list_cache.get("trending")
+        if cached and time.time() - cached[1] < 60:
+            return cached[0][:limit]
         try:
             resp = await self.client.get("/defi/token_trending", params={"limit": limit})
+            resp.raise_for_status()
             data = resp.json().get("data") or {}
             tokens = data.get("tokens") or []
-            return [self._normalize(item) for item in tokens[:limit]]
+            res = [self._normalize(item) for item in tokens[:limit]]
+            self.list_cache["trending"] = (res, time.time())
+            return res
         except Exception as e:
             print(f"[Birdeye] Error fetching trending: {e}")
-            return []
+            return cached[0][:limit] if cached else []
 
-    # Graduates / new listings
+    # Graduated (New Listings on Raydium usually from Pump.fun)
     async def fetch_graduated_tokens(self, limit=8):
+        cached = self.list_cache.get("graduated")
+        if cached and time.time() - cached[1] < 60:
+            return cached[0][:limit]
         try:
             resp = await self.client.get("/defi/v2/tokens/new_listing", params={"limit": limit*2, "meme_platform_enabled": "true"})
             data = resp.json().get("data") or {}
             items = data.get("items") or []
             # Filter for graduated (liquidity > ~10k means it hit raydium)
-            return [self._normalize(item) for item in items if item.get("liquidity", 0) > 10000][:limit]
+            res = [self._normalize(item) for item in items if item.get("liquidity", 0) > 10000][:limit]
+            self.list_cache["graduated"] = (res, time.time())
+            return res
         except Exception as e:
             print(f"[Birdeye] Error fetching new listings: {e}")
-            return []
+            return cached[0][:limit] if cached else []
 
 birdeye_service = BirdeyeService()
