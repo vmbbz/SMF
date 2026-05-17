@@ -17,8 +17,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Dict, Optional
-from urllib.parse import parse_qs, urlencode, quote
-from solscan_service import solscan_service
+from birdeye_service import birdeye_service
 
 SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
 
@@ -596,15 +595,15 @@ async def favicon() -> Response:
 
 @get("/api/trending")
 async def api_trending(count: int = 12) -> List[Dict[str, Any]]:
-    return await solscan_service.fetch_trending_tokens(count)
+    return await birdeye_service.fetch_trending_tokens(count)
 
 @get("/api/graduates")
 async def api_graduates(count: int = 8) -> List[Dict[str, Any]]:
-    return await solscan_service.fetch_launchpad_tokens('graduated', count)
+    return await birdeye_service.fetch_graduated_tokens(count)
 
 @get("/api/token/{mint:str}")
 async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
-    return await solscan_service.get_cached_token(mint)
+    return await birdeye_service.get_cached_token(mint)
 
 @get("/api/spotify/login")
 async def spotify_login(request: Request) -> Response[Any]:
