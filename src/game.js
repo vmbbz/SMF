@@ -688,7 +688,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     const bgImg = this.p2.headerImage || this.p2.headImage;
     if (bgImg && bgImg.complete) {
       // Subtle pulse based on time
-      const pulse = 0.15 + Math.sin(performance.now() / 2000) * 0.05;
+      const pulse = 0.35 + Math.sin(performance.now() / 2000) * 0.15;
       ctx.globalAlpha = pulse;
       
       const scale = Math.max(w / bgImg.width, h / bgImg.height);
@@ -701,7 +701,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     // Add a dark vignette
     const grad = ctx.createRadialGradient(w/2, h/2, 0, w/2, h/2, w/2);
     grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(1, 'rgba(0,0,0,0.9)'); // Darker vignette for focus
+    grad.addColorStop(1, 'rgba(0,0,0,0.6)'); // Lighter vignette for brighter background
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
@@ -800,13 +800,15 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     );
     floorGrad.addColorStop(0, DG.gradStart || '#00ff9d');
     floorGrad.addColorStop(1, DG.gradEnd || '#ff00ff');
-    ctx.strokeStyle = floorGrad;
-    ctx.lineWidth = 2;
-    ctx.globalAlpha = 0.4;
+    ctx.strokeStyle = 'var(--neon-green)';
+    ctx.lineWidth = 6;
+    ctx.shadowColor = 'var(--neon-green)';
+    ctx.shadowBlur = 15;
     ctx.beginPath();
-    ctx.moveTo(this.stageLeft, floorY);
-    ctx.lineTo(this.stageRight, floorY);
+    ctx.moveTo(this.stageLeft - 200, floorY);
+    ctx.lineTo(this.stageRight + 200, floorY);
     ctx.stroke();
+    ctx.shadowBlur = 0; // Reset shadow
     ctx.globalAlpha = 1;
 
     // Neon Ropes (Phase 3)

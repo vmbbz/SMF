@@ -68,8 +68,8 @@ class BirdeyeService:
             resp = await self.client.get("/defi/v2/tokens/new_listing", params={"limit": limit*2, "meme_platform_enabled": "true"})
             data = resp.json().get("data") or {}
             items = data.get("items") or []
-            # Filter for graduated (high MCAP)
-            return [self._normalize(item) for item in items if item.get("mc", 0) > 69000][:limit]
+            # Filter for graduated (liquidity > ~10k means it hit raydium)
+            return [self._normalize(item) for item in items if item.get("liquidity", 0) > 10000][:limit]
         except Exception as e:
             print(f"[Birdeye] Error fetching new listings: {e}")
             return []

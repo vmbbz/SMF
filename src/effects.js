@@ -76,15 +76,16 @@ export class Effects {
       ctx.globalAlpha = 1;
     }
     
-    // Premium "Lash" Background Streaks (Market Energy)
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 8; i++) {
-      const speed = 0.5 + (i * 0.1);
-      const offset = (Date.now() * speed) % (window.innerWidth + window.innerHeight);
-      ctx.strokeStyle = i % 2 === 0 ? 'rgba(0, 255, 157, 0.08)' : 'rgba(255, 0, 255, 0.08)';
+    // Premium "Lash" Background Streaks (Market Energy / Rain)
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 20; i++) {
+      const speed = 1.0 + (i * 0.15);
+      const offset = (Date.now() * speed) % (window.innerWidth + window.innerHeight * 2);
+      ctx.strokeStyle = i % 2 === 0 ? 'rgba(0, 255, 157, 0.3)' : 'rgba(255, 0, 255, 0.3)';
       ctx.beginPath();
-      ctx.moveTo(offset - 500, 0);
-      ctx.lineTo(offset, window.innerHeight);
+      // Add slight angle variance to look like blowing rain
+      ctx.moveTo(offset - 600 - (i * 20), -100);
+      ctx.lineTo(offset, window.innerHeight + 100);
       ctx.stroke();
     }
   }

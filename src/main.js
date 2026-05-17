@@ -282,6 +282,16 @@ async function startFight() {
   if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
 
+  // Show Fight Trending Strip
+  const fightStripEl = document.getElementById('fight-trending-strip');
+  if (fightStripEl) {
+    fightStripEl.style.display = 'block';
+    if (!window.fightTrendingStrip) {
+      window.fightTrendingStrip = new window.TrendingStrip('fight-trending-strip');
+      window.fightTrendingStrip.init();
+    }
+  }
+
   // Create inputs based on mode selection
   p1Input = createInput(1, p1ModeIdx, p1ProviderIdx);
   p2Input = createInput(2, p2ModeIdx, p2ProviderIdx);
