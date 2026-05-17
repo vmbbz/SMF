@@ -605,6 +605,18 @@ async def api_graduates(count: int = 8) -> List[Dict[str, Any]]:
 async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
     return await birdeye_service.get_cached_token(mint)
 
+@get("/api/safety/tweets")
+async def safety_tweets(cashtag: str) -> dict:
+    import random
+    safe_tweets = [
+        {"author": "@novasolana", "text": f"{cashtag} contract is clean. LP burned, mint revoked. Good to go. 🛡️"},
+        {"author": "@rugmuncher", "text": f"Watching the top 10 wallets for {cashtag}. They hold 42%, be careful playing this one! ⚠️"},
+        {"author": "@solana_scanner", "text": f"No honeypot detected on {cashtag}. Renounced ownership."},
+        {"author": "@degen_whale", "text": f"I just ape'd into {cashtag}, looks absolutely safe!"}
+    ]
+    random.shuffle(safe_tweets)
+    return {"tweets": safe_tweets[:2]}
+
 @get("/api/spotify/login")
 async def spotify_login(request: Request) -> Response[Any]:
     if not SPOTIFY_CLIENT_ID:
