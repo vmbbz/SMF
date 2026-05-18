@@ -29,12 +29,12 @@ export class TrendingStrip {
   render() {
     this.container.innerHTML = `
       <div class="strip-header" style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:900;color:var(--neon-blue);text-transform:uppercase;letter-spacing:2px;font-size:10px;margin-right:15px;text-shadow:0 0 10px var(--neon-blue);">🚀 LIVE NETWORK STREAM</span>
-        <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn" style="background:var(--neon-pink);color:#000;border:none;padding:5px 10px;border-radius:6px;font-weight:bold;cursor:pointer;font-family:inherit;font-size:10px;">
+        <span style="font-weight:900;color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-size:9px;margin-right:15px;text-shadow:0 0 10px var(--neon-blue);">🚀 LIVE NETWORK STREAM</span>
+        <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn" style="background:var(--neon-pink);color:#000;border:none;padding:4px 8px;border-radius:4px;font-weight:bold;cursor:pointer;font-family:inherit;font-size:9px;">
           ${this.isGraduatesOnly ? 'SHOW ALL TRENDING' : 'PUMP.FUN GRADUATES ONLY'}
         </button>
       </div>
-      <div class="marquee-container" style="overflow:hidden;white-space:nowrap;margin-top:10px;position:relative;width:100%;">
+      <div class="marquee-container" style="overflow:hidden;white-space:nowrap;margin-top:6px;position:relative;width:100%;">
         <div class="marquee" id="${this.container.id}-inner" style="display:inline-block;animation:marquee 40s linear infinite;"></div>
       </div>
     `;
@@ -54,8 +54,8 @@ export class TrendingStrip {
           background: rgba(255,255,255,0.1);
           border: 1px solid rgba(255,255,255,0.2);
           border-radius: 20px;
-          padding: 5px 15px 5px 5px;
-          margin-right: 15px;
+          padding: 4px 12px 4px 4px;
+          margin-right: 12px;
           cursor: pointer;
           transition: all 0.2s ease;
         }

@@ -5,11 +5,31 @@ export class Effects {
     this.pumpLines = [];
     this.weatherModes = ['rain', 'wind', 'snow', 'clear'];
     this.currentWeather = 0; // index of weatherModes
+    this.weatherParticles = [];
+    this._initWeather();
   }
   
   toggleWeather() {
     this.currentWeather = (this.currentWeather + 1) % this.weatherModes.length;
     console.log("Weather toggled to: " + this.weatherModes[this.currentWeather]);
+    this._initWeather();
+  }
+
+  _initWeather() {
+    this.weatherParticles = [];
+    const mode = this.weatherModes[this.currentWeather];
+    const count = mode === 'snow' ? 40 : (mode === 'rain' ? 30 : (mode === 'wind' ? 25 : 0));
+    
+    for (let i = 0; i < count; i++) {
+      this.weatherParticles.push({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        speed: Math.random() * 0.5 + 0.5,
+        offset: Math.random() * Math.PI * 2,
+        size: Math.random() * 2 + 1,
+        colorIndex: i % 2
+      });
+    }
   }
   
   addHitParticles(x, y, color = '#ff00ff', count = 25) {
@@ -84,38 +104,39 @@ export class Effects {
     }
     
     const mode = this.weatherModes[this.currentWeather];
-    
     if (mode === 'clear') return;
 
     if (mode === 'rain') {
       ctx.lineWidth = 1;
-      for (let i = 0; i < 15; i++) {
-        const speed = 1.0 + (i * 0.15);
-        const offset = (Date.now() * speed) % (window.innerWidth + window.innerHeight * 2);
-        ctx.strokeStyle = i % 2 === 0 ? 'rgba(0, 255, 157, 0.15)' : 'rgba(255, 0, 255, 0.15)';
+      for (const p of this.weatherParticles) {
+        p.y += 15 * p.speed;
+        p.x -= 5 * p.speed;
+        if (p.y > window.innerHeight) { p.y = -50; p.x = Math.random() * window.innerWidth + 200; }
+        
+        ctx.strokeStyle = p.colorIndex === 0 ? 'rgba(0, 255, 157, 0.2)' : 'rgba(255, 0, 255, 0.2)';
         ctx.beginPath();
-        ctx.moveTo(offset - 400 - (i * 10), -100);
-        ctx.lineTo(offset, window.innerHeight + 100);
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + 10 * p.speed, p.y - 30 * p.speed);
         ctx.stroke();
       }
     } else if (mode === 'wind') {
-      for (let i = 0; i < 12; i++) {
-        const speed = 0.5 + (i * 0.05);
-        const t = Date.now() * 0.001 * speed;
-        const x = (t * 200 + i * 150) % window.innerWidth;
-        const y = ((Math.sin(t + i) * 100) + window.innerHeight / 2 + i * 30) % window.innerHeight;
-        ctx.fillStyle = i % 2 === 0 ? 'rgba(0, 255, 157, 0.4)' : 'rgba(255, 0, 255, 0.4)';
-        ctx.fillRect(x, Math.abs(y), 4, 2);
+      for (const p of this.weatherParticles) {
+        p.x -= 8 * p.speed;
+        p.y += Math.sin(Date.now() * 0.002 + p.offset) * 2;
+        if (p.x < -10) { p.x = window.innerWidth + 10; p.y = Math.random() * window.innerHeight; }
+        
+        ctx.fillStyle = p.colorIndex === 0 ? 'rgba(0, 255, 157, 0.4)' : 'rgba(255, 0, 255, 0.4)';
+        ctx.fillRect(p.x, p.y, p.size * 2, p.size);
       }
     } else if (mode === 'snow') {
-      for (let i = 0; i < 30; i++) {
-        const speed = 0.2 + (i * 0.02);
-        const t = Date.now() * 0.001 * speed;
-        const y = (t * 100 + i * 50) % window.innerHeight;
-        const x = (i * (window.innerWidth / 30) + Math.sin(t + i) * 20) % window.innerWidth;
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+      for (const p of this.weatherParticles) {
+        p.y += 1.5 * p.speed;
+        p.x += Math.sin(Date.now() * 0.001 + p.offset) * 0.5;
+        if (p.y > window.innerHeight) { p.y = -10; p.x = Math.random() * window.innerWidth; }
+        
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.beginPath();
-        ctx.arc(x, Math.abs(y), Math.random() * 2 + 1, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();
       }
     }

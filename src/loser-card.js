@@ -48,11 +48,11 @@ window.switchRichTab = function(tabIndex) {
           <span class="power-value" style="color:#fff;font-weight:bold;font-size:14px;">${calculatePowerLevel(token)}</span>
         </div>
 
-        <div class="market-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:10px;background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;margin-bottom:15px;text-align:left;">
-          <div><span style="color:${mainColor};">MCAP</span><br><strong style="font-size:12px;color:#fff;">$${(token.marketCap || 0).toLocaleString()}</strong></div>
-          <div><span style="color:${mainColor};">24h VOL</span><br><strong style="font-size:12px;color:#fff;">$${(token.volume24h || 0).toLocaleString()}</strong></div>
-          <div><span style="color:${mainColor};">LIQUIDITY</span><br><strong style="font-size:12px;color:#fff;">$${(token.liquidity || 0).toLocaleString()}</strong></div>
-          <div><span style="color:${mainColor};">24H CHANGE</span><br><strong style="font-size:12px;color:${(token.priceChange24h || 0) > 0 ? 'var(--neon-green)' : 'var(--neon-pink)'};">${(token.priceChange24h || 0).toFixed(2)}%</strong></div>
+        <div class="market-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:9px;background:rgba(255,255,255,0.05);padding:10px 8px;border-radius:8px;margin-bottom:15px;text-align:left;">
+          <div style="padding-bottom:5px;"><span style="color:${mainColor};">MCAP</span><br><strong style="font-size:10px;color:#fff;">$${(token.marketCap || 0).toLocaleString()}</strong></div>
+          <div style="padding-bottom:5px;"><span style="color:${mainColor};">24h VOL</span><br><strong style="font-size:10px;color:#fff;">$${(token.volume24h || 0).toLocaleString()}</strong></div>
+          <div style="padding-top:5px;border-top:1px solid rgba(255,255,255,0.05);"><span style="color:${mainColor};">LIQUIDITY</span><br><strong style="font-size:10px;color:#fff;">$${(token.liquidity || 0).toLocaleString()}</strong></div>
+          <div style="padding-top:5px;border-top:1px solid rgba(255,255,255,0.05);"><span style="color:${mainColor};">24H CHANGE</span><br><strong style="font-size:10px;color:${(token.priceChange24h || 0) > 0 ? 'var(--neon-green)' : 'var(--neon-pink)'};">${(token.priceChange24h || 0).toFixed(2)}%</strong></div>
         </div>
       </div>
     `;

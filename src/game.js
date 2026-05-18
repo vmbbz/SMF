@@ -150,7 +150,7 @@ export class Game {
     return this.logicalW * (1 - STAGE_MARGIN);
   }
   get floorY() {
-    return this.logicalH - 160;
+    return this.logicalH - 230;
   }
 
   start() {
@@ -836,21 +836,25 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
 
     // Glowing Floor Grid (Phase 3)
     ctx.save();
-    ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+    // Solid Neon Floor Line
+    ctx.strokeStyle = "rgba(0, 255, 157, 0.6)";
+    ctx.lineWidth = 3;
+    ctx.shadowColor = "rgba(0, 255, 157, 0.8)";
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(0, floorY);
+    ctx.lineTo(w, floorY);
+    ctx.stroke();
+
+    // Perspective Grid (Vertical only)
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(0, 255, 157, 0.15)";
     ctx.lineWidth = 1;
-    for (let i = -10; i <= 10; i++) {
-      const x = w/2 + i * 100;
+    for (let i = -15; i <= 15; i++) {
+      const x = w/2 + i * 80;
       ctx.beginPath();
       ctx.moveTo(x, floorY);
-      ctx.lineTo(w/2 + i * 300, floorY + 150);
-      ctx.stroke();
-    }
-    for (let j = 0; j < 5; j++) {
-      const y = floorY + j * 30;
-      ctx.globalAlpha = 0.1 / (j + 1);
-      ctx.beginPath();
-      ctx.moveTo(this.stageLeft - 200, y);
-      ctx.lineTo(this.stageRight + 200, y);
+      ctx.lineTo(w/2 + i * 250, floorY + 250);
       ctx.stroke();
     }
     ctx.restore();
