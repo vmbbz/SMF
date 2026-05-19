@@ -561,7 +561,7 @@
 
     // Auto init
     window.addEventListener('load', async () => {
-      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isMobile = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
       const mobileControls = document.getElementById('mobile-controls');
 
       if (isMobile && mobileControls) {
@@ -708,6 +708,44 @@ window.showMultiplayer = () => {
   }
 };
 </script>
+window.nextFight = async () => {
+  // 1. Hide victory overlay immediately
+  const overlay = document.getElementById('victory-overlay');
+  if (overlay) overlay.classList.add('hidden');
+
+  // 2. Stop and destroy current game instance
+  if (window.currentGame) {
+    try {
+      if (typeof window.currentGame.stop === 'function') window.currentGame.stop();
+      window.currentGame.running = false;
+    } catch (e) { /* ignore */ }
+    window.currentGame = null;
+  }
+
+  // 3. Clear the canvas so no stale frame is visible
+  const canvas = document.getElementById('game');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // 4. Load next token — use queue if available, otherwise refresh trending
+  try {
+    if (!window.pumpQueue || window.pumpQueue.length === 0) {
+      window.pumpQueue = await getTrendingTokens(12);
+    }
+    if (window.pumpQueue && window.pumpQueue.length > 0) {
+      await loadOpponent(window.pumpQueue.shift());
+    } else {
+      location.reload(); // last resort
+    }
+  } catch (e) {
+    console.error('[nextFight] Failed to load next opponent:', e);
+    location.reload();
+  }
+};
+
+
 <script>
   window.onSpotifyWebPlaybackSDKReady = () => {
     console.log("Spotify Web Playback SDK is ready");

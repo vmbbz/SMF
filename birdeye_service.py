@@ -159,9 +159,17 @@ class BirdeyeService:
             "symbol":        item.get("symbol") or "MEME",
             "name":          item.get("name") or item.get("symbol") or "Unknown",
             "logoURI":       item.get("logoURI") or item.get("icon"),
-            "marketCap":     item.get("mc") or item.get("marketCap") or 0,
-            "volume24h":     item.get("v24hUSD") or item.get("volume24h") or 0,
-            "priceChange24h": item.get("priceChange24h") or 0,
+            # Birdeye trending uses 'marketcap' (lowercase), overview uses 'mc'
+            "marketCap":     item.get("mc") or item.get("marketCap") or item.get("marketcap") or item.get("fdv") or 0,
+            # Birdeye trending uses 'volume24hUSD', overview uses 'v24hUSD'
+            "volume24h":     item.get("v24hUSD") or item.get("volume24h") or item.get("volume24hUSD") or 0,
+            # Birdeye trending uses 'price24hChangePercent', overview uses 'priceChange24h'
+            "priceChange24h": (
+                item.get("price24hChangePercent") or
+                item.get("priceChange24h") or
+                item.get("v24hChangePercent") or
+                0
+            ),
             "liquidity":     item.get("liquidity") or 0,
             "price":         item.get("price") or 0,
             "holders":       holders,
