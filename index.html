@@ -227,29 +227,121 @@
       display: block; /* reset display:none */
     }
     
-    /* Mobile controls */
+    /* =============================================
+       MOBILE VIRTUAL JOYSTICK — FULL CONTROL PAD
+       ============================================= */
     #mobile-controls {
       position: fixed;
-      bottom: 70px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 1000;
+      bottom: 62px; /* sits above trending strip */
+      left: 0;
+      right: 0;
       display: none;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding: 0 16px 12px;
+      z-index: 600;
+      pointer-events: none;
     }
-    .control-btn {
-      background: rgba(255,255,255,0.3);
-      border: 2px solid rgba(255,255,255,0.6);
-      color: white;
-      font-size: 24px;
-      width: 60px;
-      height: 60px;
-      border-radius: 12px;
-      display: inline-flex;
+
+    /* Left side – joystick zone */
+    .joystick-zone {
+      pointer-events: auto;
+      position: relative;
+      width: 140px;
+      height: 140px;
+      flex-shrink: 0;
+    }
+
+    #joystick-base {
+      width: 130px;
+      height: 130px;
+      background: rgba(0,0,0,0.75);
+      border: 3px solid rgba(0,255,157,0.6);
+      border-radius: 50%;
+      position: relative;
+      box-shadow: 0 0 20px rgba(0,255,157,0.25), inset 0 0 20px rgba(0,0,0,0.5);
+      backdrop-filter: blur(6px);
+      touch-action: none;
+      user-select: none;
+    }
+
+    #joystick-knob {
+      width: 50px;
+      height: 50px;
+      background: radial-gradient(circle at 35% 35%, rgba(255,0,255,0.9), rgba(180,0,255,0.85));
+      border: 2px solid rgba(0,255,157,0.8);
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      box-shadow: 0 0 14px rgba(255,0,255,0.5);
+      transition: box-shadow 0.1s;
+      pointer-events: none;
+    }
+
+    /* Crosshair guides inside joystick */
+    #joystick-base::before, #joystick-base::after {
+      content: '';
+      position: absolute;
+      background: rgba(0,255,157,0.12);
+      border-radius: 2px;
+    }
+    #joystick-base::before {
+      width: 2px; height: 100%;
+      left: 50%; transform: translateX(-50%);
+    }
+    #joystick-base::after {
+      height: 2px; width: 100%;
+      top: 50%; transform: translateY(-50%);
+    }
+
+    /* Right side – attack buttons */
+    .attack-zone {
+      pointer-events: auto;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr 1fr;
+      gap: 8px;
+      width: 160px;
+      flex-shrink: 0;
+    }
+
+    .atk-btn {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.3);
+      font-size: 10px;
+      font-weight: 900;
+      font-family: inherit;
+      letter-spacing: 0.5px;
+      color: #fff;
+      cursor: pointer;
+      display: flex;
       align-items: center;
       justify-content: center;
-      margin: 0 5px;
-      backdrop-filter: blur(5px);
+      flex-direction: column;
+      gap: 1px;
+      transition: transform 0.07s, box-shadow 0.07s;
+      touch-action: manipulation;
+      user-select: none;
+      backdrop-filter: blur(6px);
+      -webkit-tap-highlight-color: transparent;
     }
+    .atk-btn .icon { font-size: 14px; line-height: 1; }
+    .atk-btn.active,
+    .atk-btn:active {
+      transform: scale(0.88);
+    }
+
+    /* Button color coding */
+    .atk-btn.punch-light  { background: rgba(0,180,255,0.35); border-color: rgba(0,180,255,0.6); box-shadow: 0 0 10px rgba(0,180,255,0.2); }
+    .atk-btn.punch-heavy  { background: rgba(80,0,255,0.4);   border-color: rgba(120,60,255,0.7); box-shadow: 0 0 10px rgba(100,0,255,0.3); }
+    .atk-btn.kick-light   { background: rgba(255,100,0,0.35); border-color: rgba(255,140,0,0.6);  box-shadow: 0 0 10px rgba(255,100,0,0.2); }
+    .atk-btn.kick-heavy   { background: rgba(200,0,60,0.4);   border-color: rgba(255,0,80,0.7);   box-shadow: 0 0 10px rgba(200,0,60,0.3); }
+    .atk-btn.btn-jump     { background: rgba(0,255,157,0.2);  border-color: rgba(0,255,157,0.6);  box-shadow: 0 0 12px rgba(0,255,157,0.25); grid-column: span 2; border-radius: 12px; aspect-ratio: auto; padding: 6px; }
+    .atk-btn.btn-hadouken { background: rgba(255,220,0,0.2);  border-color: rgba(255,200,0,0.6);  box-shadow: 0 0 12px rgba(255,200,0,0.25); grid-column: span 2; border-radius: 12px; aspect-ratio: auto; padding: 6px; }
     .victory-card, .token-pill {
       transition: all 0.4s cubic-bezier(0.68, -0.55, 0.27, 1.55);
       touch-action: manipulation;
@@ -275,8 +367,8 @@
   <div id="fight-trending-strip" class="trending-strip" style="display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-green); padding: 6px 15px; z-index: 100; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(0,255,157,0.15);"></div>
 
 
-  <!-- HUD WIDGETS (Bottom Center) -->
-  <div id="hud-widgets" style="position:fixed; bottom: 65px; left: 50%; transform: translateX(-50%); z-index: 501; display:flex; gap:10px; align-items:center;">
+  <!-- HUD WIDGETS (Bottom Center) - sits above trending strip -->
+  <div id="hud-widgets" style="position:fixed; bottom: 65px; left: 50%; transform: translateX(-50%); z-index: 601; display:flex; gap:10px; align-items:center;">
     <!-- SPOTIFY WIDGET -->
     <div id="spotify-widget" class="bottom-panel"></div>
     
@@ -333,12 +425,43 @@
     </div>
   </div>
 
+  <!-- VIRTUAL JOYSTICK CONTROLS (Mobile Only) -->
   <div id="mobile-controls">
-    <button class="control-btn" onclick="sendAction('left')">←</button>
-    <button class="control-btn" onclick="sendAction('jump')">↑</button>
-    <button class="control-btn" onclick="sendAction('right')">→</button>
-    <button class="control-btn" onclick="sendAction('lightPunch')" style="margin-left:20px;">👊</button>
-    <button class="control-btn" onclick="sendAction('heavyKick')">🥋</button>
+    <!-- LEFT: Virtual Joystick -->
+    <div class="joystick-zone">
+      <div id="joystick-base">
+        <div id="joystick-knob"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Attack Buttons -->
+    <div class="attack-zone">
+      <!-- Row 1: Light Punch + Light Kick -->
+      <button id="btn-light-punch" class="atk-btn punch-light">
+        <span class="icon">👊</span>
+        <span>LP</span>
+      </button>
+      <button id="btn-light-kick" class="atk-btn kick-light">
+        <span class="icon">🦵</span>
+        <span>LK</span>
+      </button>
+      <!-- Row 2: Heavy Punch + Heavy Kick -->
+      <button id="btn-heavy-punch" class="atk-btn punch-heavy">
+        <span class="icon">🔥</span>
+        <span>HP</span>
+      </button>
+      <button id="btn-heavy-kick" class="atk-btn kick-heavy">
+        <span class="icon">💥</span>
+        <span>HK</span>
+      </button>
+      <!-- Row 3: Jump (wide) + Hadouken (wide) -->
+      <button id="btn-jump" class="atk-btn btn-jump">
+        <span class="icon">↑ JUMP</span>
+      </button>
+      <button id="btn-hadouken" class="atk-btn btn-hadouken">
+        <span class="icon">⚡ SPECIAL</span>
+      </button>
+    </div>
   </div>
 
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
@@ -435,10 +558,28 @@
     };
 
     // Auto init
-    window.addEventListener('load', () => {
-      if ('ontouchstart' in window) {
-        document.getElementById('mobile-controls').style.display = 'flex';
+    window.addEventListener('load', async () => {
+      const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const mobileControls = document.getElementById('mobile-controls');
+
+      if (isMobile && mobileControls) {
+        mobileControls.style.display = 'flex';
+
+        // Import and attach virtual joystick
+        const { VirtualJoystickAdapter } = await import('./src/virtual-joystick.js');
+        window.virtualJoystick = new VirtualJoystickAdapter();
+        window.virtualJoystick.attach();
+
+        // Register as a P1 input adapter when the game is ready
+        const waitForGame = setInterval(() => {
+          if (window.currentGame && window.currentGame.p1Input) {
+            window.currentGame.p1Input.addAdapter(window.virtualJoystick);
+            clearInterval(waitForGame);
+            console.log('[Joystick] Virtual joystick registered with P1 input');
+          }
+        }, 200);
       }
+
       if (window.TrendingStrip) {
         window.trendingStrip = new window.TrendingStrip('trending-strip');
         window.trendingStrip.init();

@@ -311,6 +311,14 @@ async function startFight() {
   // Expose game globally immediately (fixes race condition)
   window.game = game;
   window._game = game;
+  window.currentGame = game;  // alias used by joystick + nextFight
+
+  // If virtual joystick is ready (mobile), register it with p1Input now
+  if (window.virtualJoystick && !window.virtualJoystick._registered) {
+    p1Input.addAdapter(window.virtualJoystick);
+    window.virtualJoystick._registered = true;
+    console.log('[Joystick] Virtual joystick registered with P1 input at game start');
+  }
 
   // Wire up adapters with game reference
   for (const adapter of activeAdapters) {

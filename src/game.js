@@ -424,6 +424,7 @@ export class Game {
         text = `${totalDmg} HEAD!`;
         logText = `${totalDmg} HEAD`;
         if (this.sfx) this.sfx.headshot();
+        if (window.haptic) window.haptic.headshot();
         hitDesc = `HEADSHOT! You took ${totalDmg} damage to the head!`;
         atkDesc = `HEADSHOT! You nailed them in the head for ${totalDmg}!`;
       } else if (zone === "crotch") {
@@ -431,6 +432,7 @@ export class Game {
         text = `${totalDmg} CROTCH!`;
         logText = `${totalDmg} CROTCH`;
         if (this.sfx) this.sfx.crotchshot();
+        if (window.haptic) window.haptic.heavyHit();
         hitDesc = `CROTCH SHOT! You took ${totalDmg} damage below the belt!`;
         atkDesc = `LOW BLOW! You hit them in the crotch for ${totalDmg}!`;
       } else {
@@ -439,6 +441,7 @@ export class Game {
           logText = `${totalDmg} ${zone}`;
         }
         if (this.sfx) this.sfx.hit();
+        if (window.haptic) window.haptic.lightHit();
       }
       this.hitSparks.push({ x: sparkX, y: sparkY, life: 0.4, color, text });
       
