@@ -607,7 +607,9 @@ async def api_graduates(count: int = 8) -> List[Dict[str, Any]]:
 
 @get("/api/token/{mint:str}")
 async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
-    return await birdeye_service.get_cached_token(mint)
+    # mark_hot=True: this endpoint is called by live fights for boost detection.
+    # Hot tokens get a 90s TTL (vs 300s for cold) and are prioritised by the warmer.
+    return await birdeye_service.get_cached_token(mint, mark_hot=True)
 
 @get("/api/safety/tweets")
 async def safety_tweets(cashtag: str) -> dict:

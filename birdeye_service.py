@@ -38,27 +38,52 @@ class BirdeyeService:
         # when a cache entry expires. First caller fetches; others wait.
         self._inflight: dict[str, asyncio.Event] = {}
 
+        # Hot-token tracking: mint -> last_accessed timestamp
+        # Tokens are "hot" (actively being fought) for 10 minutes after last access.
+        self._hot_tokens: dict[str, float] = {}
+        self._HOT_EXPIRY = 600  # 10 minutes without a fight-poll = no longer hot
+
         # Background warmer task
         self._warmer_task: asyncio.Task | None = None
 
-    # TTL constants
-    TOKEN_TTL   = 300   # 5 min — fine for boost detection (20%+ swings take minutes)
-    LIST_TTL    = 60    # 60s for trending/graduated lists (they churn fast)
-    STALE_AFTER = 280   # refresh individual tokens before the 5-min TTL expires
+    # TTL constants — two-tier by temperature
+    HOT_TTL     = 90    # 1.5 min: active fight tokens (keeps boosts responsive)
+    COLD_TTL    = 300   # 5 min:  listed but not being fought
+    LIST_TTL    = 60    # 60s:   trending/graduated list snapshots
+    HOT_STALE   = 80    # warmer re-fetches hot tokens before HOT_TTL expires
+    COLD_STALE  = 280   # warmer re-fetches cold tokens before COLD_TTL expires
 
     # ─────────────────────────────────────────
-    # Individual token (cached TOKEN_TTL seconds, coalesced)
+    # Individual token — two-tier TTL + coalescing
+    # Hot tokens (actively fought): 90s TTL — keeps boosts fast & responsive
+    # Cold tokens (listed only):   300s TTL — display data, less critical
     # ─────────────────────────────────────────
-    async def get_cached_token(self, mint: str):
+    async def get_cached_token(self, mint: str, mark_hot: bool = False):
+        """
+        Fetch (or return cached) token data.
+        mark_hot=True: called from a live fight — shorter TTL, warmer priority.
+        """
+        now = time.time()
+
+        # Mark as hot if this is a live fight request
+        if mark_hot:
+            self._hot_tokens[mint] = now
+
+        # Determine TTL based on temperature
+        is_hot = (
+            mark_hot or
+            (mint in self._hot_tokens and now - self._hot_tokens[mint] < self._HOT_EXPIRY)
+        )
+        ttl = self.HOT_TTL if is_hot else self.COLD_TTL
+
         cached = self.cache.get(mint)
-        if cached and time.time() - cached["ts"] < self.TOKEN_TTL:
+        if cached and now - cached["ts"] < ttl:
             return cached["data"]
 
-        # ── Coalescing: if another coroutine is already fetching this mint,
-        # wait for it to finish rather than firing a duplicate Birdeye call.
+        # Coalescing: if another coroutine is already fetching this mint,
+        # wait for it rather than firing a duplicate Birdeye call.
         if mint in self._inflight:
             await self._inflight[mint].wait()
-            # By now the cache should be populated by the winning coroutine
             return self.cache.get(mint, {}).get("data")
 
         event = asyncio.Event()
@@ -215,11 +240,12 @@ class BirdeyeService:
         # available via /api/token/{mint} even after they leave the list.
         self._known_mints |= new_mints
 
-    async def _prewarm_batch(self, mints: list):
+    async def _prewarm_batch(self, mints: list, hot: bool = False):
         """Sequentially warm individual caches for new/stale tokens (rate-limit safe)."""
+        stale_after = self.HOT_STALE if hot else self.COLD_STALE
         for mint in mints:
-            if mint not in self.cache or (time.time() - self.cache[mint]["ts"]) > self.STALE_AFTER:
-                await self.get_cached_token(mint)
+            if mint not in self.cache or (time.time() - self.cache[mint]["ts"]) > stale_after:
+                await self.get_cached_token(mint, mark_hot=hot)
                 await asyncio.sleep(0.6)  # ~1.6 req/s — safe for Birdeye free tier
 
     # ─────────────────────────────────────────
@@ -227,10 +253,13 @@ class BirdeyeService:
     # ─────────────────────────────────────────
     async def _warmer_loop(self):
         """
-        Refresh trending + graduated lists every 55s (just under the 60s TTL)
-        so they are always hot in memory when users request them.
-        Rate budget: 2 list calls every 55s = ~2.2 calls/min — well under Birdeye free tier.
-        Individual pre-warms are sequenced at 0.5s apart to stay safe.
+        3-phase background warmer:
+          Phase 1 — Refresh list snapshots (trending + graduated) every 55s
+          Phase 2 — Re-warm HOT tokens (actively being fought) every cycle (90s TTL)
+          Phase 3 — Re-warm COLD listed tokens (display only, 300s TTL, best-effort)
+
+        Rate budget estimate (30 unique hot tokens, 20 cold listed):
+          ~2 list calls + ~6 hot overviews + ~2 cold overviews = ~10 calls/min = 17% of free tier.
         """
         # Initial warm-up at startup
         await asyncio.sleep(2)
@@ -243,6 +272,9 @@ class BirdeyeService:
         while True:
             await asyncio.sleep(55)
             try:
+                now = time.time()
+
+                # ── Phase 1: Refresh list snapshots ──
                 print("[BirdeyeWarmer] Refreshing trending list...")
                 await self._refresh_trending(12)
                 await asyncio.sleep(2)
@@ -250,11 +282,23 @@ class BirdeyeService:
                 await self._refresh_graduated(8)
                 await asyncio.sleep(2)
 
-                # ── Keep all currently-listed tokens always warm ──
-                # Collect every mint from both lists, refresh those whose
-                # individual cache has gone stale (>55s). This ensures
-                # zero cold-cache hits no matter which token a player clicks.
-                all_listed = set()
+                # ── Phase 2: Re-warm HOT tokens (active fights, 90s TTL) ──
+                # Expire stale hot entries first
+                self._hot_tokens = {m: t for m, t in self._hot_tokens.items()
+                                    if now - t < self._HOT_EXPIRY}
+                hot_mints = list(self._hot_tokens.keys())
+                if hot_mints:
+                    stale_hot = [
+                        m for m in hot_mints
+                        if m not in self.cache or (now - self.cache[m]["ts"]) > self.HOT_STALE
+                    ]
+                    if stale_hot:
+                        print(f"[BirdeyeWarmer] Re-warming {len(stale_hot)} hot token(s) (active fights)...")
+                        await self._prewarm_batch(stale_hot, hot=True)
+                        await asyncio.sleep(1)
+
+                # ── Phase 3: Re-warm COLD listed tokens (300s TTL, best-effort) ──
+                all_listed: set = set()
                 trending_cache = self.list_cache.get("trending")
                 graduated_cache = self.list_cache.get("graduated")
                 if trending_cache:
@@ -262,13 +306,15 @@ class BirdeyeService:
                 if graduated_cache:
                     all_listed |= {t["mint"] for t in graduated_cache[0] if t.get("mint")}
 
-                stale = [
-                    m for m in all_listed
-                    if m not in self.cache or (time.time() - self.cache[m]["ts"]) > self.STALE_AFTER
+                # Exclude hot mints — already refreshed above
+                cold_listed = all_listed - set(hot_mints)
+                stale_cold = [
+                    m for m in cold_listed
+                    if m not in self.cache or (time.time() - self.cache[m]["ts"]) > self.COLD_STALE
                 ]
-                if stale:
-                    print(f"[BirdeyeWarmer] Refreshing {len(stale)} stale token overview(s)...")
-                    await self._prewarm_batch(stale)
+                if stale_cold:
+                    print(f"[BirdeyeWarmer] Re-warming {len(stale_cold)} cold token(s) (listed)...")
+                    await self._prewarm_batch(stale_cold, hot=False)
 
             except Exception as e:
                 print(f"[BirdeyeWarmer] Error during refresh: {e}")
