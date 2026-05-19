@@ -783,17 +783,30 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       }
 
       const power = calculateFighterPower(token);
-      
-      ctx.font = 'bold 36px system-ui';
+      const displayName = token.symbol || token.name || '???';
+
+      // Token name / symbol (large)
+      ctx.font = 'bold 28px system-ui';
       ctx.fillStyle = '#fff';
-      ctx.fillText(power.rating, x, y - 30);
-      
-      ctx.font = '16px monospace';
+      ctx.fillText(`$${displayName}`, x, y - 45);
+
+      // Power rating
+      ctx.font = 'bold 18px monospace';
+      ctx.fillStyle = isP1 ? '#00ff9d' : '#ff00ff';
+      ctx.fillText(`⚔️ POWER: ${power.rating}`, x, y - 12);
+
+      // Market stats
+      ctx.font = '13px monospace';
       ctx.fillStyle = '#aaa';
-      ctx.fillText(`MCAP: $${token.marketCap ? (token.marketCap/1000).toFixed(1)+'K' : '??'}`, x, y + 10);
-      ctx.fillText(`VOL: $${token.volume24h ? (token.volume24h/1000).toFixed(1)+'K' : '??'}`, x, y + 35);
-      ctx.fillText(`CHG: ${token.priceChange24h ? token.priceChange24h.toFixed(2)+'%' : '??%'}`, x, y + 60);
-      ctx.fillText(`HLD: ${token.holders || 'N/A'}`, x, y + 85);
+      const mc  = token.marketCap  ? `$${(token.marketCap/1000).toFixed(1)}K`   : '??';
+      const vol = token.volume24h  ? `$${(token.volume24h/1000).toFixed(1)}K`   : '??';
+      const chg = (token.priceChange24h !== undefined && token.priceChange24h !== null)
+        ? `${Number(token.priceChange24h).toFixed(2)}%` : '??%';
+      const hld = token.holders && token.holders !== 'N/A' ? token.holders : 'N/A';
+      ctx.fillText(`MCAP: ${mc}`, x, y + 18);
+      ctx.fillText(`VOL: ${vol}`, x, y + 38);
+      ctx.fillText(`CHG: ${chg}`, x, y + 58);
+      ctx.fillText(`HLD: ${hld}`, x, y + 78);
     };
 
     // Render only the AI token (P2) to keep UI clean for the human

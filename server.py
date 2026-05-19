@@ -175,6 +175,9 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
             matchmaking_task = None
             print("[mode] Running in-memory mode - no multiplayer features")
 
+        # Start Birdeye background cache warmer (works regardless of Redis/PG)
+        birdeye_service.start_background_warmer()
+
         if oidc_config.configured:
             print(f"[auth] OIDC configured: issuer={oidc_config.issuer}")
         else:
@@ -183,6 +186,7 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         yield
 
     finally:
+        birdeye_service.stop_background_warmer()
         # SAFE SHUTDOWN - only stop what was created
         if matchmaking_task is not None:
             await matchmaking_task.stop()

@@ -10,22 +10,17 @@
 
 import { PlayerEffects } from './player-effects.js';
 
-// Tier thresholds (multiplier vs previous snapshot)
+// Tier thresholds (ratio = new_price / baseline_price at fight start)
+// Anything below 1.20x (20% gain) is ignored per product decision.
 const TIERS = [
   { id: 'overdrive', minRatio: 2.0  },
   { id: 'spike',     minRatio: 1.45 },
   { id: 'runner',    minRatio: 1.20 },
-  { id: 'micro',     minRatio: 1.05 },
+  // micro (< 20%) intentionally omitted
 ];
 
-// Catchphrases per tier
+// Catchphrases per tier (micro removed — not triggered below 20%)
 const CATCHPHRASES = {
-  micro:     (sym) => [
-    `${sym} heating up 🔥`,
-    `${sym} bulls loading...`,
-    `Paper handed mofos sweating right now 😤`,
-    `${sym} ain't done yet!`,
-  ][Math.floor(Math.random() * 4)],
   runner:    (sym) => [
     `$${sym} JUST PUMPED! 🚀`,
     `${sym} going VERTICAL!`,
@@ -35,7 +30,7 @@ const CATCHPHRASES = {
   spike:     (sym) => [
     `$${sym} ON FIRE! 🔥🔥🔥`,
     `${sym} PRINTING! Stay poor, paper hands!`,
-    `BIG PUMP $${sym}! Paper handed Mofos GET REKT! 💀`,
+    `BIG PUMP $${sym}! GET REKT! 💀`,
     `$${sym} ABSOLUTE BEAST MODE!`,
   ][Math.floor(Math.random() * 4)],
   overdrive: (sym) => [
@@ -105,19 +100,23 @@ export class LiveBoostSystem {
     this.aiOpponent = aiOpponent;
     this.humanPlayer = this.game.p1;
     this.tokenMint = token?.mint;
-    this._lastVolume = token?.volume24h || 0;
-    this._lastPriceChange = Math.abs(token?.priceChange24h || 0);
+
+    // Use spot price as primary metric (changes fast) + volume as secondary
+    this._baselinePrice  = Number(token?.price)       || 0;
+    this._baselineVolume = Number(token?.volume24h)   || 0;
+    this._lastPrice      = this._baselinePrice;
+    this._lastVolume     = this._baselineVolume;
 
     // Attach player effects to AI opponent
     if (!this.aiOpponent.effects) {
       this.aiOpponent.effects = new PlayerEffects(this.aiOpponent);
     }
 
-    // Align poll with backend 60s cache TTL + small random jitter to avoid burst
-    const jitter = Math.random() * 5000;
+    // Poll every 60s to align with server-side cache TTL.
+    // First check after 30s (gives server cache time to warm for this mint).
+    const jitter = Math.random() * 8000;
+    setTimeout(() => this._checkBoost(), 30000 + jitter);
     this._interval = setInterval(() => this._checkBoost(), 60000 + jitter);
-    // First check after 20s so something happens early in the fight
-    setTimeout(() => this._checkBoost(), 20000);
   }
 
   stop() {
@@ -136,26 +135,36 @@ export class LiveBoostSystem {
       const fresh = await res.json();
       if (!fresh) return;
 
-      const freshVol   = fresh.volume24h   || 0;
-      const freshPrice = Math.abs(fresh.priceChange24h || 0);
+      const freshPrice  = Number(fresh.price)      || 0;
+      const freshVolume = Number(fresh.volume24h)  || 0;
 
-      // Primary metric: volume ratio
-      const volRatio   = this._lastVolume > 0 ? (freshVol / this._lastVolume) : 1;
-      // Secondary: price change acceleration
-      const priceDelta = this._lastPriceChange > 0
-        ? (freshPrice / this._lastPriceChange)
-        : 1;
+      // Primary: spot price ratio vs baseline (most sensitive to real-time moves)
+      const priceRatio = this._baselinePrice > 0 ? (freshPrice / this._baselinePrice) : 1;
+      // Secondary: volume spike vs last snapshot
+      const volRatio   = this._lastVolume    > 0 ? (freshVolume / this._lastVolume)   : 1;
 
-      // Use whichever metric shows a bigger spike
-      const ratio = Math.max(volRatio, priceDelta);
+      // Use the larger signal
+      const ratio = Math.max(priceRatio, volRatio);
 
-      // Find matching tier
+      // Must be >= 1.20 (20%) to trigger anything
+      if (ratio < 1.20) {
+        // Update snapshots so next compare is relative to this moment
+        this._lastPrice  = freshPrice;
+        this._lastVolume = freshVolume;
+        return;
+      }
+
+      // Find matching tier (TIERS sorted highest first)
       const tier = TIERS.find(t => ratio >= t.minRatio);
       if (tier) {
         this._triggerTier(tier.id, fresh, ratio);
-        this._lastVolume = freshVol;
-        this._lastPriceChange = freshPrice;
+        // Reset baseline so the same pump doesn't fire twice
+        this._baselinePrice  = freshPrice;
+        this._baselineVolume = freshVolume;
       }
+
+      this._lastPrice  = freshPrice;
+      this._lastVolume = freshVolume;
     } catch (err) {
       console.warn('[LiveBoostSystem] poll error:', err);
     }
