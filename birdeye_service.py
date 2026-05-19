@@ -33,21 +33,44 @@ class BirdeyeService:
         # Tracks all mints we've ever seen (for churn detection)
         self._known_mints: set = set()
 
+        # Inflight coalescing: mint -> asyncio.Event
+        # Prevents N concurrent callers from all hitting Birdeye simultaneously
+        # when a cache entry expires. First caller fetches; others wait.
+        self._inflight: dict[str, asyncio.Event] = {}
+
         # Background warmer task
         self._warmer_task: asyncio.Task | None = None
 
+    # TTL constants
+    TOKEN_TTL   = 300   # 5 min — fine for boost detection (20%+ swings take minutes)
+    LIST_TTL    = 60    # 60s for trending/graduated lists (they churn fast)
+    STALE_AFTER = 280   # refresh individual tokens before the 5-min TTL expires
+
     # ─────────────────────────────────────────
-    # Individual token (cached 60s)
+    # Individual token (cached TOKEN_TTL seconds, coalesced)
     # ─────────────────────────────────────────
     async def get_cached_token(self, mint: str):
         cached = self.cache.get(mint)
-        if cached and time.time() - cached["ts"] < 60:
+        if cached and time.time() - cached["ts"] < self.TOKEN_TTL:
             return cached["data"]
 
-        data = await self.get_token_overview(mint)
-        if data:
-            self.cache[mint] = {"data": data, "ts": time.time()}
-        return data
+        # ── Coalescing: if another coroutine is already fetching this mint,
+        # wait for it to finish rather than firing a duplicate Birdeye call.
+        if mint in self._inflight:
+            await self._inflight[mint].wait()
+            # By now the cache should be populated by the winning coroutine
+            return self.cache.get(mint, {}).get("data")
+
+        event = asyncio.Event()
+        self._inflight[mint] = event
+        try:
+            data = await self.get_token_overview(mint)
+            if data:
+                self.cache[mint] = {"data": data, "ts": time.time()}
+            return data
+        finally:
+            event.set()
+            self._inflight.pop(mint, None)
 
     async def get_token_overview(self, mint: str):
         try:
@@ -193,11 +216,11 @@ class BirdeyeService:
         self._known_mints |= new_mints
 
     async def _prewarm_batch(self, mints: list):
-        """Sequentially warm individual caches for new tokens (rate-limit safe)."""
+        """Sequentially warm individual caches for new/stale tokens (rate-limit safe)."""
         for mint in mints:
-            if mint not in self.cache or (time.time() - self.cache[mint]["ts"]) > 55:
+            if mint not in self.cache or (time.time() - self.cache[mint]["ts"]) > self.STALE_AFTER:
                 await self.get_cached_token(mint)
-                await asyncio.sleep(0.5)  # ~2 req/s — safe for Birdeye free tier (1 req/s limit)
+                await asyncio.sleep(0.6)  # ~1.6 req/s — safe for Birdeye free tier
 
     # ─────────────────────────────────────────
     # Background warmer — runs server-side
@@ -241,7 +264,7 @@ class BirdeyeService:
 
                 stale = [
                     m for m in all_listed
-                    if m not in self.cache or (time.time() - self.cache[m]["ts"]) > 55
+                    if m not in self.cache or (time.time() - self.cache[m]["ts"]) > self.STALE_AFTER
                 ]
                 if stale:
                     print(f"[BirdeyeWarmer] Refreshing {len(stale)} stale token overview(s)...")
