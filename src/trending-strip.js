@@ -98,13 +98,17 @@ export class TrendingStrip {
       return;
     }
 
-    const itemsHtml = this.tokens.map(token => `
+    const itemsHtml = this.tokens.map(token => {
+      const chg = Number(token.priceChange24h) || 0;
+      const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(1) + '%';
+      const chgColor = chg >= 0 ? '#00ff9d' : '#ff2244';
+      return `
       <div class="token-pill" onclick="window.fightToken && window.fightToken('${token.mint}')">
-        <img src="${token.logoURI || 'assets/smf-logo.png'}" alt="${token.symbol}">
+        <img src="${token.logoURI || 'assets/smf-logo.png'}" alt="${token.symbol}" onerror="this.src='assets/smf-logo.png'">
         <span class="symbol">$${token.symbol}</span>
-        <span class="power">⚔️ ${token.power?.rating || '1.0x'}</span>
-      </div>
-    `).join('');
+        <span class="power" style="color:${chgColor}">${chgStr}</span>
+      </div>`;
+    }).join('');
 
     // Duplicate list for continuous infinite marquee
     inner.innerHTML = itemsHtml + itemsHtml;

@@ -802,11 +802,9 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       const vol = token.volume24h  ? `$${(token.volume24h/1000).toFixed(1)}K`   : '??';
       const chg = (token.priceChange24h !== undefined && token.priceChange24h !== null)
         ? `${Number(token.priceChange24h).toFixed(2)}%` : '??%';
-      const hld = token.holders && token.holders !== 'N/A' ? token.holders : 'N/A';
       ctx.fillText(`MCAP: ${mc}`, x, y + 18);
-      ctx.fillText(`VOL: ${vol}`, x, y + 38);
-      ctx.fillText(`CHG: ${chg}`, x, y + 58);
-      ctx.fillText(`HLD: ${hld}`, x, y + 78);
+      ctx.fillText(`VOL:  ${vol}`, x, y + 38);
+      ctx.fillText(`CHG:  ${chg}`, x, y + 58);
     };
 
     // Render only the AI token (P2) to keep UI clean for the human

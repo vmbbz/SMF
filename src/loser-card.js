@@ -101,11 +101,19 @@ window.switchRichTab = function(tabIndex) {
 };
 
 function calculatePowerLevel(token) {
-  const holderScore = Math.min(2.5, ((token.holders || 100) || 100) / 400);
-  const volScore = Math.max(0.5, Math.min(2.0, (token.volume24h || 0) / 50000));
-  const changeScore = Math.max(0.5, 1 + (token.priceChange24h || 0) / 100);
-  const liqScore = Math.max(0.5, Math.min(1.8, 1 + (token.liquidity || 0) / 100000));
-  return (holderScore * volScore * changeScore * liqScore).toFixed(1) + 'x';
+  // Holders removed \u2014 returns "N/A" as a string which causes NaN via math.
+  // Power is now driven purely by volume, price change, and liquidity.
+  const volume24h  = Number(token.volume24h)     || 0;
+  const priceChg   = Number(token.priceChange24h) || 0;
+  const liquidity  = Number(token.liquidity)      || 0;
+
+  const volScore    = Math.max(0.5, Math.min(2.0, volume24h  / 50000));
+  const changeScore = Math.max(0.5, 1 + priceChg / 100);
+  const liqScore    = Math.max(0.5, Math.min(1.8, 1 + liquidity / 100000));
+
+  const raw = volScore * changeScore * liqScore;
+  const safe = isFinite(raw) && raw > 0 ? raw : 1.0;
+  return safe.toFixed(1) + 'x';
 }
 
 function getCatchphrase(token, isWinner) {

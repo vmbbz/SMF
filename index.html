@@ -229,13 +229,15 @@
     
     /* =============================================
        MOBILE VIRTUAL JOYSTICK — FULL CONTROL PAD
+       Only shown on touch/mobile screens (≤768px or touch device).
+       Hidden on desktop via CSS — JS also gates it with isMobile check.
        ============================================= */
     #mobile-controls {
       position: fixed;
       bottom: 62px; /* sits above trending strip */
       left: 0;
       right: 0;
-      display: none;
+      display: none; /* hidden by default on all screens */
       justify-content: space-between;
       align-items: flex-end;
       padding: 0 16px 12px;
@@ -413,7 +415,7 @@
 
 
 
-    <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top: 10px; z-index: 10; position: relative; width: 100%;">
+    <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top: 28px; z-index: 10; position: relative; width: 100%;">
       <div style="display:flex; gap:10px; width: 100%; justify-content: center;">
         <button id="btn-buy-token" class="premium-btn victory-btn" style="background:var(--neon-blue);color:#000;">BUY $TICKER 🛒</button>
         <button class="premium-btn pink victory-btn" onclick="shareVictory()">SHARE TO X 🚀</button>
