@@ -7,6 +7,9 @@ load_dotenv()
 
 BIRDEYE_API_KEY = os.getenv("BIRDEYE_API_KEY", "")
 
+# Separate client for external calls (no base_url prefix)
+_ds_client = httpx.AsyncClient(timeout=8.0)
+
 class BirdeyeService:
     def __init__(self):
         self.api_key = os.getenv("BIRDEYE_API_KEY")
@@ -21,7 +24,7 @@ class BirdeyeService:
             timeout=15.0
         )
         self.cache = {}  # mint -> {data, ts}
-        self.list_cache = {} # "trending"|"graduated" -> (data, timestamp)
+        self.list_cache = {}  # "trending"|"graduated" -> (data, timestamp)
 
     async def get_cached_token(self, mint: str):
         cached = self.cache.get(mint)
@@ -35,41 +38,62 @@ class BirdeyeService:
 
     async def get_token_overview(self, mint: str):
         try:
-            # 1. Fetch from Birdeye
+            # 1. Primary: fetch from Birdeye
             resp = await self.client.get(f"/defi/token_overview?address={mint}")
             item = {}
             if resp.status_code == 200:
                 item = resp.json().get("data") or {}
-            
-            # 2. Fetch from DexScreener to augment missing data
+
+            # 2. Augment only the fields Birdeye is missing on free tier
+            #    using a SEPARATE httpx client (not self.client which has birdeye base_url)
             try:
-                ds_resp = await self.client.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}")
+                ds_resp = await _ds_client.get(
+                    f"https://api.dexscreener.com/latest/dex/tokens/{mint}"
+                )
                 if ds_resp.status_code == 200:
-                    pairs = ds_resp.json().get("pairs", [])
+                    pairs = ds_resp.json().get("pairs") or []
                     if pairs:
                         p = pairs[0]
-                        # Augment missing birdeye data
+                        # Only fill gaps — never overwrite Birdeye data
                         if not item.get("mc") and p.get("fdv"):
-                            item["mc"] = p.get("fdv")
-                        if not item.get("v24hUSD") and p.get("volume", {}).get("h24"):
-                            item["v24hUSD"] = p.get("volume", {}).get("h24")
-                        if not item.get("priceChange24h") and p.get("priceChange", {}).get("h24"):
-                            item["priceChange24h"] = p.get("priceChange", {}).get("h24")
-                        if not item.get("liquidity") and p.get("liquidity", {}).get("usd"):
-                            item["liquidity"] = p.get("liquidity", {}).get("usd")
-                        if not item.get("symbol") and p.get("baseToken", {}).get("symbol"):
-                            item["symbol"] = p.get("baseToken", {}).get("symbol")
-                            item["name"] = p.get("baseToken", {}).get("name")
+                            item["mc"] = p["fdv"]
+                        if not item.get("v24hUSD"):
+                            vol = p.get("volume") or {}
+                            if vol.get("h24"):
+                                item["v24hUSD"] = float(vol["h24"])
+                        if not item.get("priceChange24h"):
+                            pc = p.get("priceChange") or {}
+                            if pc.get("h24") is not None:
+                                item["priceChange24h"] = float(pc["h24"])
+                        if not item.get("liquidity"):
+                            liq = p.get("liquidity") or {}
+                            if liq.get("usd"):
+                                item["liquidity"] = float(liq["usd"])
+                        if not item.get("symbol"):
+                            bt = p.get("baseToken") or {}
+                            item["symbol"] = bt.get("symbol", "MEME")
+                            item["name"] = bt.get("name", "Unknown")
+                        if not item.get("logoURI") and not item.get("icon"):
+                            info = p.get("info") or {}
+                            img = info.get("imageUrl")
+                            if img:
+                                item["icon"] = img
             except Exception as e:
-                print(f"[DexScreener] Error augmenting {mint}: {e}")
+                print(f"[DexScreener] Augment failed for {mint}: {e}")
 
-            item["address"] = mint
+            # Ensure address is set (Birdeye puts it in item["address"])
+            if not item.get("address"):
+                item["address"] = mint
+
             return self._normalize(item)
         except Exception as e:
             print(f"[Birdeye] Error fetching {mint}: {e}")
             return None
 
     def _normalize(self, item):
+        holders_raw = item.get("holders")
+        holders = holders_raw if holders_raw else "N/A"
+
         return {
             "mint": item.get("address"),
             "symbol": item.get("symbol") or "MEME",
@@ -79,7 +103,8 @@ class BirdeyeService:
             "volume24h": item.get("v24hUSD") or item.get("volume24h") or 0,
             "priceChange24h": item.get("priceChange24h") or 0,
             "liquidity": item.get("liquidity") or 0,
-            "holders": "N/A",  # Holders requires paid Birdeye or Solscan (which is blocked)
+            "holders": holders,
+            "price": item.get("price") or 0,
             "dexscreenerUrl": f"https://dexscreener.com/solana/{item.get('address')}",
         }
 
