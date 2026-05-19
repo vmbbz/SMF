@@ -1,167 +1,295 @@
 // src/live-boost-system.js
-import { calculateFighterPower } from './token-power-scaling.js';
+// Live Boost System — monitors token metrics from the backend cache,
+// triggers tiered boost events with cinematic effects when price/volume spikes.
+//
+// Tiers:
+//   micro     1.05–1.20x   Gold shimmer + speed aura + catchphrase
+//   runner    1.20–1.45x   Orange burst + 3-hit dash combo on P1
+//   spike     1.45–2.0x    Red shockwave + 5-hit combo + P1 levitated 1.5s
+//   overdrive 2.0x+        Purple chaos + 10 hadoukens + P1 levitated 3s
+
 import { PlayerEffects } from './player-effects.js';
+
+// Tier thresholds (multiplier vs previous snapshot)
+const TIERS = [
+  { id: 'overdrive', minRatio: 2.0  },
+  { id: 'spike',     minRatio: 1.45 },
+  { id: 'runner',    minRatio: 1.20 },
+  { id: 'micro',     minRatio: 1.05 },
+];
+
+// Catchphrases per tier
+const CATCHPHRASES = {
+  micro:     (sym) => [
+    `${sym} heating up 🔥`,
+    `${sym} bulls loading...`,
+    `Paper handed mofos sweating right now 😤`,
+    `${sym} ain't done yet!`,
+  ][Math.floor(Math.random() * 4)],
+  runner:    (sym) => [
+    `$${sym} JUST PUMPED! 🚀`,
+    `${sym} going VERTICAL!`,
+    `Paper hands REKT again! $${sym} flying 📈`,
+    `WAGMI $${sym} LFG!!!`,
+  ][Math.floor(Math.random() * 4)],
+  spike:     (sym) => [
+    `$${sym} ON FIRE! 🔥🔥🔥`,
+    `${sym} PRINTING! Stay poor, paper hands!`,
+    `BIG PUMP $${sym}! Paper handed Mofos GET REKT! 💀`,
+    `$${sym} ABSOLUTE BEAST MODE!`,
+  ][Math.floor(Math.random() * 4)],
+  overdrive: (sym) => [
+    `$${sym} PUMPED 2X! CHAOS MODE! ⚡⚡⚡`,
+    `EVERYTHING IS PUMP! $${sym} UNSTOPPABLE!`,
+    `Paper handed Mofos couldn't hold — $${sym} WENT PARABOLIC! 🌙`,
+    `$${sym} IS THE RUNNER! 10X NEXT?! 🚀🌙`,
+  ][Math.floor(Math.random() * 4)],
+};
+
+const HADOUKEN_VARIANTS = ['fire', 'electric', 'void', 'plasma', 'default'];
 
 export class LiveBoostSystem {
   constructor(game) {
     this.game = game;
-    this.opponent = null;
+    this.aiOpponent = null;   // game.p2 — the token fighter
+    this.humanPlayer = null;  // game.p1 — who gets levitated
     this.tokenMint = null;
-    this.lastVolume = 0;
-    this.interval = null;
+    this._lastVolume = 0;
+    this._lastPriceChange = 0;
+    this._interval = null;
+    this._ttsReady = false;
+    this._announcerVoice = null;
     this._initTTS();
   }
 
+  // ─────────────────────────────────────────
+  // TTS — retry until voices are loaded
+  // ─────────────────────────────────────────
   _initTTS() {
-    this.announcerVoice = null;
-    const setVoice = () => {
+    if (!window.speechSynthesis) return;
+    const tryLoad = () => {
       const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v => 
-        v.name.includes('UK English Male') || 
-        v.name.includes('David') || 
-        v.name.includes('Daniel') || 
-        v.name.includes('Alex') ||
-        (v.name.toLowerCase().includes('male') && v.lang.startsWith('en'))
-      );
-      this.announcerVoice = preferred || voices[0];
+      if (!voices.length) return; // not ready yet
+      const preferred = voices.find(v =>
+        v.name.includes('UK English Male') ||
+        v.name.includes('David') ||
+        v.name.includes('Daniel') ||
+        v.name.includes('Google UK') ||
+        (v.lang.startsWith('en') && v.name.toLowerCase().includes('male'))
+      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+      this._announcerVoice = preferred;
+      this._ttsReady = true;
     };
-    
-    if (window.speechSynthesis) {
-      setVoice();
-      window.speechSynthesis.onvoiceschanged = setVoice;
-    }
+    window.speechSynthesis.onvoiceschanged = tryLoad;
+    // Chrome sometimes fires it synchronously if already cached
+    tryLoad();
+    // Fallback retry after 500ms
+    setTimeout(tryLoad, 500);
   }
 
-  announceText(text) {
-    if (!window.speechSynthesis) return;
+  _announce(text) {
+    if (!window.speechSynthesis || !this._ttsReady) return;
+    window.speechSynthesis.cancel();
     const msg = new SpeechSynthesisUtterance(text);
-    if (this.announcerVoice) msg.voice = this.announcerVoice;
-    msg.pitch = 0.7; // Deep voice
-    msg.rate = 1.1;  // Slightly hype pace
+    if (this._announcerVoice) msg.voice = this._announcerVoice;
+    msg.pitch = 0.65;
+    msg.rate = 1.05;
     msg.volume = 1.0;
     window.speechSynthesis.speak(msg);
   }
 
-  start(opponent, token) {
-    this.opponent = opponent;
-    this.tokenMint = token.mint;
-    this.lastVolume = token.volume24h || 0;
-    this.opponent.effects = new PlayerEffects(opponent);
-    // Poll less aggressively on frontend, e.g. 15s to be cache-friendly
-    this.interval = setInterval(() => this.checkBoost(), 15000);
+  // ─────────────────────────────────────────
+  // Lifecycle
+  // ─────────────────────────────────────────
+  start(aiOpponent, token) {
+    this.aiOpponent = aiOpponent;
+    this.humanPlayer = this.game.p1;
+    this.tokenMint = token?.mint;
+    this._lastVolume = token?.volume24h || 0;
+    this._lastPriceChange = Math.abs(token?.priceChange24h || 0);
+
+    // Attach player effects to AI opponent
+    if (!this.aiOpponent.effects) {
+      this.aiOpponent.effects = new PlayerEffects(this.aiOpponent);
+    }
+
+    // Align poll with backend 60s cache TTL + small random jitter to avoid burst
+    const jitter = Math.random() * 5000;
+    this._interval = setInterval(() => this._checkBoost(), 60000 + jitter);
+    // First check after 20s so something happens early in the fight
+    setTimeout(() => this._checkBoost(), 20000);
   }
 
   stop() {
-    if (this.interval) clearInterval(this.interval);
+    if (this._interval) clearInterval(this._interval);
+    this._interval = null;
   }
 
-  async checkBoost() {
-    if (!this.tokenMint) return;
+  // ─────────────────────────────────────────
+  // Polling + tier detection
+  // ─────────────────────────────────────────
+  async _checkBoost() {
+    if (!this.tokenMint || this.game.roundOver) return;
     try {
       const res = await fetch(`/api/token/${this.tokenMint}`);
       if (!res.ok) return;
       const fresh = await res.json();
       if (!fresh) return;
 
-      const freshVol = fresh.volume24h || 0;
-      const spikeRatio = this.lastVolume > 0 ? (freshVol / this.lastVolume) : 1;
-      
-      const superSpike = spikeRatio > 2.0;
-      const volumeSpike = spikeRatio > 1.45;
+      const freshVol   = fresh.volume24h   || 0;
+      const freshPrice = Math.abs(fresh.priceChange24h || 0);
 
-      if (superSpike) {
-        this.triggerSuperCombo(fresh);
-        this.lastVolume = freshVol;
-      } else if (volumeSpike) {
-        this.triggerRunnerCombo(fresh);
-        this.lastVolume = freshVol;
+      // Primary metric: volume ratio
+      const volRatio   = this._lastVolume > 0 ? (freshVol / this._lastVolume) : 1;
+      // Secondary: price change acceleration
+      const priceDelta = this._lastPriceChange > 0
+        ? (freshPrice / this._lastPriceChange)
+        : 1;
+
+      // Use whichever metric shows a bigger spike
+      const ratio = Math.max(volRatio, priceDelta);
+
+      // Find matching tier
+      const tier = TIERS.find(t => ratio >= t.minRatio);
+      if (tier) {
+        this._triggerTier(tier.id, fresh, ratio);
+        this._lastVolume = freshVol;
+        this._lastPriceChange = freshPrice;
       }
     } catch (err) {
-      console.warn('[LiveBoostSystem] Error checking boost:', err);
+      console.warn('[LiveBoostSystem] poll error:', err);
     }
   }
 
-  triggerSuperCombo(freshToken) {
-    const opponent = this.opponent;
-    const text = `$${freshToken.symbol} PUMPED 2X! OVERDRIVE!`;
-    
-    if (this.game.showFloatingText) this.game.showFloatingText(text, '#ff00ff');
-    this.announceText(text);
-
-    if (opponent.effects) opponent.effects.addBoostEffect();
-
-    opponent.isStunned = true;
-    opponent.stunFrames = 300; // 5 seconds stun
-    opponent.vy = -180; // Higher levitate
-
-    this.executeSuperHadoukenCombo(opponent);
+  // ─────────────────────────────────────────
+  // Public: allow manual trigger for testing
+  // ─────────────────────────────────────────
+  triggerTier(tierId, tokenData) {
+    this._triggerTier(tierId, tokenData || { symbol: 'TEST' }, 1);
   }
 
-  triggerRunnerCombo(freshToken) {
-    const opponent = this.opponent;
-    const text = `$${freshToken.symbol} JUST PUMPED!`;
+  // ─────────────────────────────────────────
+  // Tier dispatch
+  // ─────────────────────────────────────────
+  _triggerTier(tierId, token, ratio) {
+    const sym = (token.symbol || 'TOKEN').toUpperCase();
+    const phrase = CATCHPHRASES[tierId]?.(sym) || `$${sym} PUMPED!`;
 
-    // Notification
-    if (this.game.showFloatingText) this.game.showFloatingText(text, '#00ffff');
-    this.announceText(text);
+    // Announce + show cinematic message
+    this._announce(phrase);
+    if (this.game.showBoostMessage) this.game.showBoostMessage(phrase, tierId);
+    if (window.haptic) window.haptic.boostActivate?.();
 
-    // Localized boost effect
-    if (opponent.effects) opponent.effects.addBoostEffect();
-
-    // Force-field stun + levitate
-    opponent.isStunned = true;
-    opponent.stunFrames = 210; // ~3.5 seconds
-    opponent.vy = -140; // strong levitate
-
-    // Trigger full combo sequence
-    this.executeComboSequence(opponent);
+    switch (tierId) {
+      case 'micro':     this._doMicro(sym);     break;
+      case 'runner':    this._doRunner(sym);    break;
+      case 'spike':     this._doSpike(sym);     break;
+      case 'overdrive': this._doOverdrive(sym); break;
+    }
   }
 
-  executeSuperHadoukenCombo(fighter) {
-    let delay = 0;
-    const variants = ['plasma', 'fire', 'void', 'electric', 'default'];
-    
-    // 10 rapid-fire hadoukens
+  // ─────────────────────────────────────────
+  // Tier: 🟡 Micro — aura flash + speed burst on AI (no P1 stun)
+  // ─────────────────────────────────────────
+  _doMicro(sym) {
+    const ai = this.aiOpponent;
+    if (!ai) return;
+    if (ai.effects) ai.effects.addMicroEffect();
+    // Temporary speed boost (3 seconds)
+    const prevMult = ai.damageMultiplier || 1;
+    ai.damageMultiplier = prevMult * 1.15;
+    setTimeout(() => { ai.damageMultiplier = prevMult; }, 3000);
+  }
+
+  // ─────────────────────────────────────────
+  // Tier: 🟠 Runner — 3-hit combo, brief P1 stun (0.5s)
+  // ─────────────────────────────────────────
+  _doRunner(sym) {
+    const ai = this.aiOpponent;
+    const p1 = this.humanPlayer;
+    if (!ai || !p1) return;
+
+    if (ai.effects) ai.effects.addRunnerEffect();
+    this.game.triggerScreenFlash?.('#ff8800', 0.35);
+
+    // Brief levitation of P1 (0.5s — just long enough to eat the combo)
+    p1.boostLevitate(0.8);
+
+    // AI dashes toward P1 then lands 3 hits
+    this._runCombo(ai, ['dashForward', 'lightPunch', 'mediumKick', 'heavyPunch'], 220);
+  }
+
+  // ─────────────────────────────────────────
+  // Tier: 🔴 Spike — 5-hit combo, P1 levitated 1.5s
+  // ─────────────────────────────────────────
+  _doSpike(sym) {
+    const ai = this.aiOpponent;
+    const p1 = this.humanPlayer;
+    if (!ai || !p1) return;
+
+    if (ai.effects) ai.effects.addSpikeEffect();
+    this.game.triggerScreenFlash?.('#ff2244', 0.5);
+
+    p1.boostLevitate(1.8);
+
+    this._runCombo(ai, [
+      'dashForward',
+      'lightPunch', 'mediumKick',
+      'heavyPunch', 'lightKick', 'heavyKick',
+    ], 240);
+  }
+
+  // ─────────────────────────────────────────
+  // Tier: ⚡ Overdrive — 10 Hadoukens, P1 levitated 3s
+  // ─────────────────────────────────────────
+  _doOverdrive(sym) {
+    const ai = this.aiOpponent;
+    const p1 = this.humanPlayer;
+    if (!ai || !p1) return;
+
+    if (ai.effects) ai.effects.addOverdriveEffect();
+    this.game.triggerScreenFlash?.('#cc00ff', 0.8);
+
+    // Longer levitation for the full barrage
+    p1.boostLevitate(3.5);
+
+    // Fire 10 randomised Hadoukens
+    let delay = 300;
     for (let i = 0; i < 10; i++) {
       setTimeout(() => {
-        if (fighter.isStunned) {
-          fighter.currentAttack = 'hadouken';
-          fighter.attackFrame = 0;
-          fighter.attackHasHit = false;
-          fighter.nextHadoukenVariant = variants[Math.floor(Math.random() * variants.length)];
-          // Bypass cooldown
-          fighter.hadoukenCooldown = 0;
-        }
+        if (this.game.roundOver) return;
+        ai.hadoukenCooldown = 0;
+        ai.currentAttack = 'hadouken';
+        ai.attackFrame = 0;
+        ai.attackHasHit = false;
+        ai.nextHadoukenVariant = HADOUKEN_VARIANTS[Math.floor(Math.random() * HADOUKEN_VARIANTS.length)];
+        ai.state = 'attack';
       }, delay);
-      delay += 350; // Fire every 350ms
+      delay += 340;
     }
   }
 
-  executeComboSequence(fighter) {
-    const combo = [
-      'lightPunch',
-      'mediumKick',
-      'heavyPunch',
-      'dashForward',
-      'heavyKick'
-    ];
-
+  // ─────────────────────────────────────────
+  // Helper: run a named move sequence on the AI fighter
+  // ─────────────────────────────────────────
+  _runCombo(fighter, moves, intervalMs) {
     let delay = 0;
-    combo.forEach(move => {
+    for (const move of moves) {
       setTimeout(() => {
-        if (fighter.isStunned) {
-          if (move === 'dashForward') {
-            fighter.dashTimer = 0.15; // DASH_DURATION
-            fighter.dashDir = fighter.facing;
-            fighter.currentAttack = null;
-          } else {
-            fighter.currentAttack = move;
-            fighter.attackFrame = 0;
-            fighter.attackHasHit = false;
-          }
+        if (this.game.roundOver) return;
+        if (move === 'dashForward') {
+          fighter.dashTimer = 0.18;
+          fighter.dashDir = fighter.facing;
+          fighter.state = 'idle';
+          fighter.currentAttack = null;
+        } else {
+          fighter.currentAttack = move;
+          fighter.attackFrame = 0;
+          fighter.attackHasHit = false;
+          fighter.state = 'attack';
         }
       }, delay);
-      delay += 280; // tight, aggressive combo timing
-    });
+      delay += intervalMs;
+    }
   }
 }

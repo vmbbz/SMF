@@ -95,6 +95,8 @@ export class Game {
     this.roundOver = false;
     this.roundTimer = 99;
     this.hitSparks = [];
+    this.floatingMessages = []; // {text, color, x, y, life, maxLife, fontSize}
+    this.screenFlash = null;   // {color, life, maxLife}
     this._lastClashKey = null;
     this.victoryCaptured = false;
     this.waitingForIntro = true; // NEW: Walk-in intro sequence
@@ -671,14 +673,43 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     ctx.restore();
   }
 
+  /**
+   * Show a large cinematic floating message above the stage center.
+   * tier: 'micro'|'runner'|'spike'|'overdrive'
+   */
+  showBoostMessage(text, tier) {
+    const tierStyles = {
+      micro:     { color: '#ffcc00', fontSize: 38 },
+      runner:    { color: '#ff8800', fontSize: 46 },
+      spike:     { color: '#ff2244', fontSize: 54 },
+      overdrive: { color: '#cc00ff', fontSize: 64 },
+    };
+    const style = tierStyles[tier] || { color: '#ffffff', fontSize: 46 };
+    this.floatingMessages.push({
+      text,
+      color: style.color,
+      x: this.logicalW / 2,
+      y: this.logicalH * 0.3,
+      life: 1,
+      maxLife: tier === 'overdrive' ? 3.5 : 2.0,
+      fontSize: style.fontSize,
+    });
+  }
+
+  /** Flash the entire screen with a translucent color burst. */
+  triggerScreenFlash(color, duration = 0.4) {
+    this.screenFlash = { color, life: 1, maxLife: duration };
+  }
+
+  /** Legacy small floating text (hit sparks) — kept for compatibility. */
   showFloatingText(text, color) {
     this.hitSparks.push({
       x: this.p2.x,
-      y: this.p2.y - 120, // Float high above
-      life: 2.0, // Last 2 seconds
-      color: color,
-      text: text,
-      isHuge: true
+      y: this.p2.y - 120,
+      life: 2.0,
+      color,
+      text,
+      isHuge: true,
     });
   }
 
@@ -905,6 +936,43 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       }
 
       ctx.globalAlpha = 1;
+    }
+
+    // ── Cinematic Floating Boost Messages ──
+    const dt2 = this._dt || 0.016;
+    for (let i = this.floatingMessages.length - 1; i >= 0; i--) {
+      const msg = this.floatingMessages[i];
+      msg.life -= dt2 / msg.maxLife;
+      if (msg.life <= 0) { this.floatingMessages.splice(i, 1); continue; }
+      const alpha = msg.life > 0.8 ? 1 : msg.life / 0.8;
+      const rise = (1 - msg.life) * 30;
+      ctx.globalAlpha = alpha;
+      ctx.textAlign = 'center';
+      ctx.font = `bold ${msg.fontSize}px 'Orbitron', monospace`;
+      ctx.shadowColor = msg.color;
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = msg.color;
+      ctx.fillText(msg.text, msg.x, msg.y - rise);
+      // Subtle white stroke for readability
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeText(msg.text, msg.x, msg.y - rise);
+    }
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    // ── Screen Flash Overlay ──
+    if (this.screenFlash) {
+      this.screenFlash.life -= dt2 / this.screenFlash.maxLife;
+      if (this.screenFlash.life <= 0) {
+        this.screenFlash = null;
+      } else {
+        const flashAlpha = this.screenFlash.life * 0.45;
+        ctx.globalAlpha = flashAlpha;
+        ctx.fillStyle = this.screenFlash.color;
+        ctx.fillRect(0, 0, w, this.logicalH);
+        ctx.globalAlpha = 1;
+      }
     }
 
     // Effects (particles, coin rain, etc.)

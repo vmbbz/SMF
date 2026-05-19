@@ -274,6 +274,25 @@ export class Fighter {
     // Tick hadouken cooldown
     if (this.hadoukenCooldown > 0) this.hadoukenCooldown -= dt;
 
+    // ── Levitation (boost paralysis) ──
+    if (this.isLevitated) {
+      this.levitateTimer -= dt;
+      // Smoothly float to target Y
+      this.y += (this.levitateTargetY - this.y) * 0.15;
+      this.vx = 0;
+      this.vy = 0;
+      // Tick stun frames for visual shake
+      if (this.stunFrames > 0) this.stunFrames -= frames;
+      if (this.levitateTimer <= 0) {
+        this.isLevitated = false;
+        this.levitateTimer = 0;
+        this.stunFrames = 0;
+        this.state = 'idle';
+      }
+      this._applyPhysics(dt, stageLeft, stageRight, opponent);
+      return;
+    }
+
     if (this.isStunned) {
       if (this.stunFrames > 0) {
         this.stunFrames -= frames;
@@ -759,6 +778,22 @@ export class Fighter {
     this.currentAttack = null;
   }
 
+  /**
+   * Levitate this fighter for `duration` seconds (boost punishment).
+   * While levitated, all input is blocked and the fighter floats at a
+   * fixed height above the floor — reacting visually to incoming hits.
+   */
+  boostLevitate(duration) {
+    this.isLevitated = true;
+    this.levitateTimer = duration;
+    this.levitateTargetY = this.floorY - 90; // Float 90px above floor
+    this.state = 'hitstun'; // Use hitstun pose for the reactive look
+    this.stunFrames = duration * 60;
+    this.vx = 0;
+    this.vy = 0;
+    this.currentAttack = null;
+  }
+
   isBlocking(actions) {
     // Blocking = holding back (away from opponent)
     if (this.facing === 1 && actions.has(Actions.LEFT)) return true;
@@ -793,7 +828,12 @@ export class Fighter {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    if (this.state === "hitstun") {
+    if (this.isLevitated) {
+      // Levitation glow: bright white/cyan flicker
+      const flicker = 0.6 + Math.sin(performance.now() * 0.015) * 0.4;
+      ctx.strokeStyle = `rgba(0,255,255,${flicker})`;
+      ctx.fillStyle   = `rgba(0,255,255,${flicker})`;
+    } else if (this.state === "hitstun") {
       ctx.strokeStyle = "#ff4444";
       ctx.fillStyle = "#ff4444";
     } else if (this.state === "blockstun") {

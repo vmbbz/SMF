@@ -202,7 +202,7 @@ export class HapticEngine {
   static heavyHit()      { this.vibrate(90); }
   static headshot()      { this.vibrate([60, 25, 60]); }
   static comboHit()      { this.vibrate([25, 15, 25, 15, 45]); }
-  static boostActivate() { this.vibrate([70, 30, 120]); }
+  static boostActivate() { this.vibrate([50, 30, 100, 30, 150]); }
   static block()         { this.vibrate([20, 10, 20]); }
   static clash()         { this.vibrate([40, 20, 40]); }
 }
