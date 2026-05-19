@@ -29,7 +29,7 @@ export class TrendingStrip {
   render() {
     this.container.innerHTML = `
       <div class="strip-header" style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:900;color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-size:9px;margin-right:15px;text-shadow:0 0 10px var(--neon-blue);">🚀 LIVE NETWORK STREAM</span>
+        <span style="font-weight:900;color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-size:9px;margin-right:15px;text-shadow:0 0 10px var(--neon-blue);">🚀 LIVE STREAM</span>
         <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn" style="background:var(--neon-pink);color:#000;border:none;padding:4px 8px;border-radius:4px;font-weight:bold;cursor:pointer;font-family:inherit;font-size:9px;">
           ${this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS'}
         </button>

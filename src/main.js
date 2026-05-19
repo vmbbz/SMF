@@ -313,11 +313,16 @@ async function startFight() {
   window._game = game;
   window.currentGame = game;  // alias used by joystick + nextFight
 
-  // If virtual joystick is ready (mobile), register it with p1Input now
-  if (window.virtualJoystick && !window.virtualJoystick._registered) {
-    p1Input.addAdapter(window.virtualJoystick);
+  // Re-register virtual joystick with the fresh p1Input on every game start
+  // (The _registered guard is intentionally removed so it works after resetAndFight)
+  if (window.virtualJoystick) {
+    // Check adapters list to avoid double-add
+    const alreadyAdded = p1Input.adapters && p1Input.adapters.includes(window.virtualJoystick);
+    if (!alreadyAdded) {
+      p1Input.addAdapter(window.virtualJoystick);
+      console.log('[Joystick] Virtual joystick registered with new p1Input');
+    }
     window.virtualJoystick._registered = true;
-    console.log('[Joystick] Virtual joystick registered with P1 input at game start');
   }
 
   // Wire up adapters with game reference
@@ -417,6 +422,9 @@ window.resetAndFight = async function(token) {
   }
 
   console.log('[resetAndFight] Tearing down current game for:', token.symbol);
+
+  // Reset joystick registration so the new game's p1Input gets it
+  if (window.virtualJoystick) window.virtualJoystick._registered = false;
 
   // Stop RAF loop + live boost
   if (game) {
