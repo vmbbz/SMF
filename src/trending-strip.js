@@ -15,7 +15,7 @@ export class TrendingStrip {
   }
 
   async loadTokens() {
-    this.tokens = this.isGraduatesOnly 
+    this.tokens = this.isGraduatesOnly
       ? await getPumpFunGraduates(12)
       : await getSolscanTrending(12);
     this.renderTokens();
@@ -31,14 +31,14 @@ export class TrendingStrip {
       <div class="strip-header" style="display:flex; justify-content:space-between; align-items:center;">
         <span style="font-weight:900;color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-size:9px;margin-right:15px;text-shadow:0 0 10px var(--neon-blue);">🚀 LIVE NETWORK STREAM</span>
         <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn" style="background:var(--neon-pink);color:#000;border:none;padding:4px 8px;border-radius:4px;font-weight:bold;cursor:pointer;font-family:inherit;font-size:9px;">
-          ${this.isGraduatesOnly ? 'SHOW ALL TRENDING' : 'PUMP.FUN GRADUATES ONLY'}
+          ${this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS'}
         </button>
       </div>
       <div class="marquee-container" style="overflow:hidden;white-space:nowrap;margin-top:6px;position:relative;width:100%;">
         <div class="marquee" id="${this.container.id}-inner" style="display:inline-block;animation:marquee 40s linear infinite;"></div>
       </div>
     `;
-    
+
     // Inject keyframes if not exists
     if (!document.getElementById('marquee-style')) {
       const style = document.createElement('style');
@@ -88,10 +88,10 @@ export class TrendingStrip {
   renderTokens() {
     const inner = document.getElementById(`${this.container.id}-inner`);
     if (!inner) return;
-    
+
     // Update button text just in case
     const btn = this.container.querySelector('.toggle-btn');
-    if (btn) btn.textContent = this.isGraduatesOnly ? 'SHOW ALL TRENDING' : 'PUMP.FUN GRADUATES ONLY';
+    if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS';
 
     if (this.tokens.length === 0) {
       inner.innerHTML = `<span style="color:#888;">Loading trending tokens...</span>`;

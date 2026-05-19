@@ -58,37 +58,52 @@ export class LiveBoostSystem {
   }
 
   // ─────────────────────────────────────────
-  // TTS — retry until voices are loaded
+  // TTS — pick the best available English voice
+  // Priority: Google US/UK > Microsoft Neural > any English > default
   // ─────────────────────────────────────────
   _initTTS() {
     if (!window.speechSynthesis) return;
-    const tryLoad = () => {
+
+    const pickBestVoice = () => {
       const voices = window.speechSynthesis.getVoices();
-      if (!voices.length) return; // not ready yet
-      const preferred = voices.find(v =>
-        v.name.includes('UK English Male') ||
-        v.name.includes('David') ||
-        v.name.includes('Daniel') ||
-        v.name.includes('Google UK') ||
-        (v.lang.startsWith('en') && v.name.toLowerCase().includes('male'))
-      ) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-      this._announcerVoice = preferred;
+      if (!voices.length) return false;
+
+      const PREFERRED = [
+        v => v.name === 'Google US English',
+        v => v.name === 'Google UK English Male',
+        v => v.name === 'Google UK English Female',
+        v => v.name.startsWith('Microsoft') && v.lang.startsWith('en') && v.name.includes('Neural'),
+        v => v.name.startsWith('Microsoft') && v.lang.startsWith('en'),
+        v => v.lang === 'en-US',
+        v => v.lang.startsWith('en'),
+        v => true,
+      ];
+
+      let chosen = null;
+      for (const test of PREFERRED) {
+        chosen = voices.find(test);
+        if (chosen) break;
+      }
+      this._announcerVoice = chosen || null;
       this._ttsReady = true;
+      console.log('[Announcer] TTS ready. Voice:', this._announcerVoice?.name || 'browser default');
+      return true;
     };
-    window.speechSynthesis.onvoiceschanged = tryLoad;
-    // Chrome sometimes fires it synchronously if already cached
-    tryLoad();
-    // Fallback retry after 500ms
-    setTimeout(tryLoad, 500);
+
+    window.speechSynthesis.onvoiceschanged = () => pickBestVoice();
+    if (!pickBestVoice()) {
+      setTimeout(() => pickBestVoice(), 300);
+      setTimeout(() => { if (!this._ttsReady) { this._ttsReady = true; } }, 800);
+    }
   }
 
   _announce(text) {
-    if (!window.speechSynthesis || !this._ttsReady) return;
+    if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const msg = new SpeechSynthesisUtterance(text);
     if (this._announcerVoice) msg.voice = this._announcerVoice;
-    msg.pitch = 0.65;
-    msg.rate = 1.05;
+    msg.pitch  = 0.75;
+    msg.rate   = 1.05;
     msg.volume = 1.0;
     window.speechSynthesis.speak(msg);
   }
@@ -111,6 +126,10 @@ export class LiveBoostSystem {
     if (!this.aiOpponent.effects) {
       this.aiOpponent.effects = new PlayerEffects(this.aiOpponent);
     }
+
+    // Announce the fight start once TTS is ready
+    const sym = (token?.symbol || 'MEME').toUpperCase();
+    setTimeout(() => this._announce(`FIGHT! ${sym} enters the arena!`), 900);
 
     // Poll every 60s to align with server-side cache TTL.
     // First check after 30s (gives server cache time to warm for this mint).

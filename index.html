@@ -156,6 +156,7 @@
       justify-content: center;
       max-width: 500px;
       width: 95%;
+      padding: 10px;
       border: 2px solid rgba(255, 255, 255, 0.1);
       box-shadow: 0 30px 60px rgba(0,0,0,0.9), 0 0 30px rgba(0,255,157,0.15);
     }
@@ -214,6 +215,27 @@
       transition: width linear;
     }
     
+
+    /* Mobile-only: tighter trending strip pills */
+    @media (max-width: 768px) {
+      .token-pill {
+        padding: 2px 7px 2px 2px !important;
+        margin-right: 6px !important;
+        border-radius: 14px !important;
+      }
+      .token-pill img {
+        width: 18px !important;
+        height: 18px !important;
+        margin-right: 5px !important;
+      }
+      .token-pill .symbol {
+        font-size: 10px !important;
+        margin-right: 5px !important;
+      }
+      .token-pill .power {
+        font-size: 9px !important;
+      }
+    }
     .loser-tabs {
       display: flex;
       justify-content: center;
@@ -605,6 +627,7 @@
         status.innerHTML = 'No tokens matched filter — check console for raw data';
         return;
       }
+      if (window._showMobileControls) window._showMobileControls();
       await loadOpponent(pumpQueue.shift());
     };
 
@@ -628,6 +651,7 @@
         if (memePanel) memePanel.classList.add('hidden');
         const canvas = document.getElementById('game');
         if (canvas) canvas.classList.add('active');
+        if (window._showMobileControls) window._showMobileControls();
         
         await loadOpponent(token);
       } catch (e) {
@@ -650,12 +674,16 @@
       const mobileControls = document.getElementById('mobile-controls');
 
       if (isMobile && mobileControls) {
-        mobileControls.style.display = 'flex';
+        // Hide on landing — shown only when fight starts
+        mobileControls.style.display = 'none';
 
         // Import and attach virtual joystick
         const { VirtualJoystickAdapter } = await import('./src/virtual-joystick.js');
         window.virtualJoystick = new VirtualJoystickAdapter();
         window.virtualJoystick.attach();
+
+        // Called by fightToken/startEndlessMode to reveal controls
+        window._showMobileControls = () => { mobileControls.style.display = 'flex'; };
 
         // Register as a P1 input adapter when the game is ready
         const waitForGame = setInterval(() => {

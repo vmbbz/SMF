@@ -371,12 +371,27 @@ window.loadOpponent = async function(token, forceRestart = false) {
 
   await opponent.loadTokenHead(token);
 
-  // 5. Announce opponent via TTS
-  if (opponent.personality?.taunts?.length > 0) {
+  // 5. Announce opponent taunt via TTS
+  // Use the best available English voice (same priority as announcer)
+  if (opponent.personality?.taunts?.length > 0 && window.speechSynthesis) {
     const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
-    utterance.pitch = opponent.personality.pitch || 1.0;
-    utterance.rate  = opponent.personality.rate  || 1.0;
-    speechSynthesis.speak(utterance);
+    utterance.pitch  = opponent.personality.pitch || 1.0;
+    utterance.rate   = opponent.personality.rate  || 1.0;
+    utterance.volume = 1.0;
+    // Pick best voice: reuse announcer voice if available, else pick fresh
+    const lbs = window.liveBoostSystem;
+    if (lbs?._announcerVoice) {
+      utterance.voice = lbs._announcerVoice;
+    } else {
+      const voices = speechSynthesis.getVoices();
+      const best = voices.find(v => v.name === 'Google US English')
+                || voices.find(v => v.name.startsWith('Microsoft') && v.lang.startsWith('en') && v.name.includes('Neural'))
+                || voices.find(v => v.lang === 'en-US')
+                || voices.find(v => v.lang.startsWith('en'));
+      if (best) utterance.voice = best;
+    }
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
   }
 
   safeClass('meme-panel', 'add', 'hidden');
@@ -431,6 +446,7 @@ window.resetAndFight = async function(token) {
   // Small yield to let the RAF loop notice running=false before we restart
   await new Promise(r => setTimeout(r, 32));
 
+  if (window._showMobileControls) window._showMobileControls();
   await window.loadOpponent(token, true);
 };
 
