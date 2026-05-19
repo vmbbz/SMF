@@ -225,6 +225,28 @@ class BirdeyeService:
                 await asyncio.sleep(2)
                 print("[BirdeyeWarmer] Refreshing graduated list...")
                 await self._refresh_graduated(8)
+                await asyncio.sleep(2)
+
+                # ── Keep all currently-listed tokens always warm ──
+                # Collect every mint from both lists, refresh those whose
+                # individual cache has gone stale (>55s). This ensures
+                # zero cold-cache hits no matter which token a player clicks.
+                all_listed = set()
+                trending_cache = self.list_cache.get("trending")
+                graduated_cache = self.list_cache.get("graduated")
+                if trending_cache:
+                    all_listed |= {t["mint"] for t in trending_cache[0] if t.get("mint")}
+                if graduated_cache:
+                    all_listed |= {t["mint"] for t in graduated_cache[0] if t.get("mint")}
+
+                stale = [
+                    m for m in all_listed
+                    if m not in self.cache or (time.time() - self.cache[m]["ts"]) > 55
+                ]
+                if stale:
+                    print(f"[BirdeyeWarmer] Refreshing {len(stale)} stale token overview(s)...")
+                    await self._prewarm_batch(stale)
+
             except Exception as e:
                 print(f"[BirdeyeWarmer] Error during refresh: {e}")
 
