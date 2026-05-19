@@ -330,19 +330,22 @@ async function startFight() {
   game.showFightAlert();
 }
 
-// Global helper to load opponent into the current fight
-window.loadOpponent = async function(token) {
-  // 1. Ensure P2 is in LLM or Simulated mode for the AI to work
-  if (p2ModeIdx === 0) { // If Keyboard, switch to Simulated
+// ─────────────────────────────────────────────
+// Global opponent loader
+// Loads a token into P2 of the current or freshly-started fight.
+// ─────────────────────────────────────────────
+window.loadOpponent = async function(token, forceRestart = false) {
+  // 1. Ensure P2 is in Simulated mode (not Keyboard) so AI works
+  if (p2ModeIdx === 0) {
     window.setGameMode(undefined, 3); // 3 = Simulated
   }
 
-  // 2. Start fight if not already fighting (creates the game object)
-  if (state !== 'fighting' || !game) {
+  // 2. Start fight — always start fresh if forceRestart or game isn't running
+  if (forceRestart || state !== 'fighting' || !game || game.roundOver) {
     await startFight();
   }
-  
-  // 3. Wait for game and p2 to be fully initialized
+
+  // 3. Wait for game and p2 to be fully initialized (up to 2.5s)
   let attempts = 0;
   while ((!game || !game.p2) && attempts < 50) {
     await new Promise(r => setTimeout(r, 50));
@@ -350,39 +353,87 @@ window.loadOpponent = async function(token) {
   }
 
   if (!game || !game.p2) {
-    console.error('Game initialization failed');
+    console.error('[loadOpponent] Game initialization timed out');
     return;
   }
 
   const opponent = game.p2;
-  // Phase 3: Data Enrichment
+
+  // 4. Apply token market stats
   try {
-    // We already have enriched Solscan data in token
     opponent.applyMarketStats(token);
-    
-    // Fallbacks if token doesn't have names
-    token.name = token.name || 'Unknown Meme';
+    token.name   = token.name   || 'Unknown Meme';
     token.symbol = token.symbol || 'MEME';
-    
     console.log(`[Game] Loaded opponent: ${token.name} (${token.symbol})`);
   } catch (e) {
-    console.error('Enrichment failed', e);
+    console.error('[loadOpponent] Market stats enrichment failed', e);
   }
 
   await opponent.loadTokenHead(token);
-  
-  // 4. Personality taunt
+
+  // 5. Announce opponent via TTS
   if (opponent.personality?.taunts?.length > 0) {
     const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
     utterance.pitch = opponent.personality.pitch || 1.0;
-    utterance.rate = opponent.personality.rate || 1.0;
+    utterance.rate  = opponent.personality.rate  || 1.0;
     speechSynthesis.speak(utterance);
   }
-  
-  // 5. Hide panel
+
   safeClass('meme-panel', 'add', 'hidden');
-  console.log('✅ Opponent loaded and fight started:', token.symbol);
-}
+  console.log('✅ Opponent loaded:', token.symbol);
+};
+
+// ─────────────────────────────────────────────
+// resetAndFight — authoritative teardown + fresh game start
+//
+// This is the single source of truth for "start the next fight".
+// It:
+//  1. Stops the RAF loop and live boost
+//  2. Nulls the module-scoped `game` variable (not just window.currentGame)
+//  3. Resets state to 'landing' so startFight() in loadOpponent creates a
+//     brand-new Game instance with clean roundOver / victoryOverlayTriggered
+//  4. Clears the canvas of any stale frame
+//  5. Calls loadOpponent with forceRestart=true
+// ─────────────────────────────────────────────
+window.resetAndFight = async function(token) {
+  if (!token) {
+    console.warn('[resetAndFight] No token provided');
+    return;
+  }
+
+  console.log('[resetAndFight] Tearing down current game for:', token.symbol);
+
+  // Stop RAF loop + live boost
+  if (game) {
+    game.running = false;
+    game.roundOver = true;
+  }
+  if (window.liveBoostSystem) {
+    try { window.liveBoostSystem.stop(); } catch (e) { /* ignore */ }
+    window.liveBoostSystem = null;
+  }
+
+  // Null both references so loadOpponent triggers startFight()
+  game = null;
+  window.currentGame = null;
+  window.game = null;
+
+  // Step back state so startFight() runs unconditionally
+  state = 'landing';
+
+  // Clear canvas of stale frame
+  const canvas = document.getElementById('game');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  // Small yield to let the RAF loop notice running=false before we restart
+  await new Promise(r => setTimeout(r, 32));
+
+  await window.loadOpponent(token, true);
+};
+
 
 // ─────────────────────────────────────────────
 // Landing page click handlers
@@ -2189,6 +2240,59 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
     winText.style.fontSize = '40px';
     if (lc) lc.style.opacity = '1';
   }, 2500);
+
+  // Update session stats and start 8s endless-mode countdown
+  const sess = window.endlessSession;
+  if (sess && sess.active) {
+    sess.round++;
+    if (winnerNum === 1) { sess.wins++;   sess.streak = Math.max(0, sess.streak) + 1; }
+    else                 { sess.losses++; sess.streak = Math.min(0, sess.streak) - 1; }
+
+    // Show session header
+    const hdr = document.getElementById('endless-session-header');
+    if (hdr) {
+      hdr.style.display = 'flex';
+      const roundEl  = document.getElementById('endless-round-label');
+      const recordEl = document.getElementById('endless-record-label');
+      const streakEl = document.getElementById('endless-streak-label');
+      if (roundEl)  roundEl.textContent  = 'ROUND ' + sess.round;
+      if (recordEl) recordEl.textContent = sess.wins + 'W · ' + sess.losses + 'L';
+      if (streakEl) {
+        if (sess.streak >= 3)       streakEl.textContent = sess.streak + 'ð¥ STREAK';
+        else if (sess.streak <= -3) streakEl.textContent = Math.abs(sess.streak) + 'ð ON TILT';
+        else                        streakEl.textContent = '';
+      }
+    }
+
+    // Start 8-second auto-advance countdown
+    const cdEl   = document.getElementById('endless-countdown');
+    const cdBar  = document.getElementById('endless-countdown-bar');
+    const cdSecs = document.getElementById('endless-countdown-secs');
+    if (cdEl && cdBar && cdSecs) {
+      cdEl.style.display = 'flex';
+      cdBar.style.transition = 'none';
+      cdBar.style.width = '100%';
+
+      let remaining = 8;
+      cdSecs.textContent = remaining;
+
+      // Force a reflow so the transition reset takes effect
+      void cdBar.offsetWidth;
+      cdBar.style.transition = 'width 1s linear';
+      cdBar.style.width = ((remaining - 1) / 8 * 100) + '%';
+
+      sess._countdownTimer = setInterval(() => {
+        remaining--;
+        if (cdSecs) cdSecs.textContent = remaining;
+        if (cdBar)  cdBar.style.width  = (remaining / 8 * 100) + '%';
+        if (remaining <= 0) {
+          clearInterval(sess._countdownTimer);
+          sess._countdownTimer = null;
+          window.nextFight();
+        }
+      }, 1000);
+    }
+  }
 };
 
 window.shareVictory = function() {
@@ -2204,40 +2308,76 @@ window.showMultiplayer = function() {
   showScreen('multiplayer');
 };
 
-window.nextFight = function() {
-  // Determine which strip has the tokens
-  let tokens = [];
-  if (window.fightTrendingStrip && window.fightTrendingStrip.tokens && window.fightTrendingStrip.tokens.length > 0) {
-    tokens = window.fightTrendingStrip.tokens;
-  } else if (window.trendingStrip && window.trendingStrip.tokens && window.trendingStrip.tokens.length > 0) {
-    tokens = window.trendingStrip.tokens;
+// Endless Session State
+window.endlessSession = {
+  active: false,
+  round:  0,
+  wins:   0,
+  losses: 0,
+  streak: 0,
+  _countdownTimer: null,
+};
+
+window._cancelEndlessCountdown = function() {
+  if (window.endlessSession._countdownTimer) {
+    clearInterval(window.endlessSession._countdownTimer);
+    window.endlessSession._countdownTimer = null;
+  }
+  const cd = document.getElementById('endless-countdown');
+  if (cd) cd.style.display = 'none';
+};
+
+window.nextFight = async function() {
+  window._cancelEndlessCountdown();
+
+  const overlay = document.getElementById('victory-overlay');
+  if (overlay) overlay.classList.add('hidden');
+
+  let nextToken = null;
+
+  // Priority 1: pumpQueue from endless-mode launcher
+  if (window.pumpQueue && window.pumpQueue.length > 0) {
+    nextToken = window.pumpQueue.shift();
   }
 
-  if (tokens.length === 0) {
-    // Fallback if no tokens loaded
+  // Priority 2: rotate through trending strip list
+  if (!nextToken) {
+    let tokens = [];
+    if (window.fightTrendingStrip?.tokens?.length > 0) {
+      tokens = window.fightTrendingStrip.tokens;
+    } else if (window.trendingStrip?.tokens?.length > 0) {
+      tokens = window.trendingStrip.tokens;
+    }
+    if (tokens.length > 0) {
+      let nextIndex = 0;
+      const curMint = game?.p2?.tokenData?.mint || window.currentGame?.p2?.tokenData?.mint;
+      if (curMint) {
+        const idx = tokens.findIndex(t => t.mint === curMint);
+        if (idx !== -1) nextIndex = (idx + 1) % tokens.length;
+      }
+      nextToken = tokens[nextIndex];
+    }
+  }
+
+  // Priority 3: fetch fresh trending as last resort
+  if (!nextToken) {
+    try {
+      const res = await fetch('/api/trending?count=12');
+      const fresh = await res.json();
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        window.pumpQueue = fresh.slice(1);
+        nextToken = fresh[0];
+      }
+    } catch (e) {
+      console.error('[nextFight] Trending fetch failed:', e);
+    }
+  }
+
+  if (!nextToken) {
+    console.warn('[nextFight] No next token — reloading');
     location.reload();
     return;
   }
 
-  // Find index of current opponent or fallback to 0
-  let nextIndex = 0;
-  if (window.currentGame && window.currentGame.p2 && window.currentGame.p2.tokenData) {
-    const currentMint = window.currentGame.p2.tokenData.mint;
-    const currIdx = tokens.findIndex(t => t.mint === currentMint);
-    if (currIdx !== -1) {
-      nextIndex = (currIdx + 1) % tokens.length;
-    }
-  }
-
-  const nextToken = tokens[nextIndex];
-  
-  // Hide victory overlay and start the fight
-  const overlay = document.getElementById('victory-overlay');
-  if (overlay) overlay.classList.add('hidden');
-  
-  if (window.fightToken) {
-    window.fightToken(nextToken.mint);
-  } else {
-    location.reload();
-  }
+  await window.resetAndFight(nextToken);
 };
