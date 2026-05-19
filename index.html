@@ -111,6 +111,23 @@
       box-shadow: 0 10px 20px rgba(255,0,255,0.3);
     }
     
+    .victory-btn {
+      padding: 8px 16px;
+      font-size: 12px;
+      margin: 0;
+      font-weight: bold;
+    }
+    
+    .victory-btn.dark {
+      background: #333;
+      color: #fff;
+    }
+    .victory-btn.dark:hover {
+      background: #444 !important;
+      color: #fff !important;
+      box-shadow: 0 10px 20px rgba(255,255,255,0.1);
+    }
+    
     input {
       width: 100%;
       padding: 18px;
@@ -304,10 +321,15 @@
 
 
 
-    <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top: 10px; z-index: 10; position: relative;">
-      <button id="btn-buy-token" class="premium-btn" style="background:var(--neon-blue);color:#000;font-weight:900;padding:8px 16px;font-size:12px;margin:0;">BUY $TICKER 🛒</button>
-      <button class="premium-btn pink" onclick="shareVictory()" style="padding:8px 16px;font-size:12px;margin:0;">SHARE TO X 🚀</button>
-      <button class="premium-btn" onclick="location.reload()" style="background:#333;padding:8px 16px;font-size:12px;margin:0;">REMATCH 🥊</button>
+    <div style="display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top: 10px; z-index: 10; position: relative; width: 100%;">
+      <div style="display:flex; gap:10px; width: 100%; justify-content: center;">
+        <button id="btn-buy-token" class="premium-btn victory-btn" style="background:var(--neon-blue);color:#000;">BUY $TICKER 🛒</button>
+        <button class="premium-btn pink victory-btn" onclick="shareVictory()">SHARE TO X 🚀</button>
+      </div>
+      <div style="display:flex; gap:10px; width: 100%; justify-content: center;">
+        <button class="premium-btn dark victory-btn" onclick="location.reload()">REMATCH 🥊</button>
+        <button class="premium-btn dark victory-btn" onclick="nextFight()">NEXT FIGHT ⏭️</button>
+      </div>
     </div>
   </div>
 

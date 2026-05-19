@@ -759,15 +759,11 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.fillText(`MCAP: $${token.marketCap ? (token.marketCap/1000).toFixed(1)+'K' : '??'}`, x, y + 10);
       ctx.fillText(`VOL: $${token.volume24h ? (token.volume24h/1000).toFixed(1)+'K' : '??'}`, x, y + 35);
       ctx.fillText(`CHG: ${token.priceChange24h ? token.priceChange24h.toFixed(2)+'%' : '??%'}`, x, y + 60);
-      ctx.fillText(`HLD: ${token.holders || 100}`, x, y + 85);
+      ctx.fillText(`HLD: ${token.holders || 'N/A'}`, x, y + 85);
     };
 
-    drawCard(w / 4, h / 2, 'P1 CHALLENGER', this.p1.marketData || this.p1.tokenData, true);
-    drawCard(3 * w / 4, h / 2, 'P2 OPPONENT', this.p2.marketData || this.p2.tokenData, false);
-    
-    ctx.font = 'bold 48px system-ui';
-    ctx.fillStyle = '#fff';
-    ctx.fillText('VS', w / 2, h / 2);
+    // Render only the AI token (P2) to keep UI clean for the human
+    drawCard(w / 2, h / 2 - 40, 'OPPONENT INTEL', this.p2.marketData || this.p2.tokenData, false);
 
     ctx.restore();
   }
@@ -783,10 +779,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     // Scale context so all drawing is in CSS pixel space
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    if (this.waitingForIntro) {
-      this._drawIntroStats(ctx);
-    }
-
+    // Intro stats card moved after fighters render
     const w = this.logicalW;
     const h = this.logicalH;
     const floorY = this.floorY;
@@ -884,6 +877,10 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       this.p1.y -= pm.smoothP1.dy;
       this.p2.x -= pm.smoothP2.dx;
       this.p2.y -= pm.smoothP2.dy;
+    }
+
+    if (this.waitingForIntro) {
+      this._drawIntroStats(ctx);
     }
 
     // Hit sparks + damage text

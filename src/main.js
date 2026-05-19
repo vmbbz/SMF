@@ -2194,4 +2194,42 @@ window.showMultiplayer = function() {
   const overlay = document.getElementById('victory-overlay');
   if (overlay) overlay.classList.add('hidden');
   showScreen('multiplayer');
+};
+
+window.nextFight = function() {
+  // Determine which strip has the tokens
+  let tokens = [];
+  if (window.fightTrendingStrip && window.fightTrendingStrip.tokens && window.fightTrendingStrip.tokens.length > 0) {
+    tokens = window.fightTrendingStrip.tokens;
+  } else if (window.trendingStrip && window.trendingStrip.tokens && window.trendingStrip.tokens.length > 0) {
+    tokens = window.trendingStrip.tokens;
+  }
+
+  if (tokens.length === 0) {
+    // Fallback if no tokens loaded
+    location.reload();
+    return;
+  }
+
+  // Find index of current opponent or fallback to 0
+  let nextIndex = 0;
+  if (window.currentGame && window.currentGame.p2 && window.currentGame.p2.tokenData) {
+    const currentMint = window.currentGame.p2.tokenData.mint;
+    const currIdx = tokens.findIndex(t => t.mint === currentMint);
+    if (currIdx !== -1) {
+      nextIndex = (currIdx + 1) % tokens.length;
+    }
+  }
+
+  const nextToken = tokens[nextIndex];
+  
+  // Hide victory overlay and start the fight
+  const overlay = document.getElementById('victory-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  
+  if (window.fightToken) {
+    window.fightToken(nextToken.mint);
+  } else {
+    location.reload();
+  }
 };

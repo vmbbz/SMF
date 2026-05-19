@@ -35,9 +35,35 @@ class BirdeyeService:
 
     async def get_token_overview(self, mint: str):
         try:
+            # 1. Fetch from Birdeye
             resp = await self.client.get(f"/defi/token_overview?address={mint}")
-            resp.raise_for_status()
-            item = resp.json().get("data") or {}
+            item = {}
+            if resp.status_code == 200:
+                item = resp.json().get("data") or {}
+            
+            # 2. Fetch from DexScreener to augment missing data
+            try:
+                ds_resp = await self.client.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}")
+                if ds_resp.status_code == 200:
+                    pairs = ds_resp.json().get("pairs", [])
+                    if pairs:
+                        p = pairs[0]
+                        # Augment missing birdeye data
+                        if not item.get("mc") and p.get("fdv"):
+                            item["mc"] = p.get("fdv")
+                        if not item.get("v24hUSD") and p.get("volume", {}).get("h24"):
+                            item["v24hUSD"] = p.get("volume", {}).get("h24")
+                        if not item.get("priceChange24h") and p.get("priceChange", {}).get("h24"):
+                            item["priceChange24h"] = p.get("priceChange", {}).get("h24")
+                        if not item.get("liquidity") and p.get("liquidity", {}).get("usd"):
+                            item["liquidity"] = p.get("liquidity", {}).get("usd")
+                        if not item.get("symbol") and p.get("baseToken", {}).get("symbol"):
+                            item["symbol"] = p.get("baseToken", {}).get("symbol")
+                            item["name"] = p.get("baseToken", {}).get("name")
+            except Exception as e:
+                print(f"[DexScreener] Error augmenting {mint}: {e}")
+
+            item["address"] = mint
             return self._normalize(item)
         except Exception as e:
             print(f"[Birdeye] Error fetching {mint}: {e}")
@@ -53,7 +79,7 @@ class BirdeyeService:
             "volume24h": item.get("v24hUSD") or item.get("volume24h") or 0,
             "priceChange24h": item.get("priceChange24h") or 0,
             "liquidity": item.get("liquidity") or 0,
-            "holders": item.get("holders") or 0,          # will be 0 on free tier
+            "holders": "N/A",  # Holders requires paid Birdeye or Solscan (which is blocked)
             "dexscreenerUrl": f"https://dexscreener.com/solana/{item.get('address')}",
         }
 

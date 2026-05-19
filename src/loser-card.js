@@ -83,9 +83,12 @@ window.switchRichTab = function(tabIndex) {
       <div class="safety-tab" style="animation: punchIn 0.3s ease; text-align: left;">
         <h3 style="color:var(--neon-green);font-size:14px;margin-bottom:15px;">SAFETY CHECK</h3>
         <div class="rug-score" style="font-size:11px; margin-bottom: 15px; color: #ccc; background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.1);">
-          <div style="margin-bottom:5px;">Holders: <strong style="color:#fff">${(token.holders || 0).toLocaleString()}</strong></div>
-          <div style="margin-bottom:5px;">LP Status: <strong>${token.liquidity > 10000 ? '<span style="color:var(--neon-green)">BURNED ✅</span>' : '<span style="color:var(--neon-pink)">CHECKED ⚠️</span>'}</strong></div>
-          <div>Top Holder %: <strong>${Math.max(5, Math.floor(Math.random() * 30))}%</strong></div>
+          <div style="margin-top:10px;text-align:center;font-size:10px;color:#aaa;">
+          <span style="color:var(--neon-green)">Holders:</span> ${token.holders || 'N/A'} 
+          | <span style="color:var(--neon-blue)">Liquidity:</span> $${(token.liquidity || 0).toLocaleString()}
+          </div>
+          <div style="margin-top:5px;">Top Holder %: <strong>${Math.max(5, Math.floor(Math.random() * 30))}%</strong></div>
+          <div style="margin-top:5px;">LP Status: <strong>${token.liquidity > 10000 ? '<span style="color:var(--neon-green)">BURNED ✅</span>' : '<span style="color:var(--neon-pink)">CHECKED ⚠️</span>'}</strong></div>
         </div>
         <div id="safety-tweets">
           <h4 style="color:var(--neon-blue);font-size:12px;margin-bottom:10px;">Live X $Cashtag Intel</h4>
