@@ -2343,20 +2343,10 @@ window.shareVictory = async function() {
   const isWin    = window._lastVictoryIsWin !== false; // default true for safety
   const origin   = window.location.origin;
 
-  // Adaptive copy — win vs loss
-  const winPhrases = [
-    `💀 KO'd $${symbol} in the Solana arena! The bags couldn't save it. 🥊🔥`,
-    `🏆 $${symbol} just got REKT by my stickman. Another meme bites the dust! 😤`,
-    `⚡ GG $${symbol} — you pump, I punch. Solana's wildest fighter is live!`,
-  ];
-  const losePhrases = [
-    `😤 $${symbol} absolutely WRECKED me. That bag hits HARD. Revenge soon! 🥊`,
-    `💸 Got bodied by $${symbol} — when the chart pumps, so does the damage. 😂`,
-    `🪦 $${symbol} sent me to the shadow realm. Someone hold me. Solana is ruthless!`,
-  ];
-  const phrases = isWin ? winPhrases : losePhrases;
-  const body    = phrases[Math.floor(Math.random() * phrases.length)];
-  const text    = `${body}\n\n🎮 Play: ${origin}\n#Solana #SticklashGame #SMF #PumpFun`;
+  // Adaptive copy following original format precisely
+  const text = isWin
+    ? `I just SMASHED $${symbol} in the $SMF Stick Fight Arena! 🥊🔥\n\nWho's next? Play at ${origin}\n\n#Solana #MemeFighter #SMF`
+    : `$${symbol} just SMASHED me in the $SMF Stick Fight Arena! 🥊💀\n\nCan anyone stop them? Play at ${origin}\n\n#Solana #MemeFighter #SMF`;
 
   // Try Web Share API with image (works on mobile Chrome/Safari)
   const screenshot = window._lastVictoryScreenshot;
@@ -2460,4 +2450,4 @@ window.nextFight = async function() {
   }
 
   await window.resetAndFight(nextToken);
-};
+};
