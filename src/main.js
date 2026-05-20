@@ -2253,17 +2253,36 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
     window.lastOpponentSymbol = 'MEME';
   }
 
-  overlay.classList.remove('hidden');
-  overlay.style.display = 'flex';
-  
+  // Capture the canvas screenshot NOW — before the overlay covers it
+  window._lastVictoryScreenshot = null;
+  try {
+    const gameCanvas = document.getElementById('game');
+    if (gameCanvas && typeof html2canvas !== 'undefined') {
+      html2canvas(gameCanvas, { useCORS: true, allowTaint: true, scale: 1 }).then(c => {
+        window._lastVictoryScreenshot = c.toDataURL('image/png');
+        console.log('[Victory] Screenshot captured');
+      }).catch(e => console.warn('[Victory] Screenshot failed:', e));
+    }
+  } catch(e) { console.warn('[Victory] Screenshot error:', e); }
+
+  // Store win/loss state for shareVictory
+  window._lastVictoryIsWin = isPlayer;
+
+  // ── 3-second delay before overlay appears ───────────────────────────
+  // This lets the player see the final KO frame on the stage
   if (window.effects) window.effects.addCoinRain();
-  
-  // 3-second reveal timer
+
   setTimeout(() => {
-    winText.style.transform = 'scale(0.8)';
-    winText.style.fontSize = '40px';
-    if (lc) lc.style.opacity = '1';
-  }, 2500);
+    overlay.classList.remove('hidden');
+    overlay.style.display = 'flex';
+
+    // Animate card reveal after overlay appears
+    setTimeout(() => {
+      winText.style.transform = 'scale(0.8)';
+      winText.style.fontSize = '40px';
+      if (lc) lc.style.opacity = '1';
+    }, 600);
+  }, 3000);
 
   // Update session stats and start 8s endless-mode countdown
   const sess = window.endlessSession;
@@ -2319,11 +2338,48 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
   }
 };
 
-window.shareVictory = function() {
-  const symbol = window.lastOpponentSymbol || 'MEME';
-  const text = `I just SMASHED $${symbol} in the $SMF Stick Fight Arena! 🥊🔥\n\nWho's next? Play at ${window.location.origin}\n\n#Solana #MemeFighter #SMF`;
-  const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-  window.open(url, '_blank');
+window.shareVictory = async function() {
+  const symbol   = window.lastOpponentSymbol || 'MEME';
+  const isWin    = window._lastVictoryIsWin !== false; // default true for safety
+  const origin   = window.location.origin;
+
+  // Adaptive copy — win vs loss
+  const winPhrases = [
+    `💀 KO'd $${symbol} in the Solana arena! The bags couldn't save it. 🥊🔥`,
+    `🏆 $${symbol} just got REKT by my stickman. Another meme bites the dust! 😤`,
+    `⚡ GG $${symbol} — you pump, I punch. Solana's wildest fighter is live!`,
+  ];
+  const losePhrases = [
+    `😤 $${symbol} absolutely WRECKED me. That bag hits HARD. Revenge soon! 🥊`,
+    `💸 Got bodied by $${symbol} — when the chart pumps, so does the damage. 😂`,
+    `🪦 $${symbol} sent me to the shadow realm. Someone hold me. Solana is ruthless!`,
+  ];
+  const phrases = isWin ? winPhrases : losePhrases;
+  const body    = phrases[Math.floor(Math.random() * phrases.length)];
+  const text    = `${body}\n\n🎮 Play: ${origin}\n#Solana #SticklashGame #SMF #PumpFun`;
+
+  // Try Web Share API with image (works on mobile Chrome/Safari)
+  const screenshot = window._lastVictoryScreenshot;
+  if (navigator.share && screenshot) {
+    try {
+      // Convert dataURL to File blob
+      const res  = await fetch(screenshot);
+      const blob = await res.blob();
+      const file = new File([blob], 'sticklash-battle.png', { type: 'image/png' });
+      await navigator.share({
+        title: isWin ? `I beat $${symbol}!` : `$${symbol} wrecked me!`,
+        text,
+        files: [file],
+      });
+      return;
+    } catch (e) {
+      console.warn('[Share] Web Share with image failed, falling back:', e);
+    }
+  }
+
+  // Fallback: Twitter intent (desktop) — image can't be attached via web intent
+  // but tweet copy is adaptive and link drives traffic
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
 };
 
 window.showMultiplayer = function() {
