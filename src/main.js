@@ -2343,10 +2343,22 @@ window.shareVictory = async function() {
   const isWin    = window._lastVictoryIsWin !== false; // default true for safety
   const origin   = window.location.origin;
 
-  // Adaptive copy following original format precisely
-  const text = isWin
-    ? `I just SMASHED $${symbol} in the $SMF Stick Fight Arena! 🥊🔥\n\nWho's next? Play at ${origin}\n\n#Solana #MemeFighter #SMF`
-    : `$${symbol} just SMASHED me in the $SMF Stick Fight Arena! 🥊💀\n\nCan anyone stop them? Play at ${origin}\n\n#Solana #MemeFighter #SMF`;
+  // Adaptive randomized copy keeping original format/CTA/tags
+  const winVariations = [
+    `I just SMASHED $${symbol} in the $SMF Stick Fight Arena! 🥊🔥\n\nWho's next? Play at ${origin}\n\n#Solana #MemeFighter #SMF`,
+    `Just sent $${symbol} to the absolute shadow realm in $SMF! 💀🥊\n\nBring on the next challenger! Play at ${origin}\n\n#Solana #MemeFighter #SMF`,
+    `My stickman just completely BODIED $${symbol} live in the arena! 👊⚡\n\nWho wants some? Play at ${origin}\n\n#Solana #MemeFighter #SMF`
+  ];
+
+  const loseVariations = [
+    `$${symbol} just SMASHED me in the $SMF Stick Fight Arena! 🥊💀\n\nCan anyone stop them? Play at ${origin}\n\n#Solana #MemeFighter #SMF`,
+    `Got absolutely bodied by $${symbol} in the $SMF arena! 💸🪦\n\nI need a rematch! Play at ${origin}\n\n#Solana #MemeFighter #SMF`,
+    `$${symbol}'s chart was pumping too hard, they knocked me OUT! 🥊📈\n\nWho can take them down? Play at ${origin}\n\n#Solana #MemeFighter #SMF`
+  ];
+
+  const text = isWin 
+    ? winVariations[Math.floor(Math.random() * winVariations.length)]
+    : loseVariations[Math.floor(Math.random() * loseVariations.length)];
 
   // Try Web Share API with image (works on mobile Chrome/Safari)
   const screenshot = window._lastVictoryScreenshot;
