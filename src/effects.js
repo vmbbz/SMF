@@ -31,11 +31,14 @@ export class Effects {
               : Math.random() * 0.5 + 0.5,
         offset: Math.random() * Math.PI * 2,
         // size = stroke width for rain/wind, radius for snow
-        size:   mode === 'rain' ? Math.random() * 1.2 + 0.6
+        // Rain & wind bumped up for clear visibility against dark bg
+        size:   mode === 'rain' ? Math.random() * 1.5 + 1.5   // 1.5–3px thick streaks
               : mode === 'snow' ? Math.random() * 3.5 + 1.5
-              : Math.random() * 2.5 + 1,
-        // Far drops = faint, near drops = solid
-        alpha:  Math.random() * 0.45 + 0.35,
+              : Math.random() * 2.5 + 1.5,                    // 1.5–4px wind lines
+        // High alpha — both modes need to pop against the dark arena
+        alpha:  mode === 'rain' ? Math.random() * 0.25 + 0.75  // 0.75–1.0
+              : mode === 'wind' ? Math.random() * 0.20 + 0.70  // 0.70–0.90
+              : Math.random() * 0.45 + 0.35,
         drift:  (Math.random() - 0.5) * 0.4,
       });
     }
@@ -116,9 +119,11 @@ export class Effects {
     if (mode === 'clear') return;
 
     // ── RAIN ─────────────────────────────────────────────────────────────
-    // Real rain: steep diagonal streaks, varied thickness, blue-white gradient
+    // White + light-blue dual-tone streaks — clearly visible on dark bg
     if (mode === 'rain') {
       ctx.lineCap = 'round';
+      ctx.shadowBlur = 3;
+      ctx.shadowColor = 'rgba(180, 220, 255, 0.6)';
       for (const p of this.weatherParticles) {
         p.y += 18 * p.speed;
         p.x -= 6 * p.speed + p.drift;
@@ -127,44 +132,50 @@ export class Effects {
           p.x = Math.random() * (window.innerWidth + 300);
         }
 
-        // Streak length scales with speed — faster = longer streak
-        const len = 28 * p.speed;
+        const len = 30 * p.speed;
+        const tx  = p.x + 6 * p.speed;  // tail end
+        const ty  = p.y - len;
 
         ctx.globalAlpha = p.alpha;
         ctx.lineWidth = p.size;
 
-        // Glassy gradient: transparent head, bright white-blue tail
-        const grd = ctx.createLinearGradient(p.x, p.y, p.x + 6 * p.speed, p.y - len);
-        grd.addColorStop(0,   'rgba(180, 220, 255, 0.0)');
-        grd.addColorStop(0.4, 'rgba(200, 230, 255, 0.75)');
-        grd.addColorStop(1,   'rgba(230, 245, 255, 0.95)');
+        // White head → light-blue body → slightly deeper blue tail
+        // All stops fully opaque so the drop is solid & visible
+        const grd = ctx.createLinearGradient(tx, ty, p.x, p.y);
+        grd.addColorStop(0,    'rgba(150, 200, 255, 0.85)');
+        grd.addColorStop(0.45, 'rgba(210, 235, 255, 0.95)');
+        grd.addColorStop(1,    'rgba(255, 255, 255, 1.0)');
 
         ctx.strokeStyle = grd;
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p.x + 6 * p.speed, p.y - len);
+        ctx.lineTo(tx, ty);
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
       ctx.lineCap = 'butt';
 
     // ── WIND ─────────────────────────────────────────────────────────────
-    // Horizontal gusts: tapered neon-green streaks with sine drift
+    // Bright cyan-teal gusts — tapered, clearly visible against dark arena
     } else if (mode === 'wind') {
       ctx.lineCap = 'round';
+      ctx.shadowBlur = 5;
+      ctx.shadowColor = 'rgba(0, 255, 180, 0.7)';
       for (const p of this.weatherParticles) {
         p.x -= 10 * p.speed;
         p.y += Math.sin(Date.now() * 0.0015 + p.offset) * 1.8;
         if (p.x < -60) { p.x = window.innerWidth + 60; p.y = Math.random() * window.innerHeight; }
 
-        const lineLen = 28 * p.speed + 8;
+        const lineLen = 36 * p.speed + 10;  // longer streaks
         ctx.globalAlpha = p.alpha;
         ctx.lineWidth = p.size;
 
+        // Fade-in from tail → fully solid bright cyan at the head
         const grd = ctx.createLinearGradient(p.x - lineLen, p.y, p.x, p.y);
-        grd.addColorStop(0,   'rgba(0, 255, 157, 0.0)');
-        grd.addColorStop(0.5, 'rgba(0, 200, 120, 0.55)');
-        grd.addColorStop(1,   'rgba(0, 255, 200, 0.85)');
+        grd.addColorStop(0,    'rgba(0, 220, 160, 0.15)');
+        grd.addColorStop(0.4,  'rgba(0, 255, 190, 0.75)');
+        grd.addColorStop(1,    'rgba(100, 255, 220, 1.0)');
 
         ctx.strokeStyle = grd;
         ctx.beginPath();
@@ -173,6 +184,7 @@ export class Effects {
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
       ctx.lineCap = 'butt';
 
     // ── SNOW ─────────────────────────────────────────────────────────────
