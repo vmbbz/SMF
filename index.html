@@ -587,6 +587,43 @@
       display: flex;
       gap: 16px;
     }
+
+    /* Premium Logo Glitch Keyframes */
+    @keyframes logo-glitch {
+      0% {
+        clip-path: inset(40% 0 61% 0);
+        transform: skew(0.3deg) scale(1.02);
+        filter: hue-rotate(90deg) saturate(1.5) drop-shadow(-3px 0 var(--neon-pink)) drop-shadow(3px 0 var(--neon-blue));
+      }
+      20% {
+        clip-path: inset(92% 0 1% 0);
+        transform: skew(-0.5deg) scale(0.98);
+        filter: hue-rotate(180deg) saturate(2) drop-shadow(-3px 0 var(--neon-blue)) drop-shadow(3px 0 var(--neon-pink));
+      }
+      40% {
+        clip-path: inset(15% 0 80% 0);
+        transform: skew(0.5deg) scale(1.04);
+        filter: none;
+      }
+      60% {
+        clip-path: inset(80% 0 5% 0);
+        transform: skew(-0.3deg) scale(0.96);
+        filter: invert(0.2) hue-rotate(45deg);
+      }
+      80% {
+        clip-path: inset(3% 0 92% 0);
+        transform: skew(0.8deg) scale(1.01);
+        filter: none;
+      }
+      100% {
+        clip-path: inset(0 0 0 0);
+        transform: skew(0deg) scale(1);
+      }
+    }
+
+    .logo-glitching {
+      animation: logo-glitch 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
   </style>
 </head>
 
@@ -621,11 +658,31 @@
   <!-- MEME PANEL (Main Menu) -->
   <div id="meme-panel" class="screen" style="top: 42%;">
     <div style="text-align:center;margin-bottom:30px;">
-      <img src="assets/smf-logo.png" alt="$SMF"
-        style="height:80px;margin-bottom:15px;filter: drop-shadow(0 0 10px var(--neon-green));">
+      <img id="landing-logo" src="assets/smf-logo.png" alt="$SMF"
+        style="height:140px;margin-bottom:20px;max-width:95%;filter: drop-shadow(0 0 15px var(--neon-green));transition: filter 0.3s ease, transform 0.2s ease;">
       <div
         style="font-size:24px;color:#fff;font-weight:bold;letter-spacing:2px;text-shadow: 0 0 10px var(--neon-pink);">
         STICKLASH</div>
+      <script>
+        (function() {
+          const logos = ['assets/smf-logo.png', 'assets/smf-logo-alt.png'];
+          const shadowColors = ['var(--neon-green)', 'var(--neon-pink)'];
+          let idx = 0;
+          setInterval(() => {
+            const logo = document.getElementById('landing-logo');
+            if (!logo) return;
+            logo.classList.add('logo-glitching');
+            setTimeout(() => {
+              idx = (idx + 1) % logos.length;
+              logo.src = logos[idx];
+              logo.style.filter = `drop-shadow(0 0 15px ${shadowColors[idx]})`;
+            }, 200);
+            setTimeout(() => {
+              logo.classList.remove('logo-glitching');
+            }, 400);
+          }, 7000);
+        })();
+      </script>
     </div>
     <button class="premium-btn" onclick="startTrendingMode()">TRENDING ARENA 🔥</button>
     <button class="premium-btn" onclick="startEndlessMode()">ENDLESS PUMP STREAM</button>
