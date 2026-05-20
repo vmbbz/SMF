@@ -364,31 +364,34 @@
       pointer-events: none;
     }
 
-    /* Left side – joystick zone */
+    /* Left side – joystick zone (restored to original size, base centred) */
     .joystick-zone {
       pointer-events: auto;
       position: relative;
-      width: 112px;
-      height: 112px;
+      width: 140px;
+      height: 140px;
       flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     #joystick-base {
-      width: 108px;
-      height: 108px;
+      width: 130px;
+      height: 130px;
       background: rgba(0, 0, 0, 0.78);
-      border: 2px solid rgba(0, 255, 157, 0.65);
+      border: 3px solid rgba(0, 255, 157, 0.65);
       border-radius: 50%;
       position: relative;
-      box-shadow: 0 0 16px rgba(0, 255, 157, 0.25), inset 0 0 16px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 0 20px rgba(0, 255, 157, 0.25), inset 0 0 20px rgba(0, 0, 0, 0.5);
       backdrop-filter: blur(6px);
       touch-action: none;
       user-select: none;
     }
 
     #joystick-knob {
-      width: 40px;
-      height: 40px;
+      width: 46px;
+      height: 46px;
       background: radial-gradient(circle at 35% 35%, rgba(255, 0, 255, 0.9), rgba(180, 0, 255, 0.85));
       border: 2px solid rgba(0, 255, 157, 0.8);
       border-radius: 50%;
@@ -424,13 +427,13 @@
       transform: translateY(-50%);
     }
 
-    /* Right side – attack buttons: 2×2 circle grid + 1 wide SPECIAL bar */
+    /* Right side – attack buttons: SPECIAL octagon top, then 2×2 circle grid */
     .attack-zone {
       pointer-events: auto;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr 1fr auto;
-      gap: 6px;
+      grid-template-rows: auto 1fr 1fr;
+      gap: 7px;
       width: 136px;
       flex-shrink: 0;
     }
@@ -450,7 +453,7 @@
       align-items: center;
       justify-content: center;
       flex-direction: column;
-      gap: 1px;
+      gap: 3px;
       transition: transform 0.07s, box-shadow 0.07s;
       touch-action: manipulation;
       user-select: none;
@@ -459,8 +462,9 @@
     }
 
     .atk-btn .icon {
-      font-size: 12px;
+      font-size: 15px;
       line-height: 1;
+      display: block;
     }
 
     .atk-btn.active,
@@ -494,15 +498,25 @@
     }
 
 
+    @keyframes sp-pulse {
+      0%, 100% { box-shadow: 0 0 8px rgba(255,200,0,0.5), 0 0 20px rgba(255,200,0,0.2); }
+      50%       { box-shadow: 0 0 18px rgba(255,200,0,0.9), 0 0 40px rgba(255,200,0,0.4); }
+    }
     .atk-btn.btn-hadouken {
-      background: rgba(255, 200, 0, 0.22);
-      border-color: rgba(255, 200, 0, 0.7);
-      box-shadow: 0 0 10px rgba(255, 200, 0, 0.3);
+      background: linear-gradient(135deg, rgba(255,180,0,0.35), rgba(255,80,0,0.3));
+      border: 2px solid rgba(255,200,0,0.85);
       grid-column: span 2;
-      border-radius: 10px;
+      /* Octagon clip-path for that fighter-game "SP" button vibe */
+      clip-path: polygon(15% 0%, 85% 0%, 100% 15%, 100% 85%, 85% 100%, 15% 100%, 0% 85%, 0% 15%);
+      border-radius: 0;
       aspect-ratio: auto;
-      padding: 5px 8px;
+      padding: 7px 10px;
       font-size: 10px;
+      letter-spacing: 1px;
+      color: #ffe066;
+      animation: sp-pulse 2s ease-in-out infinite;
+      grid-row: 1;  /* force to TOP row */
+      order: -1;
     }
 
     /* HUD Widgets — bottom on PC, near-centre on mobile */
@@ -516,10 +530,12 @@
       gap: 10px;
       align-items: center;
     }
-    @media (max-width: 768px), (hover: none) and (pointer: coarse) {
+
+    @media (max-width: 768px),
+    (hover: none) and (pointer: coarse) {
       #hud-widgets {
         bottom: auto;
-        top: 55%;
+        top: 10%;
         transform: translate(-50%, -50%);
       }
     }
@@ -562,7 +578,7 @@
 
     <!-- WEATHER TOGGLE -->
     <button id="btn-weather" onclick="if(window.toggleWeather) window.toggleWeather()"
-      style="background:rgba(0,0,0,0.8); border:2px solid var(--neon-blue); border-radius:30px; color:#fff; padding:8px 16px; font-weight:bold; cursor:pointer; display:flex; align-items:center; gap:5px; font-family:inherit; white-space:nowrap; backdrop-filter:blur(5px);">
+      style="background:rgba(0,0,0,0.8); border:2px solid var(--neon-blue); border-radius:30px; color:#fff; padding:8px 16px; font-weight:bold; font-size:12px; cursor:pointer; display:flex; align-items:center; gap:5px; font-family:inherit; white-space:nowrap; backdrop-filter:blur(5px);">
       🌧️ WEATHER
     </button>
   </div>
@@ -598,7 +614,8 @@
     </div>
 
     <div id="victory-text" class="ko-text"
-      style="transition: transform 0.15s cubic-bezier(0.25,0.46,0.45,0.94), font-size 0.15s cubic-bezier(0.25,0.46,0.45,0.94); transform-origin: top center; position: relative; z-index: 10; background: rgba(0,0,0,0.6); border-radius: 12px; padding: 4px 16px;">YOU WIN!</div>
+      style="transition: transform 0.15s cubic-bezier(0.25,0.46,0.45,0.94), font-size 0.15s cubic-bezier(0.25,0.46,0.45,0.94); transform-origin: top center; position: relative; z-index: 10; background: rgba(0,0,0,0.6); border-radius: 12px; padding: 4px 16px;">
+      YOU WIN!</div>
 
     <div class="cards-container"
       style="position: relative; width: 100%; height: 350px; margin-top: 0px; perspective: 1200px;">
@@ -655,7 +672,12 @@
 
     <!-- RIGHT: Attack Buttons -->
     <div class="attack-zone">
-      <!-- Row 1: Light Punch + Light Kick -->
+      <!-- Row 1 (TOP): Special Octagon — easiest thumb reach -->
+      <button id="btn-hadouken" class="atk-btn btn-hadouken">
+        <span class="icon">⚡</span>
+        <span>SP</span>
+      </button>
+      <!-- Row 2: Light Punch + Light Kick -->
       <button id="btn-light-punch" class="atk-btn punch-light">
         <span class="icon">👊</span>
         <span>LP</span>
@@ -664,7 +686,7 @@
         <span class="icon">🦵</span>
         <span>LK</span>
       </button>
-      <!-- Row 2: Heavy Punch + Heavy Kick -->
+      <!-- Row 3: Heavy Punch + Heavy Kick -->
       <button id="btn-heavy-punch" class="atk-btn punch-heavy">
         <span class="icon">🔥</span>
         <span>HP</span>
@@ -672,11 +694,6 @@
       <button id="btn-heavy-kick" class="atk-btn kick-heavy">
         <span class="icon">💥</span>
         <span>HK</span>
-      </button>
-      <!-- Row 3: Hadouken / Special (full width) -->
-      <button id="btn-hadouken" class="atk-btn btn-hadouken">
-        <span class="icon">⚡</span>
-        <span>SPECIAL</span>
       </button>
     </div>
   </div>
