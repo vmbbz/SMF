@@ -538,6 +538,21 @@
         top: 10%;
         transform: translate(-50%, -50%);
       }
+      /* Scale down all hud-widgets text on mobile */
+      #hud-widgets,
+      #hud-widgets button,
+      #hud-widgets span,
+      #hud-widgets .spotify-widget,
+      #hud-widgets .connect-btn,
+      #hud-widgets #track-name,
+      #hud-widgets .controls button {
+        font-size: 12px !important;
+      }
+      /* Slightly tighten spotify pill padding on mobile */
+      #hud-widgets .spotify-widget {
+        padding: 4px 8px !important;
+        gap: 6px !important;
+      }
     }
 
     .victory-card,
