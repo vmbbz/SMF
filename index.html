@@ -76,7 +76,7 @@
       backdrop-filter: blur(20px);
       border: 1px solid var(--glass-border);
       border-radius: 24px;
-      padding: 40px;
+      padding: 20px 30px;
       z-index: 1000;
       max-width: 450px;
       width: 90%;
@@ -537,6 +537,130 @@
       order: -1;
     }
 
+    /* Floating Mic Button Style */
+    .mic-btn {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 35%, rgba(15, 23, 42, 0.95), rgba(8, 10, 16, 0.98));
+      border: 3px solid rgba(0, 255, 157, 0.65);
+      color: rgba(0, 255, 157, 0.85);
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 0 15px rgba(0, 255, 157, 0.25), inset 0 0 10px rgba(0, 0, 0, 0.6);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: absolute;
+      z-index: 610;
+      pointer-events: auto;
+      backdrop-filter: blur(8px);
+      padding: 0;
+      outline: none;
+    }
+
+    /* Mobile Positioning: centered perfectly above the 130px joystick base */
+    @media (hover: none) and (pointer: coarse) {
+      #mic-toggle-btn {
+        bottom: 145px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+    }
+
+    /* Desktop Positioning: centered exactly where the joystick would normally sit */
+    @media (hover: hover) and (pointer: fine) {
+      #mobile-controls {
+        display: none; /* hidden by default, shown by JS */
+        justify-content: flex-start !important;
+        padding-left: 50px;
+      }
+      #joystick-base,
+      .attack-zone {
+        display: none !important;
+      }
+      .joystick-zone {
+        width: 140px;
+        height: 140px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #mic-toggle-btn {
+        position: relative;
+        margin: auto;
+      }
+    }
+
+    /* Active / Recording State styling */
+    .mic-btn.active {
+      background: radial-gradient(circle at 35% 35%, rgba(255, 0, 128, 0.95), rgba(180, 0, 100, 0.98));
+      border-color: rgba(255, 0, 128, 0.85);
+      color: #fff;
+      box-shadow: 0 0 25px rgba(255, 0, 128, 0.6), inset 0 0 10px rgba(0, 0, 0, 0.5);
+      animation: mic-pulse 1.5s infinite alternate;
+    }
+
+    /* Mic Hover / Active effects */
+    .mic-btn:hover {
+      transform: scale(1.08);
+      border-color: rgba(0, 255, 157, 0.9);
+      box-shadow: 0 0 25px rgba(0, 255, 157, 0.5), inset 0 0 10px rgba(0, 0, 0, 0.6);
+    }
+    
+    @media (hover: none) and (pointer: coarse) {
+      .mic-btn:hover {
+        transform: translateX(-50%) scale(1.08);
+      }
+    }
+
+    .mic-btn.active:hover {
+      transform: scale(1.08);
+      border-color: rgba(255, 0, 128, 1);
+      box-shadow: 0 0 35px rgba(255, 0, 128, 0.8), inset 0 0 10px rgba(0, 0, 0, 0.5);
+    }
+    
+    @media (hover: none) and (pointer: coarse) {
+      .mic-btn.active:hover {
+        transform: translateX(-50%) scale(1.08);
+      }
+    }
+
+    @keyframes mic-pulse {
+      0% {
+        box-shadow: 0 0 15px rgba(255, 0, 128, 0.4), inset 0 0 10px rgba(0, 0, 0, 0.5);
+      }
+      100% {
+        box-shadow: 0 0 30px rgba(255, 0, 128, 0.8), inset 0 0 10px rgba(0, 0, 0, 0.3);
+      }
+    }
+
+    /* Tooltip / Label styling */
+    .mic-tooltip {
+      position: absolute;
+      bottom: -32px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(8, 10, 16, 0.95);
+      color: rgba(0, 255, 157, 0.95);
+      border: 1px solid rgba(0, 255, 157, 0.35);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+    }
+
+    .mic-btn:hover .mic-tooltip {
+      opacity: 1;
+    }
+
     /* HUD Widgets — bottom on PC, near-centre on mobile */
     #hud-widgets {
       position: fixed;
@@ -595,26 +719,31 @@
         transform: skew(0.3deg) scale(1.02);
         filter: hue-rotate(90deg) saturate(1.5) drop-shadow(-3px 0 var(--neon-pink)) drop-shadow(3px 0 var(--neon-blue));
       }
+
       20% {
         clip-path: inset(92% 0 1% 0);
         transform: skew(-0.5deg) scale(0.98);
         filter: hue-rotate(180deg) saturate(2) drop-shadow(-3px 0 var(--neon-blue)) drop-shadow(3px 0 var(--neon-pink));
       }
+
       40% {
         clip-path: inset(15% 0 80% 0);
         transform: skew(0.5deg) scale(1.04);
         filter: none;
       }
+
       60% {
         clip-path: inset(80% 0 5% 0);
         transform: skew(-0.3deg) scale(0.96);
         filter: invert(0.2) hue-rotate(45deg);
       }
+
       80% {
         clip-path: inset(3% 0 92% 0);
         transform: skew(0.8deg) scale(1.01);
         filter: none;
       }
+
       100% {
         clip-path: inset(0 0 0 0);
         transform: skew(0deg) scale(1);
@@ -664,7 +793,7 @@
         style="font-size:24px;color:#fff;font-weight:bold;letter-spacing:2px;text-shadow: 0 0 10px var(--neon-pink);">
         STICKLASH</div>
       <script>
-        (function() {
+        (function () {
           const logos = ['assets/smf-logo.png', 'assets/smf-logo-alt.png'];
           const shadowColors = ['var(--neon-green)', 'var(--neon-pink)'];
           let idx = 0;
@@ -758,6 +887,12 @@
   <div id="mobile-controls">
     <!-- LEFT: Virtual Joystick -->
     <div class="joystick-zone">
+      <!-- Floating Neon Microphone Toggle Button -->
+      <button id="mic-toggle-btn" class="mic-btn" title="Toggle Voice Control">
+        <span class="mic-icon">🎤</span>
+        <span class="mic-tooltip">TOGGLE VOICE CONTROL [V]</span>
+      </button>
+
       <div id="joystick-base">
         <div id="joystick-knob"></div>
       </div>
@@ -906,53 +1041,69 @@
       const isMobile = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
       const mobileControls = document.getElementById('mobile-controls');
 
-      if (isMobile && mobileControls) {
+      if (mobileControls) {
         // START HIDDEN — shown only when a fight begins
         mobileControls.style.display = 'none';
 
-        // Import and attach virtual joystick touch listeners (once at page load)
-        const { VirtualJoystickAdapter } = await import('./src/virtual-joystick.js');
-        window.virtualJoystick = new VirtualJoystickAdapter();
-        window.virtualJoystick.attach();
+        // Import and attach virtual joystick touch listeners only on mobile/touch screens
+        if (isMobile) {
+          const { VirtualJoystickAdapter } = await import('./src/virtual-joystick.js');
+          window.virtualJoystick = new VirtualJoystickAdapter();
+          window.virtualJoystick.attach();
+        }
 
         // Global helper — called by every game launcher AND resetAndFight.
-        // Shows the controls AND guarantees the joystick is registered
-        // with the CURRENT p1Input (new one created on every resetAndFight).
+        // Shows the controls (Mic button wrapper on PC, Full JoyPad on Mobile)
         window._showMobileControls = () => {
           mobileControls.style.display = 'flex';
 
-          // Poll until p1Input is available then register/re-register
-          let retries = 0;
-          const poll = setInterval(() => {
-            const g = window.currentGame;
-            if (g && g.p1Input) {
-              const adapters = g.p1Input.adapters || [];
-              if (!adapters.includes(window.virtualJoystick)) {
-                g.p1Input.addAdapter(window.virtualJoystick);
-                console.log('[Joystick] Registered with current p1Input');
+          if (isMobile && window.virtualJoystick) {
+            // Poll until p1Input is available then register/re-register
+            let retries = 0;
+            const poll = setInterval(() => {
+              const g = window.currentGame;
+              if (g && g.p1Input) {
+                const adapters = g.p1Input.adapters || [];
+                if (!adapters.includes(window.virtualJoystick)) {
+                  g.p1Input.addAdapter(window.virtualJoystick);
+                  console.log('[Joystick] Registered with current p1Input');
+                }
+                window.virtualJoystick._registered = true;
+                clearInterval(poll);
+              } else if (++retries > 50) {
+                clearInterval(poll); // give up after 5s
+                console.warn('[Joystick] Timed out waiting for p1Input');
               }
-              window.virtualJoystick._registered = true;
-              clearInterval(poll);
-            } else if (++retries > 50) {
-              clearInterval(poll); // give up after 5s
-              console.warn('[Joystick] Timed out waiting for p1Input');
-            }
-          }, 100);
+            }, 100);
+          }
         };
 
-        // Also wire up a persistent watcher — handles edge cases where
-        // resetAndFight creates a new game before _showMobileControls fires
-        setInterval(() => {
-          if (!window.virtualJoystick || !window.currentGame) return;
-          const g = window.currentGame;
-          if (!g.p1Input) return;
-          const adapters = g.p1Input.adapters || [];
-          if (!adapters.includes(window.virtualJoystick) &&
-            mobileControls.style.display !== 'none') {
-            g.p1Input.addAdapter(window.virtualJoystick);
-            console.log('[Joystick] Auto-recovered registration with new game');
-          }
-        }, 500);
+        // Also wire up a persistent watcher — handles edge cases for joystick recovery
+        if (isMobile) {
+          setInterval(() => {
+            if (!window.virtualJoystick || !window.currentGame) return;
+            const g = window.currentGame;
+            if (!g.p1Input) return;
+            const adapters = g.p1Input.adapters || [];
+            if (!adapters.includes(window.virtualJoystick) &&
+              mobileControls.style.display !== 'none') {
+              g.p1Input.addAdapter(window.virtualJoystick);
+              console.log('[Joystick] Auto-recovered registration with new game');
+            }
+          }, 500);
+        }
+
+        // Hook up neon microphone toggle button unconditionally
+        const micBtn = document.getElementById('mic-toggle-btn');
+        if (micBtn) {
+          micBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (typeof window.toggleVoiceControl === 'function') {
+              window.toggleVoiceControl();
+            }
+          });
+        }
       }
 
       if (window.TrendingStrip) {

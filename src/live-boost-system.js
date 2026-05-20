@@ -59,7 +59,7 @@ export class LiveBoostSystem {
 
   // ─────────────────────────────────────────
   // TTS — pick the best available English voice
-  // Priority: Google US/UK > Microsoft Neural > any English > default
+  // Priority: Natural/Online/Neural/Enhanced > Google > Siri > English > default
   // ─────────────────────────────────────────
   _initTTS() {
     if (!window.speechSynthesis) return;
@@ -69,12 +69,15 @@ export class LiveBoostSystem {
       if (!voices.length) return false;
 
       const PREFERRED = [
-        v => v.name === 'Google US English',
-        v => v.name === 'Google UK English Male',
-        v => v.name === 'Google UK English Female',
-        v => v.name.startsWith('Microsoft') && v.lang.startsWith('en') && v.name.includes('Neural'),
-        v => v.name.startsWith('Microsoft') && v.lang.startsWith('en'),
+        // 1. Natural, Online, Neural, or Enhanced English voices (ultra-premium Edge/macOS/Chrome voices)
+        v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Online') || v.name.includes('Neural') || v.name.includes('Enhanced')),
+        // 2. Google premium voices
+        v => v.lang.startsWith('en') && v.name.includes('Google'),
+        // 3. Apple premium Siri voices
+        v => v.lang.startsWith('en') && v.name.includes('Siri'),
+        // 4. Any English US
         v => v.lang === 'en-US',
+        // 5. Any English
         v => v.lang.startsWith('en'),
         v => true,
       ];

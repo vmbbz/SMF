@@ -253,6 +253,23 @@ async function cleanupAdapters() {
     if (adapter.detach) await adapter.detach();
   }
   activeAdapters = [];
+
+  // Reset dynamic Voice Control toggling state
+  if (window.activeVoiceAdapter) {
+    try {
+      await window.activeVoiceAdapter.detach();
+    } catch (e) {
+      console.warn('[Cleanup] Voice adapter detach failed:', e);
+    }
+    window.activeVoiceAdapter = null;
+  }
+  window.isVoiceControlActive = false;
+  const micBtn = document.getElementById('mic-toggle-btn');
+  if (micBtn) {
+    micBtn.classList.remove('loading', 'active');
+    const tooltip = micBtn.querySelector('.mic-tooltip');
+    if (tooltip) tooltip.innerText = 'TOGGLE VOICE CONTROL [V]';
+  }
 }
 
 function showOnboarding() {
@@ -1865,6 +1882,19 @@ document.addEventListener('mousedown', clearKbFocus);
 // Keyboard handlers
 // ─────────────────────────────────────────────
 window.addEventListener('keydown', e => {
+  // Toggle voice control hotkey [V]
+  if (e.code === 'KeyV') {
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+      return;
+    }
+    if (typeof window.toggleVoiceControl === 'function') {
+      window.toggleVoiceControl();
+      e.preventDefault();
+      return;
+    }
+  }
+
   const modeCount = INPUT_MODES.length;
 
   if (state === 'onboarding') {
@@ -2462,4 +2492,112 @@ window.nextFight = async function() {
   }
 
   await window.resetAndFight(nextToken);
+};
+
+// ─────────────────────────────────────────────
+// Dynamic Voice Control Toggling API
+// ─────────────────────────────────────────────
+window.activeVoiceAdapter = null;
+window.isVoiceControlActive = false;
+
+window.toggleVoiceControl = async function(forceState) {
+  const g = window.currentGame;
+  if (!g || !g.p1Input) {
+    console.warn('[VoiceToggle] No active game or P1 input found.');
+    return;
+  }
+
+  const micBtn = document.getElementById('mic-toggle-btn');
+  const nextState = forceState !== undefined ? forceState : !window.isVoiceControlActive;
+
+  if (nextState) {
+    if (window.isVoiceControlActive) return; // already active
+
+    console.log('[VoiceToggle] Activating Voice Control adapter...');
+    if (micBtn) {
+      micBtn.classList.add('loading');
+      const tooltip = micBtn.querySelector('.mic-tooltip');
+      if (tooltip) tooltip.innerText = 'REQUESTING MIC...';
+    }
+
+    try {
+      if (!window.activeVoiceAdapter) {
+        window.activeVoiceAdapter = new VoiceAdapter(1);
+      }
+
+      if (window.activeVoiceAdapter.setGameRef) {
+        window.activeVoiceAdapter.setGameRef(g);
+      }
+
+      // Initialize the audio stream & connect WebSocket
+      await window.activeVoiceAdapter.attach();
+      await window.activeVoiceAdapter.waitUntilReady();
+
+      // Register the adapter dynamically alongside manual keyboard/joystick
+      const adapters = g.p1Input.adapters || [];
+      if (!adapters.includes(window.activeVoiceAdapter)) {
+        g.p1Input.addAdapter(window.activeVoiceAdapter);
+      }
+
+      window.isVoiceControlActive = true;
+
+      if (micBtn) {
+        micBtn.classList.remove('loading');
+        micBtn.classList.add('active');
+        const tooltip = micBtn.querySelector('.mic-tooltip');
+        if (tooltip) tooltip.innerText = 'VOICE ACTIVE [V]';
+      }
+
+      // Play synthetically synthesized up-chime
+      if (g.sfx) {
+        g.sfx.playMicChime(true);
+      }
+
+      console.log('[VoiceToggle] Voice Control is now ACTIVE.');
+    } catch (err) {
+      console.error('[VoiceToggle] Failed to initialize mic / WS stream:', err);
+      window.isVoiceControlActive = false;
+      if (window.activeVoiceAdapter) {
+        try { await window.activeVoiceAdapter.detach(); } catch (e) {}
+        window.activeVoiceAdapter = null;
+      }
+      if (micBtn) {
+        micBtn.classList.remove('loading', 'active');
+        const tooltip = micBtn.querySelector('.mic-tooltip');
+        if (tooltip) tooltip.innerText = 'MIC DENIED / ERROR';
+        
+        // Shake / red flash error warning
+        micBtn.style.borderColor = 'rgba(255, 0, 80, 0.9)';
+        setTimeout(() => { micBtn.style.borderColor = ''; }, 1500);
+      }
+    }
+  } else {
+    if (!window.isVoiceControlActive) return; // already inactive
+
+    console.log('[VoiceToggle] Deactivating Voice Control...');
+
+    if (g.p1Input && window.activeVoiceAdapter) {
+      g.p1Input.removeAdapter(window.activeVoiceAdapter);
+    }
+
+    if (window.activeVoiceAdapter) {
+      try { await window.activeVoiceAdapter.detach(); } catch (e) {}
+      window.activeVoiceAdapter = null;
+    }
+
+    window.isVoiceControlActive = false;
+
+    if (micBtn) {
+      micBtn.classList.remove('loading', 'active');
+      const tooltip = micBtn.querySelector('.mic-tooltip');
+      if (tooltip) tooltip.innerText = 'TOGGLE VOICE CONTROL [V]';
+    }
+
+    // Play synthetically synthesized down-chime
+    if (g.sfx) {
+      g.sfx.playMicChime(false);
+    }
+
+    console.log('[VoiceToggle] Voice Control is now INACTIVE.');
+  }
 };

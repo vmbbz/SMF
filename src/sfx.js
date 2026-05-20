@@ -104,4 +104,54 @@ export class SFX {
   dash()           { this._play('dash', 0.4); }
   hadoukenCharge() { this._play('hadouken_charge', 0.4); }
   hadoukenFire()   { this._play('hadouken_fire', 0.5); }
+
+  /** Play a custom high-fidelity retro synth chime on mic toggles */
+  playMicChime(active = true) {
+    try {
+      const ctx = this._ctx();
+      const now = ctx.currentTime;
+      const gain = ctx.createGain();
+      gain.connect(ctx.destination);
+
+      if (active) {
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+
+        osc1.type = 'triangle';
+        osc1.frequency.setValueAtTime(523.25, now); // C5
+        osc1.frequency.exponentialRampToValueAtTime(880.00, now + 0.15); // A5
+
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(659.25, now); // E5
+        osc2.frequency.exponentialRampToValueAtTime(1046.50, now + 0.15); // C6
+
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.12, now + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+        osc1.connect(gain);
+        osc2.connect(gain);
+
+        osc1.start(now);
+        osc1.stop(now + 0.35);
+        osc2.start(now);
+        osc2.stop(now + 0.35);
+      } else {
+        const osc = ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(440.00, now); // A4
+        osc.frequency.exponentialRampToValueAtTime(220.00, now + 0.2); // A3
+
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.15, now + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+
+        osc.connect(gain);
+        osc.start(now);
+        osc.stop(now + 0.4);
+      }
+    } catch (e) {
+      console.warn('[SFX] Synth chime failed:', e);
+    }
+  }
 }
