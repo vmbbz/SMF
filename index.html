@@ -120,6 +120,7 @@
     }
 
     .victory-btn {
+      min-height: 44px;
       padding: 8px 10px;
       font-size: 12px;
       margin: 0;
@@ -297,7 +298,7 @@
       margin-top: -50px;
       margin-bottom: 20px;
       letter-spacing: -5px;
-      animation: punchIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      animation: punchIn 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     }
 
     #victory-token-info {
@@ -367,27 +368,27 @@
     .joystick-zone {
       pointer-events: auto;
       position: relative;
-      width: 140px;
-      height: 140px;
+      width: 112px;
+      height: 112px;
       flex-shrink: 0;
     }
 
     #joystick-base {
-      width: 130px;
-      height: 130px;
-      background: rgba(0, 0, 0, 0.75);
-      border: 3px solid rgba(0, 255, 157, 0.6);
+      width: 108px;
+      height: 108px;
+      background: rgba(0, 0, 0, 0.78);
+      border: 2px solid rgba(0, 255, 157, 0.65);
       border-radius: 50%;
       position: relative;
-      box-shadow: 0 0 20px rgba(0, 255, 157, 0.25), inset 0 0 20px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 0 16px rgba(0, 255, 157, 0.25), inset 0 0 16px rgba(0, 0, 0, 0.5);
       backdrop-filter: blur(6px);
       touch-action: none;
       user-select: none;
     }
 
     #joystick-knob {
-      width: 50px;
-      height: 50px;
+      width: 40px;
+      height: 40px;
       background: radial-gradient(circle at 35% 35%, rgba(255, 0, 255, 0.9), rgba(180, 0, 255, 0.85));
       border: 2px solid rgba(0, 255, 157, 0.8);
       border-radius: 50%;
@@ -423,14 +424,14 @@
       transform: translateY(-50%);
     }
 
-    /* Right side – attack buttons */
+    /* Right side – attack buttons: 2×2 circle grid + 1 wide SPECIAL bar */
     .attack-zone {
       pointer-events: auto;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr 1fr 1fr;
-      gap: 8px;
-      width: 160px;
+      grid-template-rows: 1fr 1fr auto;
+      gap: 6px;
+      width: 136px;
       flex-shrink: 0;
     }
 
@@ -439,10 +440,10 @@
       aspect-ratio: 1;
       border-radius: 50%;
       border: 2px solid rgba(255, 255, 255, 0.3);
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 900;
       font-family: inherit;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.4px;
       color: #fff;
       cursor: pointer;
       display: flex;
@@ -458,7 +459,7 @@
     }
 
     .atk-btn .icon {
-      font-size: 14px;
+      font-size: 12px;
       line-height: 1;
     }
 
@@ -492,24 +493,35 @@
       box-shadow: 0 0 10px rgba(200, 0, 60, 0.3);
     }
 
-    .atk-btn.btn-jump {
-      background: rgba(0, 255, 157, 0.2);
-      border-color: rgba(0, 255, 157, 0.6);
-      box-shadow: 0 0 12px rgba(0, 255, 157, 0.25);
-      grid-column: span 2;
-      border-radius: 12px;
-      aspect-ratio: auto;
-      padding: 6px;
-    }
 
     .atk-btn.btn-hadouken {
-      background: rgba(255, 220, 0, 0.2);
-      border-color: rgba(255, 200, 0, 0.6);
-      box-shadow: 0 0 12px rgba(255, 200, 0, 0.25);
+      background: rgba(255, 200, 0, 0.22);
+      border-color: rgba(255, 200, 0, 0.7);
+      box-shadow: 0 0 10px rgba(255, 200, 0, 0.3);
       grid-column: span 2;
-      border-radius: 12px;
+      border-radius: 10px;
       aspect-ratio: auto;
-      padding: 6px;
+      padding: 5px 8px;
+      font-size: 10px;
+    }
+
+    /* HUD Widgets — bottom on PC, near-centre on mobile */
+    #hud-widgets {
+      position: fixed;
+      bottom: 77px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 601;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    @media (max-width: 768px), (hover: none) and (pointer: coarse) {
+      #hud-widgets {
+        bottom: auto;
+        top: 55%;
+        transform: translate(-50%, -50%);
+      }
     }
 
     .victory-card,
@@ -543,9 +555,8 @@
   </div>
 
 
-  <!-- HUD WIDGETS (Bottom Center) - sits above trending strip -->
-  <div id="hud-widgets"
-    style="position:fixed; bottom: 77px; left: 50%; transform: translateX(-50%); z-index: 601; display:flex; gap:10px; align-items:center;">
+  <!-- HUD WIDGETS (Bottom Center on PC, vertically centred on mobile) -->
+  <div id="hud-widgets">
     <!-- SPOTIFY WIDGET -->
     <div id="spotify-widget" class="bottom-panel"></div>
 
@@ -587,10 +598,10 @@
     </div>
 
     <div id="victory-text" class="ko-text"
-      style="transition: all 1s ease; transform-origin: top center; position: relative; z-index: 10;">YOU WIN!</div>
+      style="transition: transform 0.15s cubic-bezier(0.25,0.46,0.45,0.94), font-size 0.15s cubic-bezier(0.25,0.46,0.45,0.94); transform-origin: top center; position: relative; z-index: 10; background: rgba(0,0,0,0.6); border-radius: 12px; padding: 4px 16px;">YOU WIN!</div>
 
     <div class="cards-container"
-      style="position: relative; width: 100%; height: 350px; margin-top: 15px; perspective: 1200px;">
+      style="position: relative; width: 100%; height: 350px; margin-top: 0px; perspective: 1200px;">
       <!-- BACK CARD (Dynamically populated) -->
       <div id="loser-card" class="victory-card loser"
         onclick="if(event.target.tagName!=='BUTTON' && !event.target.closest('button')) toggleCards()"
@@ -662,12 +673,10 @@
         <span class="icon">💥</span>
         <span>HK</span>
       </button>
-      <!-- Row 3: Jump (wide) + Hadouken (wide) -->
-      <button id="btn-jump" class="atk-btn btn-jump">
-        <span class="icon">↑ JUMP</span>
-      </button>
+      <!-- Row 3: Hadouken / Special (full width) -->
       <button id="btn-hadouken" class="atk-btn btn-hadouken">
-        <span class="icon">⚡ SPECIAL</span>
+        <span class="icon">⚡</span>
+        <span>SPECIAL</span>
       </button>
     </div>
   </div>
@@ -829,7 +838,7 @@
           if (!g.p1Input) return;
           const adapters = g.p1Input.adapters || [];
           if (!adapters.includes(window.virtualJoystick) &&
-              mobileControls.style.display !== 'none') {
+            mobileControls.style.display !== 'none') {
             g.p1Input.addAdapter(window.virtualJoystick);
             console.log('[Joystick] Auto-recovered registration with new game');
           }
