@@ -42,6 +42,24 @@ from elo import EloManager, controller_to_category, ensure_schema
 from room_cleanup import RoomCleanupTask
 from matchmaking import MatchmakingTask
 from characters import CHARACTER_LIST, get_character
+import sys
+
+def safe_print(*args, **kwargs):
+    """Print utility that safely intercepts and downsamples Unicode strings on Windows terminals."""
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        new_args = []
+        for arg in args:
+            if isinstance(arg, str):
+                encoding = sys.stdout.encoding or 'ascii'
+                new_args.append(arg.encode(encoding, errors='replace').decode(encoding))
+            else:
+                new_args.append(arg)
+        try:
+            print(*new_args, **kwargs)
+        except Exception:
+            pass
 
 # ─────────────────────────────────────────────
 # Config
@@ -137,9 +155,28 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
     pg_pool = None
 
     try:
-        # Redis (optional - disabled for local development)
-        print("[redis] Skipped - running in-memory mode")
-        redis_pool = None
+        # Redis (optional - initialized from REDIS_URL if set)
+        redis_url = os.environ.get("REDIS_URL")
+        if redis_url:
+            try:
+                # Force rediss:// for secure Upstash connection if not already set
+                if redis_url.startswith("redis://") and "upstash" in redis_url:
+                    redis_url = redis_url.replace("redis://", "rediss://", 1)
+                
+                redis_pool = aioredis.from_url(
+                    redis_url,
+                    decode_responses=True,
+                )
+                # Test connection
+                await redis_pool.ping()
+                print("[redis] Connected successfully")
+            except Exception as e:
+                print(f"[redis] Connection failed: {e}. Falling back to in-memory mode.")
+                redis_pool = None
+        else:
+            print("[redis] No REDIS_URL found. Running in-memory mode.")
+            redis_pool = None
+
 
         # Postgres (optional)
         try:
@@ -241,9 +278,118 @@ STT_KEYTERMS = [
 
 @websocket("/ws/stt")
 async def stt_proxy(socket: WebSocket) -> None:
-    """Stubbed STT proxy to avoid Deepgram API dependencies in production."""
+    """Proxy mic audio to Deepgram STT (Flux v2) and return transcription results."""
+    api_key = os.environ.get("DEEPGRAM_API_KEY")
+    if not api_key:
+        await socket.close(code=4000, reason="DEEPGRAM_API_KEY not set")
+        return
+
     await socket.accept()
-    await socket.close(code=4000, reason="Voice STT is disabled in production.")
+    safe_print("[stt] Browser WebSocket accepted, connecting to Deepgram Flux...")
+
+    client = AsyncDeepgramClient(api_key=api_key)
+    audio_chunks = 0
+
+    try:
+        async with client.listen.v2.connect(
+            model="flux-general-en",
+            encoding="linear16",
+            sample_rate="16000",
+            keyterm=STT_KEYTERMS,
+        ) as dg:
+            safe_print("[stt] Connected to Deepgram Flux v2")
+
+            # ── Event handler: forward Deepgram events ──
+            async def on_message(message) -> None:
+                try:
+                    if isinstance(message, ListenV2TurnInfo):
+                        event = message.event
+                        transcript = message.transcript or ""
+                        # Log interesting events
+                        if transcript:
+                            safe_print(f"[stt] ─── {event} (turn={int(message.turn_index)}) ───")
+                            safe_print(f'[stt]   "{transcript}"')
+                            words = transcript.lower().split()
+                            matched = [w for w in words if w in _STT_KEYTERMS]
+                            unmatched = [w for w in words if w not in _STT_KEYTERMS]
+                            if matched:
+                                safe_print(f"[stt]   actions: {' '.join(matched)}")
+                            if unmatched:
+                                safe_print(f"[stt]   other:   {' '.join(unmatched)}")
+                        elif event in ("EndOfTurn", "EagerEndOfTurn"):
+                            safe_print(f"[stt] ─── {event} (empty) ───")
+
+                        # Send to browser as JSON
+                        data = {
+                            "type": "TurnInfo",
+                            "event": event,
+                            "turn_index": message.turn_index,
+                            "transcript": transcript,
+                            "words": [{"word": w.word, "confidence": w.confidence} for w in (message.words or [])],
+                        }
+                        await socket.send_data(json.dumps(data), mode="text")
+
+                    elif isinstance(message, ListenV2Connected):
+                        safe_print(f"[stt] Deepgram connected: {message}")
+
+                    elif isinstance(message, ListenV2FatalError):
+                        safe_print(f"[stt] Deepgram FATAL: {message}")
+                        await socket.send_data(json.dumps({
+                            "type": "Error",
+                            "message": str(message),
+                        }), mode="text")
+                except Exception as e:
+                    safe_print(f"[stt] Error sending message to browser: {type(e).__name__}: {e}")
+
+            def on_error(error) -> None:
+                safe_print(f"[stt] Deepgram error: {type(error).__name__}: {error}")
+
+            def on_close(_) -> None:
+                safe_print("[stt] Deepgram connection closed")
+
+            dg.on(EventType.MESSAGE, on_message)
+            dg.on(EventType.ERROR, on_error)
+            dg.on(EventType.CLOSE, on_close)
+
+            # ── Audio forwarder: browser ──
+            async def forward_audio():
+                nonlocal audio_chunks
+                try:
+                    while True:
+                        data = await socket.receive_data(mode="binary")
+                        if data:
+                            audio_chunks += 1
+                            if audio_chunks == 1:
+                                safe_print(f"[stt] First audio chunk ({len(data)} bytes)")
+                            elif audio_chunks % 100 == 0:
+                                safe_print(f"[stt] Audio chunks: {audio_chunks}")
+                            await dg.send_media(data)
+                except Exception as e:
+                    safe_print(f"[stt] Audio forwarding ended: {type(e).__name__}: {e}")
+
+            # Run audio forwarding + SDK listener concurrently using two-way wait
+            audio_task = asyncio.create_task(forward_audio())
+            listening_task = asyncio.create_task(dg.start_listening())
+
+            done, pending = await asyncio.wait(
+                [audio_task, listening_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
+
+    except Exception as e:
+        safe_print(f"[stt] Connection error: {type(e).__name__}: {e}")
+        try:
+            await socket.send_data(json.dumps({
+                "type": "Error",
+                "message": f"Deepgram connection failed: {e}",
+            }), mode="text")
+        except Exception:
+            pass
+
+    safe_print(f"[stt] Disconnected (sent {audio_chunks} audio chunks)")
+
 
 
 # ─────────────────────────────────────────────
@@ -325,23 +471,155 @@ async def list_characters() -> list[dict[str, str]]:
     ]
 
 
-FALLBACK_COMMANDS: list[str] = [
-    "forward", "forward", "forward", "forward",
-    "back", "back",
-    "dash forward", "dash back",
-    "crouch",
-    "jump",
-    "light punch", "light kick",
-    "medium punch", "medium kick",
-    "heavy punch", "heavy kick",
-    "forward light punch", "forward light kick",
-    "hadouken",
-]
+def _server_behavior_tree(messages: list[dict]) -> list[str]:
+    """
+    Server-side Intelligent Behavior Tree (Option 3).
+
+    Parses the last game state message from the conversation to extract:
+    - Distance between fighters
+    - Our HP / opponent HP
+    - Opponent state (hitstun, attack, crouch, airborne)
+
+    Then picks a tactical 5-move plan matching the situation.
+    Zero LLM calls — runs locally, infinite scale, <1ms latency.
+
+    State format: T<timer> | ME:x,y hp<HP> <state> | OPP:x,y hp<HP> <state> | D<dist> | ...
+    """
+    import re
+
+    # --- Parse last user message for game state ---
+    state_str = ""
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            state_str = msg.get("content", "")
+            break
+
+    # Defaults (neutral mid-range)
+    dist, my_hp, opp_hp = 300, 150, 150
+    opp_state, opp_grounded = "idle", True
+
+    try:
+        # Distance: D<number>
+        m = re.search(r'\bD(\d+)', state_str)
+        if m:
+            dist = int(m.group(1))
+
+        # HP: ME:... hp<number>
+        m = re.search(r'ME:\S+ hp(\d+)', state_str)
+        if m:
+            my_hp = int(m.group(1))
+
+        # OPP HP and state
+        m = re.search(r'OPP:\S+ hp(\d+)\s+(\w+)', state_str)
+        if m:
+            opp_hp = int(m.group(1))
+            opp_state = m.group(2).lower()
+
+        # Airborne check — "air" suffix in opponent state
+        opp_grounded = "air" not in state_str.split("OPP:")[-1][:30] if "OPP:" in state_str else True
+
+    except Exception:
+        pass  # Fall through to defaults on any parse error
+
+    # ── Behavior Tree Branches ────────────────────────────────────────────────
+
+    def pick(plans: list) -> list:
+        return random.choice(plans)
+
+    # 1. CRITICAL DEFENSE — we're nearly dead
+    if my_hp <= 30:
+        return pick([
+            ["back", "back", "crouch", "dash back", "jump"],
+            ["dash back", "back", "back", "crouch", "jump"],
+        ])
+
+    # 2. FINISH HIM — opponent is very low
+    if opp_hp <= 30 and my_hp > 40:
+        if dist <= 120:
+            return pick([
+                ["heavy punch", "heavy kick", "forward heavy punch", "forward heavy kick", "heavy punch"],
+                ["crouch heavy punch", "heavy kick", "heavy punch", "hadouken", "heavy kick"],
+            ])
+        return ["hadouken", "dash forward", "dash forward", "heavy punch", "heavy kick"]
+
+    # 3. PUNISH — opponent in hitstun/blockstun
+    if opp_state in ("hitstun", "blockstun") and dist <= 280:
+        if dist <= 120:
+            return pick([
+                ["heavy punch", "heavy kick", "medium punch", "heavy punch", "crouch heavy kick"],
+                ["heavy kick", "heavy punch", "forward heavy kick", "medium punch", "heavy kick"],
+            ])
+        return ["dash forward", "heavy punch", "heavy kick", "forward heavy punch", "medium kick"]
+
+    # 4. ANTI-AIR — opponent airborne and close
+    if not opp_grounded and dist <= 280:
+        return pick([
+            ["crouch heavy punch", "back", "light punch", "medium punch", "back"],
+            ["heavy punch", "crouch", "back", "light punch", "crouch heavy punch"],
+        ])
+
+    # 5. DEFENSIVE — we're in danger
+    if my_hp <= 60:
+        if dist <= 120:
+            return pick([
+                ["back", "light punch", "back", "crouch", "back"],
+                ["dash back", "hadouken", "back", "crouch", "back"],
+            ])
+        return pick([
+            ["hadouken", "back", "crouch", "back", "hadouken"],
+            ["back", "hadouken", "crouch", "back", "back"],
+        ])
+
+    # 6. DOMINANT — opponent is weak
+    if opp_hp <= 100 and my_hp > opp_hp + 40:
+        if dist <= 120:
+            return pick([
+                ["heavy punch", "heavy kick", "medium punch", "forward heavy kick", "heavy punch"],
+                ["crouch heavy kick", "heavy punch", "heavy kick", "medium punch", "heavy kick"],
+            ])
+        return pick([
+            ["dash forward", "heavy punch", "heavy kick", "heavy punch", "forward heavy kick"],
+            ["jump forward heavy kick", "heavy punch", "dash forward", "heavy kick", "heavy punch"],
+        ])
+
+    # 7. Neutral play by distance zone
+    if dist <= 120:  # Close range
+        if opp_state == "attack":
+            return pick([
+                ["back", "heavy punch", "heavy kick", "medium punch", "back"],
+                ["crouch", "heavy punch", "medium kick", "light punch", "back"],
+            ])
+        return pick([
+            ["light punch", "medium punch", "heavy kick", "crouch heavy kick", "light punch"],
+            ["medium kick", "light punch", "heavy punch", "forward light kick", "medium punch"],
+            ["crouch heavy punch", "medium kick", "light punch", "heavy kick", "medium punch"],
+        ])
+    elif dist <= 280:  # Mid range
+        if opp_state == "attack":
+            return pick([
+                ["back", "crouch", "dash forward", "heavy punch", "heavy kick"],
+                ["jump", "forward heavy kick", "medium punch", "back", "heavy kick"],
+            ])
+        return pick([
+            ["dash forward", "heavy punch", "medium kick", "forward heavy kick", "back"],
+            ["jump forward heavy kick", "medium punch", "back", "forward", "heavy kick"],
+            ["hadouken", "forward", "dash forward", "heavy punch", "heavy kick"],
+            ["dash forward heavy punch", "medium kick", "back", "forward", "heavy punch"],
+        ])
+    elif dist <= 480:  # Far range
+        return pick([
+            ["hadouken", "dash forward", "forward", "dash forward", "heavy punch"],
+            ["dash forward", "dash forward", "heavy punch", "heavy kick", "back"],
+            ["jump forward heavy kick", "forward", "dash forward", "heavy punch", "medium kick"],
+        ])
+    else:  # Full screen
+        return pick([
+            ["hadouken", "dash forward", "dash forward", "dash forward", "forward"],
+            ["dash forward", "dash forward", "hadouken", "dash forward", "forward"],
+            ["hadouken", "hadouken", "dash forward", "dash forward", "forward"],
+        ])
 
 
-def _generate_random_plan(size: int = 5) -> list[str]:
-    """Generate a random plan of fight commands (used as LLM fallback)."""
-    return [random.choice(FALLBACK_COMMANDS) for _ in range(size)]
 
 
 async def _call_llm_provider(
@@ -353,7 +631,20 @@ async def _call_llm_provider(
     """Call the appropriate LLM provider. Raises on failure."""
     if provider == "openai":
         return await _llm_openai(messages, system_prompt, temperature=temperature)
+    elif provider == "gemini":
+        return await _llm_gemini(messages, system_prompt, temperature=temperature)
+    
+    # Smart fallbacks to free Gemini API if preferred keys are missing
+    if provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("GEMINI_API_KEY"):
+        print("[llm-fighter:fallback] ANTHROPIC_API_KEY not set, using GEMINI_API_KEY instead")
+        return await _llm_gemini(messages, system_prompt, temperature=temperature)
+        
+    if provider == "openai" and not os.environ.get("OPENAI_API_KEY") and os.environ.get("GEMINI_API_KEY"):
+        print("[llm-fighter:fallback] OPENAI_API_KEY not set, using GEMINI_API_KEY instead")
+        return await _llm_gemini(messages, system_prompt, temperature=temperature)
+        
     return await _llm_anthropic(messages, system_prompt, temperature=temperature)
+
 
 
 def _parse_llm_plan(raw: str, provider: str) -> list[str]:
@@ -421,9 +712,9 @@ async def llm_command(data: dict[str, Any]) -> dict:
             label = "retry" if attempt == 0 else "giving up"
             print(f"[llm-fighter:{provider}] attempt {attempt + 1} failed ({label}): {last_error}")
 
-    # Both attempts failed — return random plan
-    plan = _generate_random_plan()
-    print(f"[llm-fighter:{provider}] ─── FALLBACK (random) ─── {plan}")
+    # Both LLM attempts failed — use server-side behavior tree (state-aware, zero API calls)
+    plan = _server_behavior_tree(messages)
+    print(f"[llm-fighter:{provider}] ─── FALLBACK (behavior tree) ─── {plan}")
     return {"plan": plan, "fallback": True}
 
 
@@ -524,14 +815,119 @@ async def _llm_openai(
     return ""
 
 
+async def _llm_gemini(
+    messages: list[dict],
+    system_prompt: str = LLM_FIGHTER_SYSTEM,
+    temperature: float | None = None,
+) -> str:
+    """Call Google Gemini API (Free developer tier)."""
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not set")
+
+    # Map message roles from (user/assistant) to Gemini's expected (user/model) format
+    gemini_contents = []
+    for msg in messages:
+        role = "user" if msg.get("role") == "user" else "model"
+        gemini_contents.append({
+            "role": role,
+            "parts": [{"text": msg.get("content", "")}]
+        })
+
+    body: dict[str, Any] = {
+        "contents": gemini_contents,
+        "generationConfig": {
+            "maxOutputTokens": 150
+        }
+    }
+    if temperature is not None:
+        body["generationConfig"]["temperature"] = temperature
+    
+    if system_prompt:
+        body["systemInstruction"] = {
+            "parts": [{"text": system_prompt}]
+        }
+
+    # We use gemini-1.5-flash as the fast, smart, and generous free-tier model
+    gemini_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            gemini_url,
+            headers={"Content-Type": "application/json"},
+            json=body,
+        )
+
+    if resp.status_code != 200:
+        print(f"[llm-fighter:gemini] ─── ERROR {resp.status_code} ───")
+        print(f"[llm-fighter:gemini] {resp.text}")
+        raise HTTPException(status_code=502, detail="Gemini request failed")
+
+    result = resp.json()
+    print("[llm-fighter:gemini] ─── RESPONSE ───")
+    usage = result.get("usageMetadata", {})
+    print(f"[llm-fighter:gemini] usage: in={usage.get('promptTokenCount')} out={usage.get('candidatesTokenCount')}")
+
+    candidates = result.get("candidates", [])
+    if candidates:
+        parts = candidates[0].get("content", {}).get("parts", [])
+        if parts:
+            return parts[0].get("text", "")
+    return ""
+
+
+
 # ─────────────────────────────────────────────
 # Voice LLM endpoint (Anthropic Claude)
 # ─────────────────────────────────────────────
 
 @post("/api/voice/llm")
 async def voice_llm(data: dict[str, Any]) -> dict:
-    """Stubbed Voice LLM endpoint."""
-    return {"text": "Voice mode is currently disabled."}
+    """Send conversation to Anthropic or Gemini (as free fallback) and return response text."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+
+    if not api_key and gemini_key:
+        print("[llm:voice] ANTHROPIC_API_KEY not set, routing to Gemini free tier")
+        messages = data.get("messages", [])
+        system = data.get("system", "")
+        text = await _llm_gemini(messages, system, temperature=0.7)
+        return {"text": text}
+
+    if not api_key:
+        raise HTTPException(status_code=500, detail="Neither ANTHROPIC_API_KEY nor GEMINI_API_KEY is set")
+
+    messages = data.get("messages", [])
+    system = data.get("system", "")
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            ANTHROPIC_URL,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 100,
+                "system": system,
+                "messages": messages,
+            },
+        )
+
+    if resp.status_code != 200:
+        print(f"[llm] Anthropic error {resp.status_code}: {resp.text}")
+        raise HTTPException(status_code=502, detail="LLM request failed")
+
+    result = resp.json()
+    text = ""
+    for block in result.get("content", []):
+        if block.get("type") == "text":
+            text += block["text"]
+
+    return {"text": text}
+
 
 
 # ─────────────────────────────────────────────
@@ -540,8 +936,36 @@ async def voice_llm(data: dict[str, Any]) -> dict:
 
 @post("/api/voice/tts")
 async def voice_tts(data: dict[str, Any]) -> Response:
-    """Stubbed Voice TTS endpoint."""
-    return Response(content=b"", status_code=400, media_type="audio/raw")
+    """Convert text to speech via Deepgram TTS, return audio bytes."""
+    api_key = os.environ.get("DEEPGRAM_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="DEEPGRAM_API_KEY not set")
+
+    text = data.get("text", "")
+    if not text:
+        raise HTTPException(status_code=400, detail="text required")
+
+    tts_url = f"{DG_TTS_URL}?model=aura-2-jupiter-en&encoding=linear16&sample_rate=24000&container=none"
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            tts_url,
+            headers={
+                "Authorization": f"Token {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={"text": text},
+        )
+
+    if resp.status_code != 200:
+        print(f"[tts] Deepgram TTS error {resp.status_code}: {resp.text}")
+        raise HTTPException(status_code=502, detail="TTS request failed")
+
+    return Response(
+        content=resp.content,
+        media_type="audio/raw",
+        headers={"Content-Type": "audio/raw"},
+    )
 
 
 # ─────────────────────────────────────────────
@@ -610,6 +1034,28 @@ async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
     # mark_hot=True: this endpoint is called by live fights for boost detection.
     # Hot tokens get a 90s TTL (vs 300s for cold) and are prioritised by the warmer.
     return await birdeye_service.get_cached_token(mint, mark_hot=True)
+
+@get("/api/proxy/image")
+async def proxy_image(url: str) -> Response:
+    """Proxy external images to bypass CORS and prevent canvas tainting."""
+    if not url:
+        raise HTTPException(status_code=400, detail="url parameter is required")
+    if not url.startswith("http://") and not url.startswith("https://"):
+        raise HTTPException(status_code=400, detail="Invalid URL protocol")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail="Failed to fetch image")
+            media_type = resp.headers.get("content-type", "image/png")
+            return Response(
+                content=resp.content,
+                media_type=media_type,
+                headers={"Cache-Control": "public, max-age=86400"}
+            )
+    except Exception as e:
+        print(f"[proxy_image] Error proxying {url}: {e}")
+        raise HTTPException(status_code=502, detail="Error proxying image")
 
 @get("/api/safety/tweets")
 async def safety_tweets(cashtag: str) -> dict:
@@ -1950,6 +2396,7 @@ app = Litestar(
         api_trending,
         api_graduates,
         api_token_details,
+        proxy_image,
         spotify_login,
         spotify_callback,
         create_static_files_router(path="/src", directories=[ROOT / "src"]),

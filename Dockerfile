@@ -12,6 +12,7 @@ RUN uv sync --frozen --no-dev
 # Copy application
 COPY server.py .
 COPY auth.py .
+COPY birdeye_service.py .
 COPY characters.py .
 COPY elo.py .
 COPY game_loop.py .
@@ -19,7 +20,6 @@ COPY matchmaking.py .
 COPY room_cleanup.py .
 COPY room_manager.py .
 COPY signaling.py .
-COPY solscan_service.py .
 COPY game_engine/ game_engine/
 COPY index.html .
 COPY src/ src/

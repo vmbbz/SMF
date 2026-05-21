@@ -37,6 +37,20 @@ const ACTION_WORDS = new Set([
   'crouch', 'duck', 'jump', 'somersault', 'flip',
   'dash', 'punch', 'jab', 'kick', 'roundhouse',
   'fierce', 'light', 'medium', 'heavy', 'hard', 'strong', 'short',
+
+  // Phonetic homophones / command synonyms
+  'for', 'ward', 'wards', 'foreward', 'forewards',
+  'crouched', 'couch', 'coach', 'crunch',
+  'ducks', 'ducked', 'jumps', 'jumped', 'dump', 'gump',
+  'summersault', 'somersaults', 'summersaults', 'summer', 'salt', 'assault',
+  'flips', 'backflip', 'frontflip',
+  'dashes', 'dashed',
+  'punches', 'punched', 'pinch', 'lunch', 'ponch',
+  'lite', 'mid', 'pinch',
+  'kicks', 'kicked', 'quick', 'cake', 'keck',
+  'hadouken', 'hadoken', 'hadou', 'hadu', 'hado', 'hadoukan', 'hadukan', 'haducon', 'hadokun',
+  'how', 'do', 'you', 'can', 'get', 'to', 'hurricane', 'herricane', 'ha', 'ken',
+  'fireball', 'fire', 'ball', 'energy', 'blast', 'energyball'
 ]);
 
 // Filler words that STT picks up — ignore these, don't treat as conversation
@@ -66,10 +80,17 @@ export class VoiceAdapter {
     this._lastTranscript = ''; // last full transcript (for dedup)
     this._executedText = '';   // text already sent to command adapter
     this._turnFade = 0;        // fade timer after turn ends
+    this._isClosing = false;
+    this._reconnectAttempts = 0;
+    this._reconnectDelay = 1000;
+    this._reconnectTimer = null;
   }
 
   async attach() {
     this._audioBuffer = [];
+    this._isClosing = false;
+    this._reconnectAttempts = 0;
+    this._reconnectDelay = 1000;
 
     // 1. Request mic FIRST (needs user gesture context)
     console.log(`[Voice P${this.player}] Requesting microphone...`);
@@ -83,19 +104,31 @@ export class VoiceAdapter {
     });
     console.log(`[Voice P${this.player}] Microphone granted, starting capture`);
 
-    // 2. Start capturing audio immediately (buffered until STT ready)
     this.audioContext = new AudioContext({ sampleRate: 16000 });
+    if (this.audioContext.state === 'suspended') {
+      try { await this.audioContext.resume(); } catch (e) {}
+    }
     const source = this.audioContext.createMediaStreamSource(this.mediaStream);
     this.processor = this.audioContext.createScriptProcessor(4096, 1, 1);
     this.processor.onaudioprocess = (e) => {
       const float32 = e.inputBuffer.getChannelData(0);
       const int16 = float32ToInt16(float32);
       if (this.ready && this.sttWs && this.sttWs.readyState === WebSocket.OPEN) {
-        this.sttWs.send(int16.buffer);
-      } else if (this._audioBuffer) {
+        try {
+          this.sttWs.send(int16.buffer);
+        } catch (err) {
+          console.warn(`[Voice P${this.player}] Failed to send active audio:`, err);
+        }
+      } else {
+        if (!this._audioBuffer) {
+          this._audioBuffer = [];
+        }
         this._audioBuffer.push(int16.buffer);
+        const maxBufferedChunks = 16;
+        if (this._audioBuffer.length > maxBufferedChunks) {
+          this._audioBuffer.shift();
+        }
       }
-      // If not ready and no buffer, audio is silently dropped (post-flush, WS closed)
     };
     source.connect(this.processor);
     this.processor.connect(this.audioContext.destination);
@@ -104,14 +137,34 @@ export class VoiceAdapter {
     this.playbackCtx = new AudioContext({ sampleRate: 24000 });
 
     // 4. Connect STT WebSocket
+    this._connectWS();
+  }
+
+  _connectWS() {
+    if (this._isClosing) return;
+    if (this.sttWs) {
+      try {
+        this.sttWs.onopen = null;
+        this.sttWs.onmessage = null;
+        this.sttWs.onerror = null;
+        this.sttWs.onclose = null;
+        this.sttWs.close();
+      } catch (e) {}
+      this.sttWs = null;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/stt`;
+    console.log(`[Voice P${this.player}] Connecting to STT WebSocket at ${wsUrl} (reconnect attempt: ${this._reconnectAttempts})`);
+
     this.sttWs = new WebSocket(wsUrl);
     this.sttWs.binaryType = 'arraybuffer';
 
     this.sttWs.onopen = () => {
       console.log(`[Voice P${this.player}] STT WebSocket connected`);
       this.ready = true;
+      this._reconnectAttempts = 0;
+      this._reconnectDelay = 1000;
       this._flushAudioBuffer();
     };
 
@@ -131,7 +184,26 @@ export class VoiceAdapter {
     this.sttWs.onclose = (e) => {
       console.log(`[Voice P${this.player}] STT WebSocket closed: code=${e.code}`);
       this.ready = false;
+      this.sttWs = null;
+
+      if (!this._isClosing) {
+        this._scheduleReconnect();
+      }
     };
+  }
+
+  _scheduleReconnect() {
+    if (this._isClosing) return;
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+    }
+    console.log(`[Voice P${this.player}] Scheduling STT WebSocket reconnect in ${this._reconnectDelay}ms`);
+    this._reconnectTimer = setTimeout(() => {
+      this._reconnectAttempts++;
+      this._connectWS();
+      // Exponential backoff up to 10 seconds
+      this._reconnectDelay = Math.min(this._reconnectDelay * 2, 10000);
+    }, this._reconnectDelay);
   }
 
   _handleSTTMessage(msg) {
@@ -153,7 +225,7 @@ export class VoiceAdapter {
         const suffix = lower.slice(prev.length).trim();
         if (suffix) this.command.execute(suffix);
       } else {
-        // Transcript was revised — execute the whole thing
+        // Transcript was revised or first word — execute the whole thing
         this.command.execute(transcript);
       }
       this._executedText = lower;
@@ -162,10 +234,29 @@ export class VoiceAdapter {
       this._updateTranscriptDisplay(transcript);
 
     } else if (event === 'EndOfTurn' || event === 'EagerEndOfTurn') {
-      // Turn complete — don't re-execute, just evaluate for personality LLM
       console.log(`[Voice P${this.player}] ${event}: "${transcript}"`);
       if (transcript) {
         this._updateTranscriptDisplay(transcript);
+
+        const lower = transcript.toLowerCase();
+        const prev = this._executedText;
+
+        // KEY FIX: short words like "jump" may arrive ONLY as EndOfTurn
+        // with no prior Update event — so _executedText is still empty.
+        // In that case execute the full transcript as commands.
+        if (!prev) {
+          // Nothing was executed yet this turn — run the whole thing
+          console.log(`[Voice P${this.player}] EndOfTurn executing (no prior Update): "${transcript}"`);
+          this.command.execute(transcript);
+        } else if (lower !== prev && lower.startsWith(prev)) {
+          // Revised transcript has extra words we haven't executed
+          const suffix = lower.slice(prev.length).trim();
+          if (suffix) {
+            console.log(`[Voice P${this.player}] EndOfTurn executing suffix: "${suffix}"`);
+            this.command.execute(suffix);
+          }
+        }
+
         this._maybeSendToLLM(transcript);
         this._turnFade = 1.5;
       }
@@ -173,6 +264,7 @@ export class VoiceAdapter {
       this._executedText = '';
     }
   }
+
 
   /** Update the live transcript display on the game HUD */
   _updateTranscriptDisplay(text) {
@@ -288,6 +380,10 @@ export class VoiceAdapter {
   _playAudio(arrayBuffer) {
     if (!this.playbackCtx) return;
 
+    if (this.playbackCtx.state === 'suspended') {
+      this.playbackCtx.resume().catch(e => console.warn('[Voice] Failed to resume playback context:', e));
+    }
+
     const int16 = new Int16Array(arrayBuffer);
     const float32 = new Float32Array(int16.length);
     for (let i = 0; i < int16.length; i++) {
@@ -315,18 +411,22 @@ export class VoiceAdapter {
     return new Promise(resolve => { this._readyResolve = resolve; });
   }
 
-  /** Send buffered audio chunks, keeping only the last ~2 seconds */
+  /** Send buffered audio chunks, keeping only the last ~4 seconds */
   _flushAudioBuffer() {
-    if (!this._audioBuffer || !this.sttWs) return;
+    if (!this._audioBuffer || !this.sttWs || this.sttWs.readyState !== WebSocket.OPEN) return;
 
-    const maxChunks = 8;
+    const maxChunks = 16;
     const chunks = this._audioBuffer.length > maxChunks
       ? this._audioBuffer.slice(-maxChunks)
       : this._audioBuffer;
 
     console.log(`[Voice P${this.player}] Flushing ${chunks.length} buffered chunks`);
     for (const chunk of chunks) {
-      this.sttWs.send(chunk);
+      try {
+        this.sttWs.send(chunk);
+      } catch (e) {
+        console.error(`[Voice P${this.player}] Failed to send buffered chunk:`, e);
+      }
     }
     this._audioBuffer = null;
 
@@ -348,6 +448,11 @@ export class VoiceAdapter {
   }
 
   async detach() {
+    this._isClosing = true;
+    if (this._reconnectTimer) {
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = null;
+    }
     if (this.processor) {
       this.processor.disconnect();
       this.processor = null;
@@ -365,7 +470,13 @@ export class VoiceAdapter {
       this.mediaStream = null;
     }
     if (this.sttWs) {
-      this.sttWs.close();
+      try {
+        this.sttWs.onopen = null;
+        this.sttWs.onmessage = null;
+        this.sttWs.onerror = null;
+        this.sttWs.onclose = null;
+        this.sttWs.close();
+      } catch (e) {}
       this.sttWs = null;
     }
     this.ready = false;

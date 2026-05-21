@@ -102,13 +102,17 @@ export class LiveBoostSystem {
 
   _announce(text) {
     if (!window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const msg = new SpeechSynthesisUtterance(text);
-    if (this._announcerVoice) msg.voice = this._announcerVoice;
-    msg.pitch  = 0.75;
-    msg.rate   = 1.05;
-    msg.volume = 1.0;
-    window.speechSynthesis.speak(msg);
+    try {
+      window.speechSynthesis.cancel();
+      const msg = new SpeechSynthesisUtterance(text);
+      if (this._announcerVoice) msg.voice = this._announcerVoice;
+      msg.pitch  = 0.75;
+      msg.rate   = 1.05;
+      msg.volume = 1.0;
+      window.speechSynthesis.speak(msg);
+    } catch(err) {
+      console.warn('[Announcer] Speech blocked by autoplay policy:', err);
+    }
   }
 
   // ─────────────────────────────────────────
@@ -125,10 +129,16 @@ export class LiveBoostSystem {
     this._lastPrice      = this._baselinePrice;
     this._lastVolume     = this._baselineVolume;
 
-    // Attach player effects to AI opponent
+    // Attach player effects to both fighters
     if (!this.aiOpponent.effects) {
       this.aiOpponent.effects = new PlayerEffects(this.aiOpponent);
     }
+    if (!this.humanPlayer.effects) {
+      this.humanPlayer.effects = new PlayerEffects(this.humanPlayer);
+    }
+
+    // Expose class globally for dev-hack instancing
+    window.liveBoostSystemClass = LiveBoostSystem;
 
     // Announce the fight start once TTS is ready
     const sym = (token?.symbol || 'MEME').toUpperCase();
@@ -195,14 +205,16 @@ export class LiveBoostSystem {
   // ─────────────────────────────────────────
   // Public: allow manual trigger for testing
   // ─────────────────────────────────────────
-  triggerTier(tierId, tokenData) {
-    this._triggerTier(tierId, tokenData || { symbol: 'TEST' }, 1);
+  triggerTier(tierId, tokenData, boosterName = 'p2') {
+    const booster = boosterName === 'p1' ? this.game.p1 : this.game.p2;
+    const target = boosterName === 'p1' ? this.game.p2 : this.game.p1;
+    this._triggerTier(tierId, tokenData || { symbol: 'TEST' }, 1, booster, target);
   }
 
   // ─────────────────────────────────────────
   // Tier dispatch
   // ─────────────────────────────────────────
-  _triggerTier(tierId, token, ratio) {
+  _triggerTier(tierId, token, ratio, booster = this.aiOpponent, target = this.humanPlayer) {
     const sym = (token.symbol || 'TOKEN').toUpperCase();
     const phrase = CATCHPHRASES[tierId]?.(sym) || `$${sym} PUMPED!`;
 
@@ -212,18 +224,77 @@ export class LiveBoostSystem {
     if (window.haptic) window.haptic.boostActivate?.();
 
     switch (tierId) {
-      case 'micro':     this._doMicro(sym);     break;
-      case 'runner':    this._doRunner(sym);    break;
-      case 'spike':     this._doSpike(sym);     break;
-      case 'overdrive': this._doOverdrive(sym); break;
+      case 'micro':     this._doMicro(sym, booster);     break;
+      case 'runner':    this._doRunner(sym, booster, target);    break;
+      case 'spike':     this._doSpike(sym, booster, target);     break;
+      case 'overdrive': this._doOverdrive(sym, booster, target); break;
     }
   }
 
-  // ─────────────────────────────────────────
-  // Tier: 🟡 Micro — aura flash + speed burst on AI (no P1 stun)
-  // ─────────────────────────────────────────
-  _doMicro(sym) {
-    const ai = this.aiOpponent;
+  // Helper to snap fighters to correct strike range before combo
+  _alignFightersForCombo(booster, target, spacing = 80) {
+    if (!booster || !target) return;
+
+    // Face each other
+    const dir = booster.x < target.x ? 1 : -1;
+    booster.facing = dir;
+    target.facing = -dir;
+
+    // Ideal positions
+    let targetX = target.x;
+    let boosterX = target.x - dir * spacing;
+
+    // Stage bounds clamping
+    const halfW = target.width / 2;
+    const minX = this.game.stageLeft + halfW;
+    const maxX = this.game.stageRight - halfW;
+
+    // Clamp boosterX first. If it violates bounds, push targetX in the opposite direction to maintain exact spacing
+    if (boosterX < minX) {
+      boosterX = minX;
+      targetX = boosterX + dir * spacing;
+    } else if (boosterX > maxX) {
+      boosterX = maxX;
+      targetX = boosterX - dir * spacing;
+    }
+
+    // Clamp targetX. If targetX is pushed out of bounds, push boosterX back to maintain exact spacing
+    if (targetX < minX) {
+      targetX = minX;
+      boosterX = targetX - dir * spacing;
+    } else if (targetX > maxX) {
+      targetX = maxX;
+      boosterX = targetX + dir * spacing;
+    }
+
+    // Apply exact positions
+    booster.x = boosterX;
+    target.x = targetX;
+    
+    // Stop all velocity/momentum to prevent physical drift
+    booster.vx = 0;
+    booster.vy = 0;
+    booster.dashTimer = 0;
+
+    target.vx = 0;
+    target.vy = 0;
+    target.dashTimer = 0;
+
+    // Visual phase sparkles
+    this.game.hitSparks.push({
+      x: booster.x,
+      y: booster.y - 60,
+      life: 0.35,
+      color: booster === this.game.p1 ? '#00ff9d' : '#ff00ff',
+      text: 'PHASE'
+    });
+  }
+
+  // -----------------------------------------
+  // Tier: Micro - aura flash + speed burst (no target stun)
+  // -----------------------------------------
+  _doMicro(sym, booster) {
+    const ai = booster || this.aiOpponent;
     if (!ai) return;
     if (ai.effects) ai.effects.addMicroEffect();
     // Temporary speed boost (3 seconds)
@@ -232,35 +303,42 @@ export class LiveBoostSystem {
     setTimeout(() => { ai.damageMultiplier = prevMult; }, 3000);
   }
 
-  // ─────────────────────────────────────────
-  // Tier: 🟠 Runner — 3-hit combo, brief P1 stun (0.5s)
-  // ─────────────────────────────────────────
-  _doRunner(sym) {
-    const ai = this.aiOpponent;
-    const p1 = this.humanPlayer;
+  // -----------------------------------------
+  // Tier: Runner - 3-hit combo, brief target stun (0.5s)
+  // -----------------------------------------
+  _doRunner(sym, booster, target) {
+    const ai = booster || this.aiOpponent;
+    const p1 = target || this.humanPlayer;
     if (!ai || !p1) return;
 
     if (ai.effects) ai.effects.addRunnerEffect();
-    this.game.triggerScreenFlash?.('#ff8800', 0.35);
+    this.game.triggerScreenFlash?.('rgba(255, 136, 0, 0.4)', 0.35);
 
-    // Brief levitation of P1 (0.5s — just long enough to eat the combo)
+    // Instant phase snap to target
+    this._alignFightersForCombo(ai, p1);
+
+    // Brief levitation of target (0.8s)
     p1.boostLevitate(0.8);
 
-    // AI dashes toward P1 then lands 3 hits
+    // Booster dashes toward target then lands 3 hits
     this._runCombo(ai, ['dashForward', 'lightPunch', 'mediumKick', 'heavyPunch'], 220);
   }
 
-  // ─────────────────────────────────────────
-  // Tier: 🔴 Spike — 5-hit combo, P1 levitated 1.5s
-  // ─────────────────────────────────────────
-  _doSpike(sym) {
-    const ai = this.aiOpponent;
-    const p1 = this.humanPlayer;
+  // -----------------------------------------
+  // Tier: Spike - 5-hit combo, target levitated 1.5s
+  // -----------------------------------------
+  _doSpike(sym, booster, target) {
+    const ai = booster || this.aiOpponent;
+    const p1 = target || this.humanPlayer;
     if (!ai || !p1) return;
 
     if (ai.effects) ai.effects.addSpikeEffect();
-    this.game.triggerScreenFlash?.('#ff2244', 0.5);
+    this.game.triggerScreenFlash?.('rgba(255, 34, 68, 0.4)', 0.5);
 
+    // Instant phase snap to target
+    this._alignFightersForCombo(ai, p1);
+
+    // Medium levitation of target (1.8s)
     p1.boostLevitate(1.8);
 
     this._runCombo(ai, [
@@ -270,39 +348,80 @@ export class LiveBoostSystem {
     ], 240);
   }
 
-  // ─────────────────────────────────────────
-  // Tier: ⚡ Overdrive — 10 Hadoukens, P1 levitated 3s
-  // ─────────────────────────────────────────
-  _doOverdrive(sym) {
-    const ai = this.aiOpponent;
-    const p1 = this.humanPlayer;
+  // -----------------------------------------
+  // Tier: Overdrive - 10 Hadoukens, target levitated 3s
+  // -----------------------------------------
+  _doOverdrive(sym, booster, target) {
+    const ai = booster || this.aiOpponent;
+    const p1 = target || this.humanPlayer;
     if (!ai || !p1) return;
 
     if (ai.effects) ai.effects.addOverdriveEffect();
-    this.game.triggerScreenFlash?.('#cc00ff', 0.8);
+    this.game.triggerScreenFlash?.('rgba(204, 0, 255, 0.5)', 0.8);
 
-    // Longer levitation for the full barrage
+    // Snap initiator close and face each other dynamically with cinematic spacing
+    this._alignFightersForCombo(ai, p1, 380);
+
+    // Longer levitation for the full barrage (3.5s)
     p1.boostLevitate(3.5);
 
-    // Fire 10 randomised Hadoukens
-    let delay = 300;
+    // Visual start trigger
+    ai.currentAttack = 'hadouken';
+    ai.state = 'attack';
+    ai.attackFrame = 18; // Pose frame
+
+    // Fire 10 rapid, guaranteed colorful hadoukens directly in the projectile list!
+    let delay = 200;
+    const variants = ['fire', 'electric', 'void', 'plasma'];
+    const pSpeed = 600; // fast fireballs
+
     for (let i = 0; i < 10; i++) {
       setTimeout(() => {
         if (this.game.roundOver) return;
-        ai.hadoukenCooldown = 0;
+
+        // Keep booster in release pose
         ai.currentAttack = 'hadouken';
-        ai.attackFrame = 0;
-        ai.attackHasHit = false;
-        ai.nextHadoukenVariant = HADOUKEN_VARIANTS[Math.floor(Math.random() * HADOUKEN_VARIANTS.length)];
         ai.state = 'attack';
+        ai.attackFrame = 18;
+
+        const skeleton = ai._buildSkeleton();
+        const hand = ai._localToWorld(skeleton.handFront[0], skeleton.handFront[1]);
+        const yOffset = (Math.random() * 50 - 25); // chaotic height spread
+        const varType = variants[i % variants.length];
+
+        this.game.projectiles.push({
+          x: hand[0],
+          y: hand[1] + yOffset,
+          vx: ai.facing * pSpeed,
+          owner: ai === this.game.p1 ? 'p1' : 'p2',
+          active: true,
+          animTimer: 0,
+          variant: varType,
+          damage: 5,           // Balanced damage per overdrive hit
+          isOverdrive: true,
+          isLast: i === 9      // Mark the 10th fireball to deliver the final KO
+        });
+
+        // Haptic feedback & sound
+        if (window.haptic) window.haptic.vibrate?.(40);
+        if (this.game.sfx) this.game.sfx.hadouken?.();
+
+        // Spawn a charge spark on the hand
+        this.game.hitSparks.push({
+          x: hand[0],
+          y: hand[1] + yOffset,
+          life: 0.18,
+          color: '#cc00ff',
+          text: 'HADOU'
+        });
       }, delay);
-      delay += 340;
+      delay += 240; // 240ms interval = extremely fast, high-action spam
     }
   }
 
-  // ─────────────────────────────────────────
-  // Helper: run a named move sequence on the AI fighter
-  // ─────────────────────────────────────────
+  // -----------------------------------------
+  // Helper: run a named move sequence on the booster fighter
+  // -----------------------------------------
   _runCombo(fighter, moves, intervalMs) {
     let delay = 0;
     for (const move of moves) {
@@ -324,3 +443,6 @@ export class LiveBoostSystem {
     }
   }
 }
+
+// Expose class globally immediately on module evaluation
+window.liveBoostSystemClass = LiveBoostSystem;

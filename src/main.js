@@ -412,8 +412,12 @@ window.loadOpponent = async function(token, forceRestart = false) {
                 || voices.find(v => v.lang.startsWith('en'));
       if (best) utterance.voice = best;
     }
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
+    try {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    } catch(err) {
+      console.warn('[TTS] Speech synthesis autoplay blocked:', err);
+    }
   }
 
   safeClass('meme-panel', 'add', 'hidden');
@@ -1882,6 +1886,19 @@ document.addEventListener('mousedown', clearKbFocus);
 // Keyboard handlers
 // ─────────────────────────────────────────────
 window.addEventListener('keydown', e => {
+  // Toggle developer boost menu hotkey [B]
+  if (e.code === 'KeyB') {
+    const activeEl = document.activeElement;
+    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+      return;
+    }
+    if (typeof window.toggleBoostMenu === 'function') {
+      window.toggleBoostMenu();
+      e.preventDefault();
+      return;
+    }
+  }
+
   // Toggle voice control hotkey [V]
   if (e.code === 'KeyV') {
     const activeEl = document.activeElement;
@@ -2285,15 +2302,26 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
 
   // Capture the canvas screenshot NOW — before the overlay covers it
   window._lastVictoryScreenshot = null;
-  try {
-    const gameCanvas = document.getElementById('game');
-    if (gameCanvas && typeof html2canvas !== 'undefined') {
-      html2canvas(gameCanvas, { useCORS: true, allowTaint: true, scale: 1 }).then(c => {
-        window._lastVictoryScreenshot = c.toDataURL('image/png');
-        console.log('[Victory] Screenshot captured');
-      }).catch(e => console.warn('[Victory] Screenshot failed:', e));
+  const gameCanvas = document.getElementById('game');
+  if (gameCanvas) {
+    // Try native capture first (fast, but fails if canvas is tainted by cross-origin images)
+    let nativeCaptured = false;
+    try {
+      window._lastVictoryScreenshot = gameCanvas.toDataURL('image/png');
+      nativeCaptured = true;
+    } catch(_) {
+      // Canvas tainted by cross-origin token images — fall through to html2canvas
     }
-  } catch(e) { console.warn('[Victory] Screenshot error:', e); }
+    // If native failed, use html2canvas (works despite tainted canvas)
+    if (!nativeCaptured && typeof html2canvas !== 'undefined') {
+      html2canvas(gameCanvas, { useCORS: true, allowTaint: false, scale: 1 })
+        .then(c => {
+          window._lastVictoryScreenshot = c.toDataURL('image/png');
+          console.log('[Victory] Screenshot captured via html2canvas');
+        })
+        .catch(err => console.warn('[Victory] Screenshot failed:', err.message));
+    }
+  }
 
   // Store win/loss state for shareVictory
   window._lastVictoryIsWin = isPlayer;
@@ -2599,5 +2627,144 @@ window.toggleVoiceControl = async function(forceState) {
     }
 
     console.log('[VoiceToggle] Voice Control is now INACTIVE.');
+  }
+};
+
+// ─────────────────────────────────────────────
+// Rematch flow — teardown + fresh game start without reloading page
+// ─────────────────────────────────────────────
+window.rematchFight = async function() {
+  console.log('[Rematch] Initiating seamless rematch...');
+  
+  if (window._cancelEndlessCountdown) {
+    window._cancelEndlessCountdown();
+  }
+
+  const overlay = document.getElementById('victory-overlay');
+  if (overlay) overlay.classList.add('hidden');
+
+  // 1. Check if we fought an enriched token (Trending Arena / Meme fighter)
+  const token = game?.p2?.tokenData || window.currentGame?.p2?.tokenData || window.game?.p2?.tokenData;
+  if (token) {
+    console.log('[Rematch] Restarting token fight against:', token.symbol);
+    await window.resetAndFight(token);
+    return;
+  }
+
+  // 2. Check if we fought a standard select character
+  if (selectedCharacter) {
+    console.log('[Rematch] Restarting character fight against:', selectedCharacter);
+    if (game) {
+      game.running = false;
+      game.roundOver = true;
+    }
+    if (window.liveBoostSystem) {
+      try { window.liveBoostSystem.stop(); } catch (e) {}
+      window.liveBoostSystem = null;
+    }
+    await cleanupAdapters();
+    game = null;
+    window.currentGame = null;
+    window.game = null;
+    state = 'landing';
+    
+    const canvas = document.getElementById('game');
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    
+    await new Promise(r => setTimeout(r, 32));
+    if (window._showMobileControls) window._showMobileControls();
+    await startCharacterFight();
+    return;
+  }
+
+  // 3. Classic / other custom single player match
+  console.log('[Rematch] Restarting classic single-player match');
+  if (game) {
+    game.running = false;
+    game.roundOver = true;
+  }
+  if (window.liveBoostSystem) {
+    try { window.liveBoostSystem.stop(); } catch (e) {}
+    window.liveBoostSystem = null;
+  }
+  await cleanupAdapters();
+  game = null;
+  window.currentGame = null;
+  window.game = null;
+  state = 'landing';
+  
+  const canvas = document.getElementById('game');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  
+  await new Promise(r => setTimeout(r, 32));
+  if (window._showMobileControls) window._showMobileControls();
+  await startFight();
+};
+
+// ─────────────────────────────────────────────
+// Developer Live Boost Simulator Helper API
+// ─────────────────────────────────────────────
+window.boostTarget = 'p2';
+window.setBoostTarget = function(target) {
+  window.boostTarget = target;
+  const btnP1 = document.getElementById('btn-target-p1');
+  const btnP2 = document.getElementById('btn-target-p2');
+  if (target === 'p1') {
+    if (btnP1) {
+      btnP1.style.background = 'var(--neon-green)';
+      btnP1.style.color = '#000';
+      btnP1.style.borderColor = 'transparent';
+    }
+    if (btnP2) {
+      btnP2.style.background = 'rgba(255,255,255,0.1)';
+      btnP2.style.color = '#fff';
+      btnP2.style.borderColor = 'rgba(255,255,255,0.2)';
+    }
+  } else {
+    if (btnP2) {
+      btnP2.style.background = 'var(--neon-green)';
+      btnP2.style.color = '#000';
+      btnP2.style.borderColor = 'transparent';
+    }
+    if (btnP1) {
+      btnP1.style.background = 'rgba(255,255,255,0.1)';
+      btnP1.style.color = '#fff';
+      btnP1.style.borderColor = 'rgba(255,255,255,0.2)';
+    }
+  }
+};
+
+window.triggerSimulatedBoost = function(tierId) {
+  const g = window.currentGame || window.game || window._game;
+  if (!g) {
+    console.warn("No active game to boost");
+    return;
+  }
+  if (!window.liveBoostSystem) {
+    const LiveBoostSystem = window.liveBoostSystemClass;
+    if (LiveBoostSystem) {
+      window.liveBoostSystem = new LiveBoostSystem(g);
+      window.liveBoostSystem.start(g.p2, g.p2.tokenData || { symbol: 'TEST', mint: 'testmint', price: 1, volume24h: 1 });
+    } else {
+      console.error("LiveBoostSystem class not found");
+      return;
+    }
+  }
+  
+  const tokenData = (g.p2 && g.p2.tokenData) || { symbol: 'TEST', mint: 'testmint', price: 1, volume24h: 1 };
+  window.liveBoostSystem.triggerTier(tierId, tokenData, window.boostTarget);
+};
+
+window.toggleBoostMenu = function() {
+  const menu = document.getElementById('boost-menu');
+  if (menu) {
+    const isHidden = menu.style.display === 'none' || !menu.style.display;
+    menu.style.display = isHidden ? 'block' : 'none';
   }
 };

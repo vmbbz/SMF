@@ -559,8 +559,8 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       const targetActions = proj.owner === 'p1' ? p2Actions : p1Actions;
       const attacker = proj.owner === 'p1' ? this.p1 : this.p2;
 
-      // Skip if target already stunned
-      if (target.state === 'hitstun' || target.state === 'blockstun') continue;
+      // Skip if target already stunned (unless levitating, which is a cinematic state)
+      if ((target.state === 'hitstun' || target.state === 'blockstun') && !target.isLevitated) continue;
 
       // Projectile hitbox (mid-height circle, 24x24)
       const pRect = { x: proj.x - 12, y: proj.y - 12, w: 24, h: 24 };
@@ -586,8 +586,16 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
           this._logEvent('BLOCKED', '#4488ff', atkSide);
           if (this.sfx) this.sfx.block();
         } else {
-          const finalProjDmg = Math.round(PROJECTILE_DAMAGE * (attacker.damageMultiplier || 1));
-          target.health = Math.max(0, target.health - finalProjDmg);
+          const baseDmg = proj.damage !== undefined ? proj.damage : PROJECTILE_DAMAGE;
+          const finalProjDmg = Math.round(baseDmg * (attacker.damageMultiplier || 1));
+
+          if (proj.isOverdrive && !proj.isLast) {
+            // Keep at least 1 HP so the full overdrive combo completes beautifully
+            target.health = Math.max(1, target.health - finalProjDmg);
+          } else {
+            target.health = Math.max(0, target.health - finalProjDmg);
+          }
+
           target.state = 'hitstun';
           target.stunFrames = PROJECTILE_HITSTUN;
           const dir = target.x > attacker.x ? 1 : -1;
@@ -760,7 +768,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     // Helper to draw a stat card
     const drawCard = (x, y, title, token, isP1) => {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.strokeStyle = isP1 ? 'var(--neon-green)' : 'var(--neon-pink)';
+      ctx.strokeStyle = isP1 ? '#00ff9d' : '#ff00ff';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.roundRect(x - 150, y - 100, 300, 200, 15);
@@ -772,7 +780,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       
       // Title
       ctx.font = 'bold 24px system-ui';
-      ctx.fillStyle = isP1 ? 'var(--neon-green)' : 'var(--neon-pink)';
+      ctx.fillStyle = isP1 ? '#00ff9d' : '#ff00ff';
       ctx.fillText(title, x, y - 70);
       
       if (!token) {
@@ -838,9 +846,9 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     );
     floorGrad.addColorStop(0, DG.gradStart || '#00ff9d');
     floorGrad.addColorStop(1, DG.gradEnd || '#ff00ff');
-    ctx.strokeStyle = 'var(--neon-green)';
+    ctx.strokeStyle = '#00ff9d';
     ctx.lineWidth = 6;
-    ctx.shadowColor = 'var(--neon-green)';
+    ctx.shadowColor = '#00ff9d';
     ctx.shadowBlur = 15;
     ctx.beginPath();
     ctx.moveTo(this.stageLeft - 200, floorY);

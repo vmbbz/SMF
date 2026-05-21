@@ -160,39 +160,86 @@ export class Fighter {
   }
 
   async loadTokenHead(tokenData) {
-  this.tokenData = tokenData;
-  this.personality = generatePersonality(tokenData);
+    this.tokenData = tokenData;
+    this.personality = generatePersonality(tokenData);
 
-  if (tokenData.logoURI) {
-    this.headImage = new Image();
-    this.headImage.src = tokenData.logoURI;
-    
-    await new Promise(resolve => {
-      this.headImage.onload = () => resolve();
-      this.headImage.onerror = () => {
-        console.warn('Head image load failed, using SMF default');
-        this.headImage.src = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png'; // Solana logo fallback
-        resolve();
-      };
+    const SOLANA_FALLBACK = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
+
+    const proxyUrl = (url) => {
+      if (!url) return null;
+      if (url.startsWith('data:')) return url;
+      if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) return url;
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        return `/api/proxy/image?url=${encodeURIComponent(url)}&t=${Date.now()}`;
+      }
+      return url;
+    };
+
+    /** Load an image with crossOrigin set BEFORE src, returns promise<boolean> */
+    const tryLoad = (url) => new Promise((resolve) => {
+      if (!url) return resolve(false);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => { this.headImage = img; resolve(true); };
+      img.onerror = () => resolve(false);
+      img.src = url;
     });
-  } else {
-    // Default SMF branding
-    this.headImage = new Image();
-    this.headImage.src = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
+
+    /** Collect all candidate URLs in priority order */
+    const candidates = [];
+    if (tokenData.logoURI) candidates.push(proxyUrl(tokenData.logoURI));
+    // Alternative: some tokens have logoURI on extensions or other fields
+    if (tokenData.extensions?.website) { /* skip, not an image */ }
+    if (tokenData.image) candidates.push(proxyUrl(tokenData.image));
+    candidates.push(proxyUrl(SOLANA_FALLBACK));
+
+    let loaded = false;
+
+    for (const url of candidates) {
+      if (!url) continue;
+      loaded = await tryLoad(url);
+      if (loaded) break;
+
+      // First attempt failed — wait 1.5s and retry same URL (handles transient 502s)
+      await new Promise(r => setTimeout(r, 1500));
+      loaded = await tryLoad(url);
+      if (loaded) break;
+    }
+
+    if (!loaded) {
+      // Absolute last resort — load without proxy (won't help canvas untaint but at least renders)
+      const img = new Image();
+      img.src = SOLANA_FALLBACK;
+      await new Promise(r => { img.onload = r; img.onerror = r; });
+      this.headImage = img;
+    }
+
+    // Also retry after 3s in background if we fell back to default
+    // (handles case where token image server was slow on first load)
+    if (tokenData.logoURI && this.headImage.src.includes('So111111111111')) {
+      setTimeout(async () => {
+        const retryUrl = proxyUrl(tokenData.logoURI);
+        if (retryUrl) {
+          const ok = await tryLoad(retryUrl);
+          if (ok) console.log('[Fighter] Head image retry succeeded');
+        }
+      }, 3000);
+    }
+
+    if (tokenData.coverImage) {
+      this.headerImage = new Image();
+      this.headerImage.crossOrigin = 'anonymous';
+      this.headerImage.src = proxyUrl(tokenData.coverImage);
+      await new Promise(resolve => {
+        this.headerImage.onload = () => resolve();
+        this.headerImage.onerror = () => {
+          this.headerImage = null;
+          resolve();
+        };
+      });
+    }
   }
 
-  if (tokenData.coverImage) {
-    this.headerImage = new Image();
-    this.headerImage.src = tokenData.coverImage;
-    await new Promise(resolve => {
-      this.headerImage.onload = () => resolve();
-      this.headerImage.onerror = () => {
-        this.headerImage = null; // fallback to black stage
-        resolve();
-      };
-    });
-  }
-}
 
   /** Serialize all simulation state to a plain object (server snapshot format). */
   toSnapshot() {
@@ -786,7 +833,7 @@ export class Fighter {
   boostLevitate(duration) {
     this.isLevitated = true;
     this.levitateTimer = duration;
-    this.levitateTargetY = this.floorY - 90; // Float 90px above floor
+    this.levitateTargetY = this.floorY - 45; // Float 45px above floor (torso aligns with fireball path)
     this.state = 'hitstun'; // Use hitstun pose for the reactive look
     this.stunFrames = duration * 60;
     this.vx = 0;

@@ -19,28 +19,66 @@ export class Effects {
     this.weatherParticles = [];
     const mode = this.weatherModes[this.currentWeather];
     // More particles for density
-    const count = mode === 'snow' ? 60 : (mode === 'rain' ? 120 : (mode === 'wind' ? 45 : 0));
+    const count = mode === 'snow' ? 60 : (mode === 'rain' ? 120 : (mode === 'wind' ? 70 : 0));
 
     for (let i = 0; i < count; i++) {
-      this.weatherParticles.push({
-        x: Math.random() * (window.innerWidth + 300) - 150,
-        y: Math.random() * window.innerHeight,
-        // Varied speeds create parallax depth
-        speed:  mode === 'rain' ? Math.random() * 0.6 + 0.6
-              : mode === 'snow' ? Math.random() * 0.4 + 0.2
-              : Math.random() * 0.5 + 0.5,
-        offset: Math.random() * Math.PI * 2,
-        // size = stroke width for rain/wind, radius for snow
-        // Rain & wind bumped up for clear visibility against dark bg
-        size:   mode === 'rain' ? Math.random() * 1.5 + 1.5   // 1.5–3px thick streaks
-              : mode === 'snow' ? Math.random() * 3.5 + 1.5
-              : Math.random() * 2.5 + 1.5,                    // 1.5–4px wind lines
-        // High alpha — both modes need to pop against the dark arena
-        alpha:  mode === 'rain' ? Math.random() * 0.25 + 0.75  // 0.75–1.0
-              : mode === 'wind' ? Math.random() * 0.20 + 0.70  // 0.70–0.90
-              : Math.random() * 0.45 + 0.35,
-        drift:  (Math.random() - 0.5) * 0.4,
-      });
+      if (mode === 'wind') {
+        const isLeaf = i < 45; // 45 leaves, 25 wind gusts
+        if (isLeaf) {
+          const leafColors = [
+            '#e74c3c', // Autumn Crimson Maple
+            '#e67e22', // Amber Orange
+            '#f1c40f', // Golden Yellow
+            '#27ae60', // Vibrant Garden Green
+            '#ff5e62', // Pink/Coral Maple
+            '#fb5607', // Deep Sunset Red-orange
+          ];
+          this.weatherParticles.push({
+            type: 'leaf',
+            x: Math.random() * (window.innerWidth + 200) - 100,
+            y: Math.random() * (window.innerHeight + 100) - 50,
+            speed: Math.random() * 0.7 + 0.5,
+            size: Math.random() * 8 + 6, // 6px to 14px size
+            color: leafColors[Math.floor(Math.random() * leafColors.length)],
+            angle: Math.random() * Math.PI * 2,
+            rotationSpeed: (Math.random() - 0.5) * 0.05,
+            wobble: Math.random() * Math.PI * 2,
+            wobbleSpeed: Math.random() * 0.03 + 0.015,
+            offset: Math.random() * Math.PI * 2,
+            alpha: Math.random() * 0.25 + 0.65, // 0.65–0.90
+          });
+        } else {
+          // Wind gust particle (thin line)
+          this.weatherParticles.push({
+            type: 'gust',
+            x: Math.random() * (window.innerWidth + 300) - 150,
+            y: Math.random() * window.innerHeight,
+            speed: Math.random() * 0.8 + 0.8, // faster
+            size: Math.random() * 1.5 + 0.8, // thin line thickness
+            alpha: Math.random() * 0.15 + 0.1, // faint/soft glowing winds
+            offset: Math.random() * Math.PI * 2,
+          });
+        }
+      } else {
+        this.weatherParticles.push({
+          x: Math.random() * (window.innerWidth + 300) - 150,
+          y: Math.random() * window.innerHeight,
+          // Varied speeds create parallax depth
+          speed:  mode === 'rain' ? Math.random() * 0.6 + 0.6
+                : mode === 'snow' ? Math.random() * 0.4 + 0.2
+                : Math.random() * 0.5 + 0.5,
+          offset: Math.random() * Math.PI * 2,
+          // size = stroke width for rain/wind, radius for snow
+          // Rain & wind bumped up for clear visibility against dark bg
+          size:   mode === 'rain' ? Math.random() * 1.5 + 1.5   // 1.5-3px thick streaks
+                : mode === 'snow' ? Math.random() * 3.5 + 1.5
+                : Math.random() * 2.5 + 1.5,                    // 1.5-4px wind lines
+          // High alpha — both modes need to pop against the dark arena
+          alpha:  mode === 'rain' ? Math.random() * 0.25 + 0.75  // 0.75-1.0
+                : Math.random() * 0.45 + 0.35,
+          drift:  (Math.random() - 0.5) * 0.4,
+        });
+      }
     }
   }
 
@@ -157,34 +195,78 @@ export class Effects {
       ctx.lineCap = 'butt';
 
     // ── WIND ─────────────────────────────────────────────────────────────
-    // Bright cyan-teal gusts — tapered, clearly visible against dark arena
+    // Beautiful organic leaves tumbling and wobbling + glowing wind streaks
     } else if (mode === 'wind') {
-      ctx.lineCap = 'round';
-      ctx.shadowBlur = 5;
-      ctx.shadowColor = 'rgba(0, 255, 180, 0.7)';
       for (const p of this.weatherParticles) {
-        p.x -= 10 * p.speed;
-        p.y += Math.sin(Date.now() * 0.0015 + p.offset) * 1.8;
-        if (p.x < -60) { p.x = window.innerWidth + 60; p.y = Math.random() * window.innerHeight; }
+        if (p.type === 'leaf') {
+          // Update leaf position
+          p.x -= 3.2 * p.speed; // drift left
+          // Fluttering falling speed and wavy sine movement
+          p.y += Math.sin(Date.now() * 0.0018 + p.offset) * 1.3 + 0.8 * p.speed;
+          p.angle += p.rotationSpeed;
+          p.wobble += p.wobbleSpeed;
 
-        const lineLen = 36 * p.speed + 10;  // longer streaks
-        ctx.globalAlpha = p.alpha;
-        ctx.lineWidth = p.size;
+          // Recycle when out of bounds
+          if (p.x < -30) {
+            p.x = window.innerWidth + 30;
+            p.y = Math.random() * (window.innerHeight + 100) - 50;
+            p.angle = Math.random() * Math.PI * 2;
+          }
 
-        // Fade-in from tail → fully solid bright cyan at the head
-        const grd = ctx.createLinearGradient(p.x - lineLen, p.y, p.x, p.y);
-        grd.addColorStop(0,    'rgba(0, 220, 160, 0.15)');
-        grd.addColorStop(0.4,  'rgba(0, 255, 190, 0.75)');
-        grd.addColorStop(1,    'rgba(100, 255, 220, 1.0)');
+          // Draw the leaf
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate(p.angle + Math.sin(p.wobble) * 0.25);
+          ctx.globalAlpha = p.alpha;
 
-        ctx.strokeStyle = grd;
-        ctx.beginPath();
-        ctx.moveTo(p.x - lineLen, p.y);
-        ctx.lineTo(p.x, p.y);
-        ctx.stroke();
+          // Leaf shape
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.moveTo(0, -p.size);
+          // quadratic curve for upper-right leaf side
+          ctx.quadraticCurveTo(p.size * 0.55, -p.size * 0.2, 0, p.size);
+          // quadratic curve for lower-left leaf side
+          ctx.quadraticCurveTo(-p.size * 0.55, -p.size * 0.2, 0, -p.size);
+          ctx.fill();
+
+          // Leaf center stem
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.18)';
+          ctx.lineWidth = Math.max(0.8, p.size * 0.08);
+          ctx.beginPath();
+          ctx.moveTo(0, -p.size * 0.75);
+          ctx.lineTo(0, p.size * 1.15);
+          ctx.stroke();
+
+          ctx.restore();
+        } else {
+          // Faint, fast-moving wind gusts for cinematic layer of depth
+          p.x -= 12 * p.speed; // fast
+          p.y += Math.sin(Date.now() * 0.001 + p.offset) * 0.8;
+
+          if (p.x < -150) {
+            p.x = window.innerWidth + 150;
+            p.y = Math.random() * window.innerHeight;
+          }
+
+          const lineLen = 60 * p.speed + 20;
+          ctx.globalAlpha = p.alpha;
+          ctx.lineWidth = p.size;
+          ctx.lineCap = 'round';
+
+          // Soft teal/cyan/white wind gust lines
+          const grd = ctx.createLinearGradient(p.x - lineLen, p.y, p.x, p.y);
+          grd.addColorStop(0, 'rgba(0, 255, 180, 0.0)');
+          grd.addColorStop(0.5, 'rgba(0, 255, 180, 0.2)');
+          grd.addColorStop(1, 'rgba(255, 255, 255, 0.4)');
+
+          ctx.strokeStyle = grd;
+          ctx.beginPath();
+          ctx.moveTo(p.x - lineLen, p.y);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+        }
       }
       ctx.globalAlpha = 1;
-      ctx.shadowBlur = 0;
       ctx.lineCap = 'butt';
 
     // ── SNOW ─────────────────────────────────────────────────────────────
