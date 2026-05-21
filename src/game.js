@@ -82,7 +82,7 @@ export class Game {
     const logicalW = canvas.width / this.dpr;
     const logicalH = canvas.height / this.dpr;
 
-    const floorY = logicalH - 160;
+    const floorY = this.floorY;
     const stageLeft = logicalW * STAGE_MARGIN;
     const stageRight = logicalW * (1 - STAGE_MARGIN);
     const startOffset = (stageRight - stageLeft) * 0.25;
@@ -152,7 +152,8 @@ export class Game {
     return this.logicalW * (1 - STAGE_MARGIN);
   }
   get floorY() {
-    return this.logicalH - 230;
+    const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
+    return isMobile ? (this.logicalH - 330) : (this.logicalH - 230);
   }
 
   start() {
@@ -1021,19 +1022,22 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       this._p2Latch,
       dt,
     );
-    const ctrlY = this.floorY + 24;
-    this._drawController(ctx, P1_CONTROLLER, 30, ctrlY, p1Visual, DG.primary);
-    this._drawController(
-      ctx,
-      P2_CONTROLLER,
-      w - 200,
-      ctrlY,
-      p2Visual,
-      DG.secondary,
-    );
+    const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
+    if (!isMobile) {
+      const ctrlY = this.floorY + 24;
+      this._drawController(ctx, P1_CONTROLLER, 30, ctrlY, p1Visual, DG.primary);
+      this._drawController(
+        ctx,
+        P2_CONTROLLER,
+        w - 200,
+        ctrlY,
+        p2Visual,
+        DG.secondary,
+      );
 
-    // Damage log between controllers
-    this._drawDamageLog(ctx, w, this.floorY + 160);
+      // Damage log between controllers
+      this._drawDamageLog(ctx, w, this.floorY + 160);
+    }
 
     // Phone number display — shown until call connects
     this._drawPhoneInfo(ctx, w, h);

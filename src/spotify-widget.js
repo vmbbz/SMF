@@ -22,8 +22,11 @@ export class SpotifyWidget {
     this.container.innerHTML = `
       <div class="spotify-widget" style="display:flex; align-items:center; gap:10px; padding:6px 12px; background:rgba(0,0,0,0.8); border: 2px solid var(--neon-green); border-radius:30px; color:#fff; backdrop-filter:blur(5px);">
         <div class="user-header" style="display:flex; align-items:center; gap:8px;">
-          <img id="user-pic" src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" width="24" height="24" style="border-radius:50%;">
-          <button onclick="window.spotifyWidget.connectSpotify()" class="connect-btn" id="connect-btn" style="background:transparent; color:var(--neon-green); border:none; padding:0; font-weight:bold; cursor:pointer; font-family:inherit; font-size:12px;">CONNECT SPOTIFY</button>
+          <img id="user-pic" class="spotify-user-pic" src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" width="24" height="24" style="border-radius:50%;">
+          <button onclick="window.spotifyWidget.connectSpotify()" class="connect-btn" id="connect-btn" style="background:transparent; color:var(--neon-green); border:none; padding:0; font-weight:bold; cursor:pointer; font-family:inherit; font-size:12px;">
+            <span class="desktop-text">CONNECT SPOTIFY</span>
+            <span class="mobile-text">🎵</span>
+          </button>
         </div>
         <div id="player-controls" class="hidden" style="display:none; flex:1; align-items:center; gap:10px;">
           <div class="now-playing" style="flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; max-width: 150px;">

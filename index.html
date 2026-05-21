@@ -561,16 +561,23 @@
     }
 
     /* Mobile Positioning: centered perfectly above the 130px joystick base */
-    @media (hover: none) and (pointer: coarse) {
+    @media (max-width: 1024px) {
       #mic-toggle-btn {
-        bottom: 145px;
+        position: absolute;
+        bottom: 155px;
         left: 50%;
         transform: translateX(-50%);
+      }
+      .mic-btn:hover {
+        transform: translateX(-50%) scale(1.08);
+      }
+      .mic-btn.active:hover {
+        transform: translateX(-50%) scale(1.08);
       }
     }
 
     /* Desktop Positioning: centered exactly where the joystick would normally sit */
-    @media (hover: hover) and (pointer: fine) {
+    @media (min-width: 1025px) {
       #mobile-controls {
         display: none; /* hidden by default, shown by JS */
         justify-content: flex-start !important;
@@ -609,22 +616,10 @@
       box-shadow: 0 0 25px rgba(0, 255, 157, 0.5), inset 0 0 10px rgba(0, 0, 0, 0.6);
     }
     
-    @media (hover: none) and (pointer: coarse) {
-      .mic-btn:hover {
-        transform: translateX(-50%) scale(1.08);
-      }
-    }
-
     .mic-btn.active:hover {
       transform: scale(1.08);
       border-color: rgba(255, 0, 128, 1);
       box-shadow: 0 0 35px rgba(255, 0, 128, 0.8), inset 0 0 10px rgba(0, 0, 0, 0.5);
-    }
-    
-    @media (hover: none) and (pointer: coarse) {
-      .mic-btn.active:hover {
-        transform: translateX(-50%) scale(1.08);
-      }
     }
 
     @keyframes mic-pulse {
@@ -661,7 +656,47 @@
       opacity: 1;
     }
 
-    /* HUD Widgets — bottom on PC, near-centre on mobile */
+    /* HUD Widgets default style */
+    .hud-btn {
+      background: rgba(0,0,0,0.8); 
+      border-radius: 30px; 
+      color: #fff; 
+      padding: 8px 16px; 
+      font-weight: bold; 
+      font-size: 12px !important; 
+      cursor: pointer; 
+      display: flex; 
+      align-items: center; 
+      gap: 5px; 
+      font-family: inherit; 
+      white-space: nowrap; 
+      backdrop-filter: blur(5px);
+      transition: all 0.3s ease;
+    }
+    
+    .weather-btn {
+      border: 2px solid var(--neon-blue);
+    }
+    
+    .boost-btn {
+      border: 2px solid var(--neon-pink);
+      box-shadow: 0 0 10px rgba(255,0,255,0.3);
+    }
+    
+    .hud-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 0 15px rgba(255,255,255,0.2);
+    }
+
+    /* Text display wrappers for responsive widget titles */
+    .desktop-text {
+      display: inline-block;
+    }
+    .mobile-text {
+      display: none !important;
+    }
+
+    /* HUD Widgets — bottom on PC, top center on mobile */
     #hud-widgets {
       position: fixed;
       bottom: 77px;
@@ -673,29 +708,76 @@
       align-items: center;
     }
 
-    @media (max-width: 768px),
-    (hover: none) and (pointer: coarse) {
+    @media (max-width: 1024px) {
+      .desktop-text {
+        display: none !important;
+      }
+      .mobile-text {
+        display: inline-block !important;
+      }
+
       #hud-widgets {
         bottom: auto;
-        top: 10%;
+        top: 11%;
         transform: translate(-50%, -50%);
+        gap: 8px;
       }
 
-      /* Scale down all hud-widgets text on mobile */
-      #hud-widgets,
-      #hud-widgets button,
-      #hud-widgets span,
-      #hud-widgets .spotify-widget,
-      #hud-widgets .connect-btn,
-      #hud-widgets #track-name,
-      #hud-widgets .controls button {
-        font-size: 12px !important;
+      /* Weather and Boost buttons as ultra-compact circular glass icons */
+      #hud-widgets button.hud-btn {
+        width: 44px !important;
+        height: 44px !important;
+        min-width: 44px !important;
+        border-radius: 50% !important;
+        padding: 0 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background: rgba(10, 10, 15, 0.85) !important;
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5) !important;
+        font-size: 18px !important;
       }
 
-      /* Slightly tighten spotify pill padding on mobile */
+      /* Spotify widget as compact pill or circle */
       #hud-widgets .spotify-widget {
-        padding: 4px 8px !important;
-        gap: 6px !important;
+        background: rgba(10, 10, 15, 0.85) !important;
+        border: 1px solid rgba(0, 255, 157, 0.35) !important;
+        border-radius: 22px !important;
+        padding: 0 !important;
+        height: 44px !important;
+        min-height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5) !important;
+      }
+
+      #hud-widgets .spotify-user-pic {
+        display: none !important; /* hide Solana profile icon to save space */
+      }
+
+      #hud-widgets .connect-btn {
+        width: 44px !important;
+        height: 44px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-size: 18px !important;
+      }
+
+      /* When player controls are active (Spotify connected) */
+      #hud-widgets #player-controls {
+        padding: 0 12px !important;
+        gap: 8px !important;
+        height: 100% !important;
+        display: flex !important;
+        align-items: center !important;
+      }
+      
+      #hud-widgets #track-name {
+        font-size: 10px !important;
+        max-width: 100px !important;
       }
     }
 
@@ -784,15 +866,15 @@
     <div id="spotify-widget" class="bottom-panel"></div>
 
     <!-- WEATHER TOGGLE -->
-    <button id="btn-weather" onclick="if(window.toggleWeather) window.toggleWeather()"
-      style="background:rgba(0,0,0,0.8); border:2px solid var(--neon-blue); border-radius:30px; color:#fff; padding:8px 16px; font-weight:bold; font-size:12px !important; cursor:pointer; display:flex; align-items:center; gap:5px; font-family:inherit; white-space:nowrap; backdrop-filter:blur(5px);">
-      🌧️ WEATHER
+    <button id="btn-weather" class="hud-btn weather-btn" onclick="if(window.toggleWeather) window.toggleWeather()">
+      <span class="desktop-text">🌧️ WEATHER</span>
+      <span class="mobile-text">🌧️</span>
     </button>
 
     <!-- BOOST HACK TOGGLE -->
-    <button id="btn-boost-hack" onclick="if(window.toggleBoostMenu) window.toggleBoostMenu()"
-      style="background:rgba(0,0,0,0.8); border:2px solid var(--neon-pink); border-radius:30px; color:#fff; padding:8px 16px; font-weight:bold; font-size:12px !important; cursor:pointer; display:flex; align-items:center; gap:5px; font-family:inherit; white-space:nowrap; backdrop-filter:blur(5px); box-shadow: 0 0 10px rgba(255,0,255,0.3);">
-      ⚡ BOOST TEST
+    <button id="btn-boost-hack" class="hud-btn boost-btn" onclick="if(window.toggleBoostMenu) window.toggleBoostMenu()">
+      <span class="desktop-text">⚡ BOOST TEST</span>
+      <span class="mobile-text">⚡</span>
     </button>
   </div>
 
@@ -1078,7 +1160,7 @@
 
     // Auto init
     window.addEventListener('load', async () => {
-      const isMobile = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+      const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
       const mobileControls = document.getElementById('mobile-controls');
 
       if (mobileControls) {
