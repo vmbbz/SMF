@@ -670,4 +670,4 @@ class TestMultiplayerRoute:
             resp = client.get("/multiplayer")
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"]
-            assert "STICK FIGHTER" in resp.text
+            assert "$SMF-STICKLASH" in resp.text

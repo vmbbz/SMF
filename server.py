@@ -1941,7 +1941,7 @@ def _redirect_response(path: str, clear_cookie: bool = False) -> Response:
 @get("/multiplayer")
 async def multiplayer_route() -> Response:
     """Serve the game page for the /multiplayer client-side route (post-auth redirect)."""
-    html = (ROOT / "index.html").read_text()
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
     return Response(content=html, media_type="text/html")
 
 
