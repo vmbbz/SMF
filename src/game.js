@@ -153,7 +153,7 @@ export class Game {
   }
   get floorY() {
     const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
-    return isMobile ? (this.logicalH - 330) : (this.logicalH - 230);
+    return isMobile ? (this.logicalH - 292) : (this.logicalH - 230);
   }
 
   start() {

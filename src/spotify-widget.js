@@ -22,7 +22,8 @@ export class SpotifyWidget {
     this.container.innerHTML = `
       <div class="spotify-widget" style="display:flex; align-items:center; gap:10px; padding:6px 12px; background:rgba(0,0,0,0.8); border: 2px solid var(--neon-green); border-radius:30px; color:#fff; backdrop-filter:blur(5px);">
         <div class="user-header" style="display:flex; align-items:center; gap:8px;">
-          <img id="user-pic" class="spotify-user-pic" src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" width="24" height="24" style="border-radius:50%;">
+          <img id="user-pic" class="spotify-user-pic" src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" width="24" height="24" style="border-radius:50%; cursor:pointer;" onclick="window.spotifyWidget.toggleUserPanel()">
+          <span id="username" class="desktop-text" style="font-family:monospace; font-size:11px; cursor:pointer;" onclick="window.spotifyWidget.toggleUserPanel()">Guest Fighter</span>
           <button onclick="window.spotifyWidget.connectSpotify()" class="connect-btn" id="connect-btn" style="background:transparent; color:var(--neon-green); border:none; padding:0; font-weight:bold; cursor:pointer; font-family:inherit; font-size:12px;">
             <span class="desktop-text">CONNECT SPOTIFY</span>
             <span class="mobile-text">🎵</span>
@@ -44,6 +45,15 @@ export class SpotifyWidget {
     if (this.isConnected) {
       document.getElementById('connect-btn').style.display = 'none';
       document.getElementById('player-controls').style.display = 'flex';
+    }
+  }
+
+  toggleUserPanel() {
+    const statusDiv = document.getElementById('status');
+    if (statusDiv && statusDiv.innerHTML.includes('Connect Wallet')) {
+      if (window.hideWalletConnect) window.hideWalletConnect();
+    } else {
+      if (window.showWalletConnect) window.showWalletConnect();
     }
   }
 

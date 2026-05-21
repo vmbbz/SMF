@@ -709,6 +709,11 @@
     }
 
     @media (max-width: 1024px) {
+      .screen {
+        position: fixed !important;
+        top: 55% !important;
+      }
+
       .desktop-text {
         display: none !important;
       }
@@ -744,7 +749,7 @@
         background: rgba(10, 10, 15, 0.85) !important;
         border: 1px solid rgba(0, 255, 157, 0.35) !important;
         border-radius: 22px !important;
-        padding: 0 !important;
+        padding: 0 8px !important;
         height: 44px !important;
         min-height: 44px !important;
         display: flex !important;
@@ -754,7 +759,8 @@
       }
 
       #hud-widgets .spotify-user-pic {
-        display: none !important; /* hide Solana profile icon to save space */
+        display: inline-block !important; /* keep visible as user panel toggler */
+        cursor: pointer;
       }
 
       #hud-widgets .connect-btn {
@@ -1058,12 +1064,15 @@
   <script type="module">
     import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';
     import { Effects } from './src/effects.js';
+    import { showWalletConnect, hideWalletConnect } from './wallet-connect.js';
 
     // Global exports
     window.getTrendingTokens = getTrendingTokens;
     window.getTokenByMint = getTokenByMint;
     window.generatePersonality = generatePersonality;
     window.effects = new Effects();
+    window.showWalletConnect = showWalletConnect;
+    window.hideWalletConnect = hideWalletConnect;
 
     let pumpQueue = [];
 
