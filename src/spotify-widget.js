@@ -22,7 +22,13 @@ export class SpotifyWidget {
     this.container.innerHTML = `
       <div class="spotify-widget" style="display:flex; align-items:center; gap:10px; padding:6px 12px; background:rgba(0,0,0,0.8); border: 2px solid var(--neon-green); border-radius:30px; color:#fff; backdrop-filter:blur(5px);">
         <div class="user-header" style="display:flex; align-items:center; gap:8px;">
-          <img id="user-pic" class="spotify-user-pic" src="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" width="24" height="24" style="border-radius:50%; cursor:pointer;" onclick="window.spotifyWidget.toggleUserPanel()">
+          <div id="user-pic" class="spotify-user-pic" style="width:24px; height:24px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(20,241,149,0.15); border:1px solid var(--neon-green); cursor:pointer;" onclick="window.spotifyWidget.toggleUserPanel()">
+            <svg width="14" height="14" viewBox="0 0 397 311" style="display:block;">
+              <path d="M64.6 237.9c-2.4-2.4-5.7-3.8-9.2-3.8H3.8c-4.8 0-8 5.3-5.3 9.3l57 85.5c2.4 2.4 5.7 3.8 9.2 3.8h51.6c4.8 0 8-5.3 5.3-9.3l-57-85.5z" fill="#9945FF"/>
+              <path d="M337.8 73.1c2.4 2.4 5.7 3.8 9.2 3.8h51.6c4.8 0 8-5.3 5.3-9.3l-57-85.5C344.5 1.3 341.2 0 337.7 0H286c-4.8 0-8 5.3-5.3 9.3l57.1 83.8z" fill="#14F195"/>
+              <path d="M201.2 155.5c-2.4-2.4-5.7-3.8-9.2-3.8H140.4c-4.8 0-8 5.3-5.3 9.3l57 85.5c2.4 2.4 5.7 3.8 9.2 3.8h51.6c4.8 0 8-5.3 5.3-9.3l-57-85.5z" fill="#00C2FF"/>
+            </svg>
+          </div>
           <span id="username" class="desktop-text" style="font-family:monospace; font-size:11px; cursor:pointer;" onclick="window.spotifyWidget.toggleUserPanel()">Guest Fighter</span>
           <button onclick="window.spotifyWidget.connectSpotify()" class="connect-btn" id="connect-btn" style="background:transparent; color:var(--neon-green); border:none; padding:0; font-weight:bold; cursor:pointer; font-family:inherit; font-size:12px;">
             <span class="desktop-text">CONNECT SPOTIFY</span>
@@ -42,15 +48,20 @@ export class SpotifyWidget {
     `;
     
     // Auto-unhide if connected
+    const connectBtn = document.getElementById('connect-btn');
+    const controls = document.getElementById('player-controls');
     if (this.isConnected) {
-      document.getElementById('connect-btn').style.display = 'none';
-      document.getElementById('player-controls').style.display = 'flex';
+      if (connectBtn) { connectBtn.style.display = 'none'; connectBtn.classList.add('hidden'); }
+      if (controls) { controls.style.display = 'flex'; controls.classList.remove('hidden'); }
+    } else {
+      if (connectBtn) { connectBtn.style.display = 'flex'; connectBtn.classList.remove('hidden'); }
+      if (controls) { controls.style.display = 'none'; controls.classList.add('hidden'); }
     }
   }
 
   toggleUserPanel() {
-    const statusDiv = document.getElementById('status');
-    if (statusDiv && statusDiv.innerHTML.includes('Connect Wallet')) {
+    const modal = document.getElementById('wallet-connect-panel');
+    if (modal && !modal.classList.contains('hidden')) {
       if (window.hideWalletConnect) window.hideWalletConnect();
     } else {
       if (window.showWalletConnect) window.showWalletConnect();
@@ -81,8 +92,14 @@ export class SpotifyWidget {
       this.isConnected = true;
       const connectBtn = document.getElementById('connect-btn');
       const controls = document.getElementById('player-controls');
-      if(connectBtn) connectBtn.style.display = 'none';
-      if(controls) controls.style.display = 'flex';
+      if (connectBtn) {
+        connectBtn.style.display = 'none';
+        connectBtn.classList.add('hidden');
+      }
+      if (controls) {
+        controls.style.display = 'flex';
+        controls.classList.remove('hidden');
+      }
     });
 
     this.player.addListener('not_ready', ({ device_id }) => {

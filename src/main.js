@@ -2227,8 +2227,14 @@ window.toggleWeather = function() {
   const btn = document.getElementById('btn-weather');
   if (btn) {
     const modes = { 'rain': '🌧️ RAIN', 'wind': '💨 WIND', 'snow': '❄️ SNOW', 'clear': '☀️ CLEAR' };
+    const mobileIcons = { 'rain': '🌧️', 'wind': '💨', 'snow': '❄️', 'clear': '☀️' };
     const curr = window.effects.weatherModes[window.effects.currentWeather];
-    btn.innerHTML = modes[curr] || 'WEATHER';
+    const text = modes[curr] || 'WEATHER';
+    const icon = mobileIcons[curr] || '🌧️';
+    btn.innerHTML = `
+      <span class="desktop-text">${text}</span>
+      <span class="mobile-text">${icon}</span>
+    `;
   }
 };
 

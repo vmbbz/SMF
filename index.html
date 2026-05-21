@@ -763,7 +763,11 @@
         cursor: pointer;
       }
 
-      #hud-widgets .connect-btn {
+      #hud-widgets .connect-btn.hidden {
+        display: none !important;
+      }
+
+      #hud-widgets .connect-btn:not(.hidden) {
         width: 44px !important;
         height: 44px !important;
         display: flex !important;
@@ -773,7 +777,11 @@
       }
 
       /* When player controls are active (Spotify connected) */
-      #hud-widgets #player-controls {
+      #hud-widgets #player-controls.hidden {
+        display: none !important;
+      }
+
+      #hud-widgets #player-controls:not(.hidden) {
         padding: 0 12px !important;
         gap: 8px !important;
         height: 100% !important;
@@ -886,18 +894,18 @@
 
   <!-- Developer Boost Menu -->
   <div id="boost-menu"
-    style="display:none; position: fixed; bottom: 130px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(10,10,15,0.95); border: 2px solid var(--neon-pink); border-radius: 16px; padding: 15px; width: 320px; text-align: center; box-shadow: 0 0 20px rgba(255,0,255,0.4); font-family: inherit;">
-    <div style="font-size: 11px; margin-bottom: 12px; color: var(--neon-green); font-weight: bold; letter-spacing: 1px;">⚡ LIVE BOOST SIMULATOR ⚡</div>
+    style="display:none; position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(10,10,15,0.95); border: 2px solid var(--neon-pink); border-radius: 16px; padding: 10px; width: 320px; text-align: center; box-shadow: 0 0 20px rgba(255,0,255,0.4); font-family: inherit;">
+    <div style="font-size: 10px; margin-bottom: 10px; color: var(--neon-green); font-weight: bold; letter-spacing: 1px;">⚡ LIVE BOOST ⚡</div>
     
-    <div style="font-size: 9px; color: #888; margin-bottom: 6px; text-align: left; font-weight: bold;">1. SELECT TARGET PLAYER:</div>
-    <div style="display:flex; justify-content: space-around; margin-bottom: 15px; gap: 8px;">
+    <div style="font-size: 7px; color: #888; margin-bottom: 4px; text-align: left; font-weight: bold;">1. SELECT TARGET PLAYER:</div>
+    <div style="display:flex; justify-content: space-around; margin-bottom: 12px; gap: 8px;">
       <button onclick="if(window.setBoostTarget) window.setBoostTarget('p2')" id="btn-target-p2" 
         style="flex:1; background: var(--neon-green); color: #000; border: none; padding: 6px 4px; font-size: 9px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; border: 1px solid transparent; transition: all 0.2s;">P2 (AI/TOKEN)</button>
       <button onclick="if(window.setBoostTarget) window.setBoostTarget('p1')" id="btn-target-p1" 
         style="flex:1; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 4px; font-size: 9px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; transition: all 0.2s;">P1 (HUMAN)</button>
     </div>
     
-    <div style="font-size: 9px; color: #888; margin-bottom: 6px; text-align: left; font-weight: bold;">2. TRIGGER BOOST TIER:</div>
+    <div style="font-size: 7px; color: #888; margin-bottom: 4px; text-align: left; font-weight: bold;">2. TRIGGER BOOST TIER:</div>
     <div style="display:flex; flex-direction: column; gap: 8px;">
       <button onclick="if(window.triggerSimulatedBoost) window.triggerSimulatedBoost('micro')" 
         style="background: rgba(255,204,0,0.1); border: 1px solid #ffcc00; color: #ffcc00; padding: 8px; font-size: 8px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; text-align:left; transition: all 0.2s;">🟡 MICRO (1.15x Speed Aura)</button>
@@ -913,7 +921,7 @@
   </div>
 
   <!-- MEME PANEL (Main Menu) -->
-  <div id="meme-panel" class="screen" style="top: 42%;">
+  <div id="meme-panel" class="screen" style="top: 42px !important;">
     <div style="text-align:center;margin-bottom:30px;">
       <img id="landing-logo" src="assets/smf-logo.png" alt="$SMF"
         style="height:140px;margin-bottom:20px;max-width:95%;filter: drop-shadow(0 0 15px var(--neon-green));transition: filter 0.3s ease, transform 0.2s ease;">

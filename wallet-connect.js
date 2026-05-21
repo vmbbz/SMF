@@ -1,28 +1,41 @@
-// Wallet connect stub for Phase 3
+// Wallet connect stub for Phase 3 - Standalone Modal Popup
 export function showWalletConnect() {
-  const statusDiv = document.getElementById('status');
-  
-  if (statusDiv) {
-    statusDiv.innerHTML = `
-      <div style="background: rgba(0,255,0,0.1); padding: 15px; border-radius: 12px; color: white; font-family: sans-serif;">
-        <h3>🔗 Connect Wallet for Power-Ups</h3>
-        <p style="margin: 10px 0;">Stake $SMF tokens to unlock special abilities!</p>
-        <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 10px 0;">
-          <p style="color: #ccc; font-size: 12px;">📱 Wallet connection coming soon...</p>
-          <p style="color: #ccc;">This will connect to Phantom/Backpack</p>
-          <p style="color: #ccc;">Stake $SMF for temporary power-ups</p>
-        </div>
-        <button onclick="hideWalletConnect()" style="margin-top: 10px; background: #13ef95; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
-          Close
-        </button>
-      </div>
-    `;
+  let modal = document.getElementById('wallet-connect-panel');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'wallet-connect-panel';
+    modal.className = 'screen hidden';
+    modal.style.zIndex = '2100'; // Make sure it floats on top of everything
+    document.body.appendChild(modal);
   }
+  
+  modal.innerHTML = `
+    <div style="padding: 10px; color: white; font-family: inherit; text-align: center;">
+      <h3 style="color: var(--neon-green); margin-bottom: 15px; font-size: 14px; letter-spacing: 1px;">🔗 CONNECT WALLET</h3>
+      <p style="margin: 10px 0; font-size: 10px; line-height: 1.6; color: #ccc;">Stake $SMF tokens to unlock special abilities and temporary power-ups!</p>
+      
+      <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); padding: 15px; border-radius: 12px; margin: 15px 0; font-size: 10px; text-align: left; line-height: 1.8;">
+        <p style="color: var(--neon-blue); font-weight: bold; margin-bottom: 5px; text-align: center;">🎮 POWER-UP FEATURES</p>
+        <div style="color: #bbb; display: flex; flex-direction: column; gap: 4px;">
+          <div>• Stake $SMF for temporary stat boosts</div>
+          <div>• Connect Phantom / Backpack (coming soon)</div>
+          <div>• Unlock premium characters and levels</div>
+        </div>
+      </div>
+      
+      <button class="premium-btn" onclick="window.hideWalletConnect()" style="margin-top: 10px; font-size: 10px; padding: 12px 20px; width: 100%;">
+        CLOSE
+      </button>
+    </div>
+  `;
+  
+  // Unhide modal
+  modal.classList.remove('hidden');
 }
 
 export function hideWalletConnect() {
-  const statusDiv = document.getElementById('status');
-  if (statusDiv) {
-    statusDiv.innerHTML = '';
+  const modal = document.getElementById('wallet-connect-panel');
+  if (modal) {
+    modal.classList.add('hidden');
   }
 }
