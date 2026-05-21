@@ -153,6 +153,22 @@ export class Fighter {
     this.personality = null;
     this.headImage = new Image();
     this.headImage.src = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
+    
+    // Load custom profile avatar from localStorage for P1 (Human Player) if available
+    if (playerNum === 1) {
+      try {
+        const profileStr = localStorage.getItem('smf_user_profile');
+        if (profileStr) {
+          const profile = JSON.parse(profileStr);
+          if (profile && profile.avatar) {
+            this.headImage = new Image();
+            this.headImage.src = profile.avatar;
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load custom P1 head image from localStorage:', e);
+      }
+    }
   }
 
   get grounded() {

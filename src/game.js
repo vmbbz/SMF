@@ -78,6 +78,35 @@ export class Game {
     this.p1Label = p1Label;
     this.p2Label = p2Label;
 
+    // Load custom profile name from localStorage for P1 if available
+    try {
+      const profileStr = localStorage.getItem('smf_user_profile');
+      if (profileStr) {
+        const profile = JSON.parse(profileStr);
+        if (profile && profile.name) {
+          this.p1Label = profile.name;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to override P1 HUD label from localStorage:', e);
+    }
+
+    // Listen for dynamic profile updates (e.g. name or avatar changes in user profile modal)
+    window.addEventListener('smf_profile_updated', (e) => {
+      const profile = e.detail;
+      if (profile) {
+        if (profile.name) {
+          this.p1Label = profile.name;
+        }
+        if (profile.avatar && this.p1) {
+          if (!this.p1.headImage) {
+            this.p1.headImage = new Image();
+          }
+          this.p1.headImage.src = profile.avatar;
+        }
+      }
+    });
+
     // Game logic works in CSS pixel space
     const logicalW = canvas.width / this.dpr;
     const logicalH = canvas.height / this.dpr;
@@ -246,6 +275,65 @@ export class Game {
     const p1Pressed = this.p1Input.getJustPressed();
     const p2Actions = this.p2Input.getActions();
     const p2Pressed = this.p2Input.getJustPressed();
+
+    // Intercept Hadouken attack for P1 (the human player) to validate premium boosts
+    if (
+      p1Pressed.has(Actions.HADOUKEN) &&
+      this.p1.state !== "attack" &&
+      !this.p1.isStunned &&
+      !this.p1.isLevitated &&
+      this.p1.hadoukenCooldown <= 0 &&
+      this.p1.grounded
+    ) {
+      try {
+        const profileStr = localStorage.getItem('smf_user_profile');
+        let profile = { name: "Guest Fighter", avatar: "", boosts: 15, walletConnected: false, walletAddress: "", smfBalance: 0 };
+        if (profileStr) {
+          profile = JSON.parse(profileStr);
+        } else {
+          // If no profile exists, save default with 15 starter boosts
+          localStorage.setItem('smf_user_profile', JSON.stringify(profile));
+        }
+
+        if (typeof profile.boosts !== 'number') {
+          profile.boosts = 15;
+        }
+
+        if (profile.boosts > 0) {
+          profile.boosts -= 1;
+          localStorage.setItem('smf_user_profile', JSON.stringify(profile));
+          
+          // Update UI counts if elements exist
+          const boostEl1 = document.getElementById('boost-balance-count');
+          const boostEl2 = document.getElementById('profile-boosts-count');
+          if (boostEl1) boostEl1.textContent = profile.boosts;
+          if (boostEl2) boostEl2.textContent = profile.boosts;
+          
+          // Dispatch custom event to notify other widgets (e.g. user panel) of the change
+          window.dispatchEvent(new CustomEvent('smf_profile_updated', { detail: profile }));
+        } else {
+          // INTERCEPT: Out of premium boosts! Cancel hadouken by removing it from the pressed actions set
+          p1Pressed.delete(Actions.HADOUKEN);
+          p1Actions.delete(Actions.HADOUKEN);
+          
+          // Display a warning message on screen
+          this.showBoostMessage("⚠️ Out of premium boosts!", "spike");
+          
+          // Also show a temporary subtitle or secondary text
+          this.floatingMessages.push({
+            text: "Click Solana profile button to buy more!",
+            color: "#ff00ff",
+            x: this.logicalW / 2,
+            y: this.logicalH * 0.3 + 45,
+            life: 1,
+            maxLife: 2.0,
+            fontSize: 24
+          });
+        }
+      } catch (e) {
+        console.error('Failed to validate or deduct premium boosts:', e);
+      }
+    }
 
     this.p1.update(
       dt,
@@ -1141,6 +1229,52 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     ctx.fillRect(p2BarX + barW - p2Fill, barY, p2Fill, barH);
     ctx.strokeStyle = DG.border;
     ctx.strokeRect(p2BarX, barY, barW, barH);
+
+    // Draw P1 circular mini-avatar next to health bar
+    if (this.p1.headImage && this.p1.headImage.complete) {
+      ctx.save();
+      const p1AvatarX = p1BarX - 12;
+      const p1AvatarY = barY + barH / 2;
+      const r = 9;
+      // Draw border
+      ctx.beginPath();
+      ctx.arc(p1AvatarX, p1AvatarY, r + 1, 0, Math.PI * 2);
+      ctx.strokeStyle = '#00ff9d';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      
+      // Clip to circular area
+      ctx.beginPath();
+      ctx.arc(p1AvatarX, p1AvatarY, r, 0, Math.PI * 2);
+      ctx.clip();
+      
+      // Draw image
+      ctx.drawImage(this.p1.headImage, p1AvatarX - r, p1AvatarY - r, r * 2, r * 2);
+      ctx.restore();
+    }
+
+    // Draw P2 circular mini-avatar next to health bar
+    if (this.p2.headImage && this.p2.headImage.complete) {
+      ctx.save();
+      const p2AvatarX = p2BarX + barW + 12;
+      const p2AvatarY = barY + barH / 2;
+      const r = 9;
+      // Draw border
+      ctx.beginPath();
+      ctx.arc(p2AvatarX, p2AvatarY, r + 1, 0, Math.PI * 2);
+      ctx.strokeStyle = '#ff00ff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      
+      // Clip to circular area
+      ctx.beginPath();
+      ctx.arc(p2AvatarX, p2AvatarY, r, 0, Math.PI * 2);
+      ctx.clip();
+      
+      // Draw image
+      ctx.drawImage(this.p2.headImage, p2AvatarX - r, p2AvatarY - r, r * 2, r * 2);
+      ctx.restore();
+    }
 
     // Labels
     ctx.font = "bold 14px monospace";

@@ -1021,6 +1021,14 @@ async def favicon() -> Response:
 # Solscan & Spotify Discovery Engine Endpoints
 # ─────────────────────────────────────────────
 
+@get("/api/smf-config")
+async def api_smf_config() -> dict[str, str]:
+    """Retrieve SMF mint address and Solana RPC URL from environment variables."""
+    return {
+        "smfMint": os.environ.get("SMF_MINT", "EPjFWdd5AufqSSjvtq8aLv9hqpstb218c3sL955m1od1"),
+        "solanaRpc": os.environ.get("SOLANA_RPC", "https://api.mainnet-beta.solana.com")
+    }
+
 @get("/api/trending")
 async def api_trending(count: int = 12) -> List[Dict[str, Any]]:
     return await birdeye_service.fetch_trending_tokens(count)
@@ -2393,6 +2401,7 @@ app = Litestar(
         matchmaking_cancel_endpoint,
         leaderboard,
         get_elo,
+        api_smf_config,
         api_trending,
         api_graduates,
         api_token_details,

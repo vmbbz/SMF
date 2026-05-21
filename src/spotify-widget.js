@@ -8,12 +8,47 @@ export class SpotifyWidget {
 
   async init() {
     this.render();
+    this.syncProfile();
+    window.addEventListener('smf_profile_updated', () => {
+      this.syncProfile();
+    });
     // Check if already connected from previous session
     const savedToken = localStorage.getItem('spotify_access_token');
     if (savedToken) {
       this.accessToken = savedToken;
       this.isConnected = true;
       this.connectPlayer();
+    }
+  }
+
+  syncProfile() {
+    try {
+      const profileStr = localStorage.getItem('smf_user_profile');
+      if (profileStr) {
+        const profile = JSON.parse(profileStr);
+        if (profile) {
+          const usernameEl = document.getElementById('username');
+          if (usernameEl && profile.name) {
+            usernameEl.textContent = profile.name;
+          }
+          const userPicEl = document.getElementById('user-pic');
+          if (userPicEl) {
+            if (profile.avatar) {
+              userPicEl.innerHTML = `<img src="${profile.avatar}" style="width:100%; height:100%; object-fit:cover; border-radius:50%; display:block;" />`;
+            } else {
+              userPicEl.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 397 311" style="display:block;">
+                  <path d="M64.6 237.9c-2.4-2.4-5.7-3.8-9.2-3.8H3.8c-4.8 0-8 5.3-5.3 9.3l57 85.5c2.4 2.4 5.7 3.8 9.2 3.8h51.6c4.8 0 8-5.3 5.3-9.3l-57-85.5z" fill="#9945FF"/>
+                  <path d="M337.8 73.1c2.4 2.4 5.7 3.8 9.2 3.8h51.6c4.8 0 8-5.3 5.3-9.3l-57-85.5C344.5 1.3 341.2 0 337.7 0H286c-4.8 0-8 5.3-5.3 9.3l57.1 83.8z" fill="#14F195"/>
+                  <path d="M201.2 155.5c-2.4-2.4-5.7-3.8-9.2-3.8H140.4c-4.8 0-8 5.3-5.3 9.3l57 85.5c2.4 2.4 5.7 3.8 9.2 3.8h51.6c4.8 0 8-5.3 5.3-9.3l-57-85.5z" fill="#00C2FF"/>
+                </svg>
+              `;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to sync profile inside Spotify widget:', e);
     }
   }
 
@@ -57,6 +92,8 @@ export class SpotifyWidget {
       if (connectBtn) { connectBtn.style.display = 'flex'; connectBtn.classList.remove('hidden'); }
       if (controls) { controls.style.display = 'none'; controls.classList.add('hidden'); }
     }
+    
+    this.syncProfile();
   }
 
   toggleUserPanel() {
