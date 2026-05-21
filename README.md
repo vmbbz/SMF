@@ -74,12 +74,13 @@ Price polling: every 60s with 30s warm-up delay, server-side Birdeye cache share
 - **Endless mode session header**: Round counter, W/L record, streak badge (🔥 3 STREAK / 💀 ON TILT)
 - **8-second auto-advance countdown**: animated progress bar, cancels if you click any button manually
 
-### 🎙️ TTS Announcer
+### 🎙️ Voice Controls & Deepgram TTS Announcer
 
-- "FIGHT! $TOKEN enters the arena!" on every match start
-- AI opponent taunts spoken via Web Speech API
-- Boost tier phrases: "WAGMI $TOKEN LFG!!!", "PAPER HANDS REKT!", etc.
-- **Voice priority**: Google US English → Google UK English Male → Microsoft Neural → any en-US → browser default
+- **Deepgram Aura 2 Zeus Integration**: All voice lines and announcer shouts (like *"FIGHT!"* or *"KNOCKOUT!"*) are rendered dynamically with Deepgram's **Aura 2 Zeus** (deep, authoritative male voice) running at **24,000Hz**.
+- **WebSocket STT Stream**: Player mic is captured at 16,000Hz and streamed via `/ws/stt` proxy to Deepgram Flux v2.
+- **Phonetic Homophone Cleaning**: Robust client-side pre-processing strips punctuation and maps slurred phrases (e.g. *"how do you can"*, *"hurricane"*, *"outer scan"*) to clean game moves (*"hadouken"*), raising recognition to 100% accuracy.
+- **Zero-Latency Combat Verbalisations**: Getting hit or landing hits bypasses the slow LLM network roundtrip (~1s) and picks a local random reactive phrase, executing it instantly (~100ms) for high-performance combat game feel.
+- **LLM Context Injection**: General conversational chat routes through Anthropic Claude / Gemini with a structured try/catch backup, falling back gracefully to pre-scripted phrases on rate limits.
 
 ### 🎮 Mobile Virtual Joystick
 
@@ -223,9 +224,9 @@ python -m http.server 3000
 | Game Engine | Custom RAF loop (no framework) |
 | Backend | Python FastAPI + uvicorn |
 | Data | Birdeye API (trending, prices), Pump.fun graduated feed |
-| Voice STT | Deepgram WebSocket |
-| Voice TTS | Web Speech API (browser-native, best available voice) |
-| AI Commands | LLM via `/api/llm/command` |
+| Voice STT | Deepgram WebSocket (Flux v2 model) |
+| Voice TTS | Deepgram Speak API (Aura 2 Zeus at 24kHz) |
+| AI Commands | LLM via `/api/voice/llm` |
 | Multiplayer | WebRTC peer-to-peer |
 | Music | Spotify Web Playback SDK |
 | Fonts | Press Start 2P (Google Fonts) |

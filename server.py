@@ -252,19 +252,22 @@ _STT_KEYTERMS = {
     "forward", "forwards", "back", "backward", "backwards",
     "crouch", "duck", "jump", "somersault", "flip",
     "dash", "punch", "kick", "light", "medium", "heavy", "hard",
+    "hadouken", "hadoken", "hadou", "hado", "summersault", "backflip", "frontflip", "roundhouse", "haducon", "hadokun", "fireball", "energy blast",
 }
 
 STT_KEYTERMS = [
     # Movement
     "forward", "back", "crouch", "duck",
     # Jumps
-    "jump", "somersault", "flip",
+    "jump", "somersault", "flip", "summersault", "backflip", "frontflip",
     # Dash
     "dash", "dash forward", "dash back",
     # Attack modifiers
     "light", "medium", "heavy", "hard",
     # Attacks
-    "punch", "kick",
+    "punch", "kick", "roundhouse", "fireball", "energy blast",
+    # Special moves & homophones
+    "hadouken", "hadoken", "hadou", "hado", "haducon", "hadokun",
     # Multi-word attacks
     "light punch", "medium punch", "heavy punch", "hard punch",
     "light kick", "medium kick", "heavy kick",
@@ -878,27 +881,72 @@ async def _llm_gemini(
 
 
 # ─────────────────────────────────────────────
-# Voice LLM endpoint (Anthropic Claude)
+# Voice LLM endpoint (Anthropic Claude / Gemini / Scripted fallback)
 # ─────────────────────────────────────────────
+
+# Pre-scripted personality responses for when no LLM key is configured.
+# Keyed by trigger category detected from the last user message or context.
+_FIGHTER_LINES: dict[str, list[str]] = {
+    "hit_taken": ["ugh!", "that hurt!", "come on!", "block next time!", "seriously?!", "ow!"],
+    "hit_landed": ["yes!", "gotcha!", "take that!", "nice one!", "boom!", "that's what I'm talking about!"],
+    "taunt": ["bring it!", "is that all you got?", "I'm just warming up!", "let's go!", "you're gonna regret that!"],
+    "default": ["yeah!", "focus!", "let's do this!", "I got you!", "trust me!"],
+}
+
+def _scripted_reply(messages: list[dict]) -> str:
+    """Pick a contextually appropriate scripted fighter line."""
+    last_content = ""
+    for m in reversed(messages):
+        if m.get("role") == "user":
+            last_content = (m.get("content") or "").lower()
+            break
+
+    if "[game event]" in last_content:
+        if any(w in last_content for w in ("hit", "damage", "hurt", "took")):
+            return random.choice(_FIGHTER_LINES["hit_taken"])
+        if any(w in last_content for w in ("landed", "scored", "dealt")):
+            return random.choice(_FIGHTER_LINES["hit_landed"])
+        return ""
+    if any(w in last_content for w in ("help", "how", "what", "why", "who", "where")):
+        return random.choice(_FIGHTER_LINES["taunt"])
+    return random.choice(_FIGHTER_LINES["default"])
+
+
+def _clean_tts_text(text: str, max_chars: int = 200) -> str:
+    """Strip markdown and limit length before sending to TTS."""
+    import re
+    # Strip markdown bold/italic/code
+    text = re.sub(r'[*_`#]+', '', text)
+    # Strip URLs
+    text = re.sub(r'https?://\S+', '', text)
+    # Collapse whitespace
+    text = ' '.join(text.split())
+    # Hard limit — Deepgram TTS is billed per character
+    return text[:max_chars].strip()
+
 
 @post("/api/voice/llm")
 async def voice_llm(data: dict[str, Any]) -> dict:
     """Send conversation to Anthropic or Gemini (as free fallback) and return response text."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
+    messages = data.get("messages", [])
+    system = data.get("system", "")
 
     if not api_key and gemini_key:
         print("[llm:voice] ANTHROPIC_API_KEY not set, routing to Gemini free tier")
-        messages = data.get("messages", [])
-        system = data.get("system", "")
-        text = await _llm_gemini(messages, system, temperature=0.7)
-        return {"text": text}
+        try:
+            text = await _llm_gemini(messages, system, temperature=0.7)
+            return {"text": _clean_tts_text(text)}
+        except Exception as e:
+            print(f"[llm:voice] Gemini failed with error: {e}. Falling back to scripted reply.")
+            return {"text": _scripted_reply(messages)}
 
     if not api_key:
-        raise HTTPException(status_code=500, detail="Neither ANTHROPIC_API_KEY nor GEMINI_API_KEY is set")
-
-    messages = data.get("messages", [])
-    system = data.get("system", "")
+        # Graceful scripted fallback — still gives the fighter a voice even without an LLM key
+        reply = _scripted_reply(messages)
+        print(f"[llm:voice] No LLM key configured — scripted reply: '{reply}'")
+        return {"text": reply}
 
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(
@@ -910,7 +958,7 @@ async def voice_llm(data: dict[str, Any]) -> dict:
             },
             json={
                 "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 100,
+                "max_tokens": 80,
                 "system": system,
                 "messages": messages,
             },
@@ -918,7 +966,8 @@ async def voice_llm(data: dict[str, Any]) -> dict:
 
     if resp.status_code != 200:
         print(f"[llm] Anthropic error {resp.status_code}: {resp.text}")
-        raise HTTPException(status_code=502, detail="LLM request failed")
+        # Don't crash — return scripted fallback
+        return {"text": _scripted_reply(messages)}
 
     result = resp.json()
     text = ""
@@ -926,7 +975,7 @@ async def voice_llm(data: dict[str, Any]) -> dict:
         if block.get("type") == "text":
             text += block["text"]
 
-    return {"text": text}
+    return {"text": _clean_tts_text(text)}
 
 
 
@@ -934,37 +983,60 @@ async def voice_llm(data: dict[str, Any]) -> dict:
 # TTS endpoint (Deepgram Aura 2)
 # ─────────────────────────────────────────────
 
-@post("/api/voice/tts")
-async def voice_tts(data: dict[str, Any]) -> Response:
-    """Convert text to speech via Deepgram TTS, return audio bytes."""
+# Supported Aura 2 voice IDs — use zeus for a powerful fighter character
+_DG_TTS_MODEL = "aura-2-zeus-en"   # Deep, authoritative male voice
+_DG_SAMPLE_RATE = 24000
+
+
+async def _dg_tts_bytes(text: str, model: str = _DG_TTS_MODEL) -> bytes:
+    """Call Deepgram TTS and return raw linear16 PCM bytes."""
     api_key = os.environ.get("DEEPGRAM_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="DEEPGRAM_API_KEY not set")
 
-    text = data.get("text", "")
-    if not text:
+    clean = _clean_tts_text(text)
+    if not clean:
         raise HTTPException(status_code=400, detail="text required")
 
-    tts_url = f"{DG_TTS_URL}?model=aura-2-jupiter-en&encoding=linear16&sample_rate=24000&container=none"
+    tts_url = (
+        f"{DG_TTS_URL}"
+        f"?model={model}"
+        f"&encoding=linear16"
+        f"&sample_rate={_DG_SAMPLE_RATE}"
+        f"&container=none"
+    )
+    print(f"[tts] Requesting TTS for: '{clean[:60]}...' " if len(clean) > 60 else f"[tts] Requesting TTS for: '{clean}'")
 
-    async with httpx.AsyncClient(timeout=10) as client:
+    async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.post(
             tts_url,
             headers={
                 "Authorization": f"Token {api_key}",
                 "Content-Type": "application/json",
             },
-            json={"text": text},
+            json={"text": clean},
         )
 
     if resp.status_code != 200:
-        print(f"[tts] Deepgram TTS error {resp.status_code}: {resp.text}")
+        print(f"[tts] Deepgram TTS error {resp.status_code}: {resp.text[:200]}")
         raise HTTPException(status_code=502, detail="TTS request failed")
 
+    return resp.content
+
+
+@post("/api/voice/tts")
+async def voice_tts(data: dict[str, Any]) -> Response:
+    """Convert text to speech via Deepgram Aura 2, return raw linear16 PCM audio."""
+    text = data.get("text", "")
+    model = data.get("model", _DG_TTS_MODEL)
+    audio = await _dg_tts_bytes(text, model=model)
     return Response(
-        content=resp.content,
+        content=audio,
         media_type="audio/raw",
-        headers={"Content-Type": "audio/raw"},
+        headers={
+            "Content-Type": "audio/raw",
+            "X-Sample-Rate": str(_DG_SAMPLE_RATE),
+        },
     )
 
 

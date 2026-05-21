@@ -221,6 +221,70 @@ const COMMAND_VOCAB = {
 
 export { COMMAND_VOCAB };
 
+/**
+ * Clean text, strip punctuation, collapse whitespace, and correct phonetic homophones
+ * to guarantee robust vocabulary matching for game actions.
+ */
+function _cleanAndCorrectText(text) {
+  if (!text) return "";
+  
+  // 1. Strip punctuation & convert to lowercase
+  let clean = text.toLowerCase()
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"']/g, "") // strip punctuation
+    .replace(/\s+/g, " ") // collapse whitespace
+    .trim();
+
+  // 2. Phrase-level corrections (longest phrases first)
+  const phraseMappings = {
+    "how do you can": "hadouken",
+    "how do you get": "hadouken",
+    "how do you": "hadouken",
+    "how do can": "hadouken",
+    "how to can": "hadouken",
+    "how to get": "hadouken",
+    "how to": "hadouken",
+    "hadu kan": "hadouken",
+    "hadou kan": "hadouken",
+    "outer scan": "hadouken",
+    "outer can": "hadouken",
+    "fire ball": "hadouken",
+    "fireball": "hadouken",
+    "energy blast": "hadouken",
+    "energyball": "hadouken",
+    "energy ball": "hadouken",
+    "summer salt": "somersault",
+    "summer assault": "somersault",
+    "summersault": "somersault",
+    "back flip": "backflip",
+    "front flip": "frontflip",
+  };
+
+  for (const [phrase, replacement] of Object.entries(phraseMappings)) {
+    if (clean.includes(phrase)) {
+      clean = clean.replace(new RegExp(phrase, 'g'), replacement);
+    }
+  }
+
+  // 3. Word-level homophone replacements (common mis-transcriptions)
+  const wordMappings = {
+    "hadou": "hadouken",
+    "hado": "hadouken",
+    "hadu": "hadouken",
+    "hadoken": "hadouken",
+    "haducon": "hadouken",
+    "hadokun": "hadouken",
+    "hurricane": "hadouken",
+    "herricane": "hadouken",
+    "harricane": "hadouken",
+  };
+
+  const words = clean.split(" ");
+  const correctedWords = words.map(w => wordMappings[w] || w);
+  clean = correctedWords.join(" ");
+
+  return clean;
+}
+
 // ─────────────────────────────────────────────
 // CommandAdapter — converts text commands into
 // timed actions. Used by voice and LLM adapters.
@@ -248,11 +312,12 @@ export class CommandAdapter {
    * and queues the resulting actions.
    */
   execute(text) {
-    const normalized = text.toLowerCase().trim();
+    const cleaned = _cleanAndCorrectText(text);
+    console.log(`[CommandAdapter] Raw: "${text}" -> Cleaned: "${cleaned}"`);
 
     // Try matching multi-word commands first (longest match wins)
     const matched = new Set();
-    let remaining = normalized;
+    let remaining = cleaned;
 
     // Sort vocab keys by length descending for greedy matching
     const sortedKeys = Object.keys(COMMAND_VOCAB).sort((a, b) => b.length - a.length);

@@ -61,6 +61,12 @@ const IGNORE_WORDS = new Set([
   'him', 'her', 'them', 'that', 'this', 'right', 'left',
 ]);
 
+// Pre-scripted high-frequency combat voice lines to play instantly via direct Deepgram TTS
+const FIGHTER_COMBAT_LINES = {
+  hit_taken: ["ugh!", "that hurt!", "come on!", "block next time!", "seriously!", "ow!"],
+  hit_landed: ["yes!", "gotcha!", "take that!", "nice one!", "boom!", "that's what I'm talking about!"],
+};
+
 export class VoiceAdapter {
   constructor(player) {
     this.player = player;
@@ -115,7 +121,7 @@ export class VoiceAdapter {
       const int16 = float32ToInt16(float32);
       if (this.ready && this.sttWs && this.sttWs.readyState === WebSocket.OPEN) {
         try {
-          this.sttWs.send(int16.buffer);
+          this.sttWs.send(int16); // send typed array view directly (prevents detached buffer browser errors)
         } catch (err) {
           console.warn(`[Voice P${this.player}] Failed to send active audio:`, err);
         }
@@ -123,7 +129,7 @@ export class VoiceAdapter {
         if (!this._audioBuffer) {
           this._audioBuffer = [];
         }
-        this._audioBuffer.push(int16.buffer);
+        this._audioBuffer.push(new Int16Array(int16)); // push safe typed array copy
         const maxBufferedChunks = 16;
         if (this._audioBuffer.length > maxBufferedChunks) {
           this._audioBuffer.shift();
@@ -309,8 +315,9 @@ export class VoiceAdapter {
     // Count words that are NOT action words and NOT filler
     const unknownWords = words.filter(w => !ACTION_WORDS.has(w) && !IGNORE_WORDS.has(w));
 
-    // Only send to LLM if majority of meaningful words are non-action
-    if (unknownWords.length < 2 || unknownWords.length / words.length < 0.5) return;
+    // Send to LLM if there's at least 1 clearly non-combat/non-filler word
+    // (lowered from 2 so single-word questions / taunts also get a reaction)
+    if (unknownWords.length < 1 || unknownWords.length / words.length < 0.3) return;
 
     this._sendToLLM(text);
   }
@@ -357,7 +364,9 @@ export class VoiceAdapter {
 
   /** Send text to Deepgram TTS via server and play the audio */
   async _speakTTS(text) {
+    if (!text || !text.trim()) return;
     try {
+      console.log(`[Voice P${this.player}] TTS → "${text}"`);
       const resp = await fetch('/api/voice/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -370,39 +379,63 @@ export class VoiceAdapter {
       }
 
       const arrayBuffer = await resp.arrayBuffer();
-      this._playAudio(arrayBuffer);
+      if (arrayBuffer.byteLength > 0) {
+        this._playAudio(arrayBuffer);
+      } else {
+        console.warn(`[Voice P${this.player}] TTS returned empty audio`);
+      }
     } catch (e) {
       console.error(`[Voice P${this.player}] TTS fetch error:`, e);
     }
   }
 
+  /**
+   * Speak a line directly via Deepgram TTS — bypasses LLM entirely.
+   * Use for game events (fight start, hit reactions, round end) for instant response.
+   */
+  async speakDirect(text) {
+    await this._speakTTS(text);
+  }
+
   /** Play linear16 PCM audio at 24kHz — chunks scheduled back-to-back */
   _playAudio(arrayBuffer) {
     if (!this.playbackCtx) return;
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) return;
 
-    if (this.playbackCtx.state === 'suspended') {
-      this.playbackCtx.resume().catch(e => console.warn('[Voice] Failed to resume playback context:', e));
-    }
+    const resume = () => {
+      if (this.playbackCtx && this.playbackCtx.state === 'suspended') {
+        this.playbackCtx.resume().catch(e => console.warn('[Voice] Failed to resume playback context:', e));
+      }
+    };
+    resume();
 
     const int16 = new Int16Array(arrayBuffer);
+    if (int16.length === 0) return;
+
     const float32 = new Float32Array(int16.length);
     for (let i = 0; i < int16.length; i++) {
       float32[i] = int16[i] / 32768;
     }
 
-    const buffer = this.playbackCtx.createBuffer(1, float32.length, 24000);
-    buffer.getChannelData(0).set(float32);
+    try {
+      const buffer = this.playbackCtx.createBuffer(1, float32.length, 24000);
+      buffer.getChannelData(0).set(float32);
 
-    const now = this.playbackCtx.currentTime;
-    if (this._nextPlayTime < now) {
-      this._nextPlayTime = now;
+      const now = this.playbackCtx.currentTime;
+      // If scheduled queue fell behind real time, reset to now
+      if (this._nextPlayTime < now) {
+        this._nextPlayTime = now;
+      }
+
+      const source = this.playbackCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.playbackCtx.destination);
+      source.start(this._nextPlayTime);
+      this._nextPlayTime += buffer.duration;
+      console.log(`[Voice P${this.player}] Playing ${(buffer.duration * 1000).toFixed(0)}ms of TTS audio`);
+    } catch (e) {
+      console.error('[Voice] Audio playback error:', e);
     }
-
-    const source = this.playbackCtx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(this.playbackCtx.destination);
-    source.start(this._nextPlayTime);
-    this._nextPlayTime += buffer.duration;
   }
 
   /** Returns a promise that resolves when mic + STT are ready */
@@ -441,10 +474,28 @@ export class VoiceAdapter {
     this._game = game;
   }
 
-  /** Inject fight context — sent to LLM for personality reactions */
+  /** Inject fight context — sent to LLM for personality reactions or played directly for zero-latency combat reactions */
   injectContext(context) {
     if (!this.ready) return;
-    this._sendToLLM(`[GAME EVENT] ${context}`);
+
+    const lower = context.toLowerCase();
+    const isHitTaken = lower.includes("got hit") || lower.includes("took") || lower.includes("damage taken");
+    const isHitLanded = lower.includes("landed a hit") || lower.includes("nailed them") || lower.includes("you hit them");
+
+    if (isHitTaken) {
+      const lines = FIGHTER_COMBAT_LINES.hit_taken;
+      const line = lines[Math.floor(Math.random() * lines.length)];
+      console.log(`[Voice P${this.player}] Instant local Zeus TTS reaction to HIT TAKEN: "${line}"`);
+      this.speakDirect(line);
+    } else if (isHitLanded) {
+      const lines = FIGHTER_COMBAT_LINES.hit_landed;
+      const line = lines[Math.floor(Math.random() * lines.length)];
+      console.log(`[Voice P${this.player}] Instant local Zeus TTS reaction to HIT LANDED: "${line}"`);
+      this.speakDirect(line);
+    } else {
+      // Non-combat conversation goes through LLM
+      this._sendToLLM(`[GAME EVENT] ${context}`);
+    }
   }
 
   async detach() {
