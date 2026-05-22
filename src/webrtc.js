@@ -25,6 +25,7 @@ export class PeerConnection {
     this.pc = null;
     this.dataChannel = null;
     this.iceServers = [];
+    this.iceQueue = [];
 
     // WebSocket (server relay / authoritative state)
     this.ws = null;
@@ -174,7 +175,13 @@ export class PeerConnection {
 
       this.signalSource.onmessage = async (event) => {
         try {
-          const data = JSON.parse(event.data);
+          if (!event.data || event.data.trim() === '' || event.data === 'undefined') return;
+          let data;
+          try {
+            data = JSON.parse(event.data);
+          } catch (e) {
+            return; // Ignore malformed or keep-alive frames silently
+          }
 
           if (data.type === 'connected') {
             this.iceServers = data.iceServers || [];
@@ -342,6 +349,7 @@ export class PeerConnection {
       type: 'answer',
       sdp: answer.sdp,
     });
+    await this._processIceQueue();
   }
 
   async _handleAnswer(data) {
@@ -350,14 +358,31 @@ export class PeerConnection {
       type: 'answer',
       sdp: data.sdp,
     }));
+    await this._processIceQueue();
   }
 
   async _handleIceCandidate(data) {
     if (!this.pc) return;
+    if (!this.pc.remoteDescription) {
+      this.iceQueue.push(data.candidate);
+      return;
+    }
     try {
       await this.pc.addIceCandidate(new RTCIceCandidate(data.candidate));
     } catch (err) {
       console.warn('[webrtc] Failed to add ICE candidate:', err);
+    }
+  }
+
+  async _processIceQueue() {
+    if (!this.pc) return;
+    while (this.iceQueue.length > 0) {
+      const candidate = this.iceQueue.shift();
+      try {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn('[webrtc] Failed to add queued ICE candidate:', err);
+      }
     }
   }
 

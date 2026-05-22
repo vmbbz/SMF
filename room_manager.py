@@ -179,6 +179,10 @@ class RoomManager:
         if room is None:
             raise ValueError("Room not found or expired")
 
+        if room["status"] == "selecting":
+            # Rematch already initiated by the other player — return success
+            return room
+
         if room["status"] not in ("fighting", "finished"):
             raise ValueError(f"Cannot rematch from status '{room['status']}'")
 

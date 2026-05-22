@@ -102,6 +102,7 @@ export class Game {
           if (!this.p1.headImage) {
             this.p1.headImage = new Image();
           }
+          this.p1.headImage.crossOrigin = 'anonymous';
           this.p1.headImage.src = profile.avatar;
         }
       }
@@ -854,6 +855,157 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     
     ctx.save();
     
+    if (window.isMultiplayerMatch) {
+      const cardW = 520;
+      const cardH = 220;
+      const x = w / 2 - cardW / 2;
+      const y = h / 2 - cardH / 2 - 20;
+
+      // 1. Outer container (glassmorphism back panel)
+      ctx.fillStyle = 'rgba(10, 10, 15, 0.88)';
+      ctx.shadowColor = 'rgba(0, 229, 255, 0.25)';
+      ctx.shadowBlur = 25;
+      
+      ctx.beginPath();
+      ctx.roundRect(x, y, cardW, cardH, 20);
+      ctx.fill();
+      
+      // Dual-colored border (neon green to neon pink gradient)
+      const borderGrad = ctx.createLinearGradient(x, y, x + cardW, y);
+      borderGrad.addColorStop(0, '#00ff9d');
+      borderGrad.addColorStop(0.5, '#00e5ff');
+      borderGrad.addColorStop(1, '#ff00ff');
+      ctx.strokeStyle = borderGrad;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.shadowBlur = 0; // reset shadow
+
+      // 2. Title header
+      ctx.font = 'bold 12px system-ui';
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('MULTIPLAYER ARENA PvP', w / 2, y + 25);
+
+      // 3. Player 1 Info (Left side)
+      const p1X = x + cardW * 0.25;
+      const avatarY = y + cardH * 0.45;
+      
+      // Neon green aura around P1 avatar
+      ctx.shadowColor = '#00ff9d';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#0a0a0f';
+      ctx.strokeStyle = '#00ff9d';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p1X, avatarY, 36, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Draw P1 Avatar Image or default icon
+      if (this.p1 && this.p1.headImage && this.p1.headImage.complete) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(p1X, avatarY, 34, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(this.p1.headImage, p1X - 34, avatarY - 34, 68, 68);
+        ctx.restore();
+      } else {
+        // Draw elegant placeholder stickhead
+        ctx.strokeStyle = '#00ff9d';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(p1X, avatarY - 4, 12, 0, Math.PI * 2); // head
+        ctx.moveTo(p1X, avatarY + 8);
+        ctx.lineTo(p1X, avatarY + 22); // body
+        ctx.moveTo(p1X - 10, avatarY + 12);
+        ctx.lineTo(p1X + 10, avatarY + 12); // arms
+        ctx.stroke();
+      }
+
+      // P1 Label Name
+      ctx.font = 'bold 22px system-ui';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.fillText(this.p1Label, p1X, y + cardH * 0.76);
+
+      ctx.font = 'bold 11px monospace';
+      ctx.fillStyle = '#00ff9d';
+      ctx.fillText('HOST · P1', p1X, y + cardH * 0.88);
+
+      // 4. Player 2 Info (Right side)
+      const p2X = x + cardW * 0.75;
+      
+      // Neon pink aura around P2 avatar
+      ctx.shadowColor = '#ff00ff';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#0a0a0f';
+      ctx.strokeStyle = '#ff00ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(p2X, avatarY, 36, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Draw P2 Avatar Image or default icon
+      if (this.p2 && this.p2.headImage && this.p2.headImage.complete) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(p2X, avatarY, 34, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(this.p2.headImage, p2X - 34, avatarY - 34, 68, 68);
+        ctx.restore();
+      } else {
+        // Draw elegant placeholder stickhead
+        ctx.strokeStyle = '#ff00ff';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(p2X, avatarY - 4, 12, 0, Math.PI * 2); // head
+        ctx.moveTo(p2X, avatarY + 8);
+        ctx.lineTo(p2X, avatarY + 22); // body
+        ctx.moveTo(p2X - 10, avatarY + 12);
+        ctx.lineTo(p2X + 10, avatarY + 12); // arms
+        ctx.stroke();
+      }
+
+      // P2 Label Name
+      ctx.font = 'bold 22px system-ui';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.fillText(this.p2Label, p2X, y + cardH * 0.76);
+
+      ctx.font = 'bold 11px monospace';
+      ctx.fillStyle = '#ff00ff';
+      ctx.fillText('CHALLENGER · P2', p2X, y + cardH * 0.88);
+
+      // 5. Center "VS" Emblem
+      const centerX = w / 2;
+      const centerY = y + cardH * 0.45;
+      
+      // Pulse animation for VS circle border
+      const pulse = 1 + 0.05 * Math.sin(Date.now() / 150);
+      ctx.shadowColor = '#00e5ff';
+      ctx.shadowBlur = 12 * pulse;
+      ctx.fillStyle = '#0a0a0f';
+      ctx.strokeStyle = '#00e5ff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, 24 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Draw "VS" text inside circle
+      ctx.font = 'bold 22px system-ui';
+      ctx.fillStyle = '#fff';
+      ctx.fillText('VS', centerX, centerY);
+
+      ctx.restore();
+      return;
+    }
+
     // Helper to draw a stat card
     const drawCard = (x, y, title, token, isP1) => {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';

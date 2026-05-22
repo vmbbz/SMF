@@ -461,6 +461,7 @@ window.resetAndFight = async function(token) {
   game = null;
   window.currentGame = null;
   window.game = null;
+  window.isMultiplayerMatch = false;
 
   // Step back state so startFight() runs unconditionally
   state = 'landing';
@@ -1177,6 +1178,9 @@ async function handleMultiplayerRoundOver(msg) {
   if (game) { game.running = false; }
   cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
+
+  // Start polling room status so we know when a rematch starts
+  startRoomPolling();
 
   const myNum = parseInt(localStorage.getItem('sf_playerNum') || '1', 10);
   const roomCode = localStorage.getItem('sf_roomCode');

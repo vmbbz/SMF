@@ -1520,7 +1520,7 @@ async def signal_send(data: dict[str, Any]) -> dict[str, bool]:
 
     # Relay signal to the other player's SSE queue
     relayed = await signaling_manager.relay(room_code, from_player, signal)
-    print(f"[signal:{room_code}] P{from_player} → P{2 if from_player == 1 else 1}: {signal.get('type', '?')} (relayed={relayed})")
+    safe_print(f"[signal:{room_code}] P{from_player} -> P{2 if from_player == 1 else 1}: {signal.get('type', '?')} (relayed={relayed})")
 
     # Refresh room TTL on signaling activity
     await room_manager.refresh_ttl(room_code)

@@ -152,6 +152,7 @@ export class Fighter {
     this.tokenData = null;
     this.personality = null;
     this.headImage = new Image();
+    this.headImage.crossOrigin = 'anonymous';
     this.headImage.src = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
     
     // Load custom profile avatar from localStorage for P1 (Human Player) if available
@@ -162,6 +163,7 @@ export class Fighter {
           const profile = JSON.parse(profileStr);
           if (profile && profile.avatar) {
             this.headImage = new Image();
+            this.headImage.crossOrigin = 'anonymous';
             this.headImage.src = profile.avatar;
           }
         }
@@ -225,6 +227,7 @@ export class Fighter {
     if (!loaded) {
       // Absolute last resort — load without proxy (won't help canvas untaint but at least renders)
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.src = SOLANA_FALLBACK;
       await new Promise(r => { img.onload = r; img.onerror = r; });
       this.headImage = img;
