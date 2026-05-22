@@ -36,6 +36,7 @@ export class PeerConnection {
     this._onRemoteInput = null;
     this._onServerState = null;
     this._onConnectionChange = null;
+    this._onRemoteProfile = null;
 
     // State
     this.connected = false;     // data channel is open
@@ -43,6 +44,7 @@ export class PeerConnection {
     this.fallbackMode = false;  // true = WebRTC failed, WS-only mode
     this._reconnectAttempts = 0;
     this._closed = false;
+    this.opponentProfile = null;
   }
 
   /** Register callback for remote peer inputs (via data channel) */
@@ -53,6 +55,12 @@ export class PeerConnection {
 
   /** Register callback for connection state changes */
   onConnectionChange(cb) { this._onConnectionChange = cb; }
+
+  /** Register callback for remote peer profile sync details */
+  onRemoteProfile(cb) {
+    this._onRemoteProfile = cb;
+    if (this.opponentProfile) cb(this.opponentProfile);
+  }
 
   /**
    * Establish WebSocket + WebRTC connections.
