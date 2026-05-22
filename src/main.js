@@ -420,7 +420,7 @@ window.loadOpponent = async function(token, forceRestart = false) {
     }
   }
 
-  safeClass('meme-panel', 'add', 'hidden');
+  safeClass('landing', 'add', 'hidden');
   console.log('✅ Opponent loaded:', token.symbol);
 };
 

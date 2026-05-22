@@ -856,6 +856,867 @@
     .logo-glitching {
       animation: logo-glitch 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
     }
+
+    /* ── RESTORED MULTIPLAYER & ONBOARDING STYLES ── */
+    .players {
+      display: flex;
+      gap: 30px;
+      align-items: center;
+    }
+
+    .player-card {
+      background: var(--dg-charcoal);
+      border: 1px solid var(--dg-border);
+      border-radius: 8px;
+      padding: 16px 24px;
+      min-width: 310px;
+      height: 210px;
+      text-align: center;
+    }
+    .player-card h3 {
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+    .player-card.p1 h3 { color: var(--dg-primary); }
+    .player-card.p2 h3 { color: var(--dg-secondary); }
+
+    
+    
+    
+
+    .select-hint {
+      font-size: 10px;
+      color: var(--dg-pebble);
+      margin-bottom: 10px;
+    }
+
+    /* ── Mode pills ── */
+    .mode-pills {
+      display: flex;
+      gap: 6px;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+    .mode-pill {
+      font-family: monospace;
+      font-size: 12px;
+      padding: 6px 16px;
+      border-radius: 4px;
+      border: 2px solid var(--dg-border);
+      background: var(--dg-almost-blk);
+      color: var(--dg-pebble);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .mode-pill:hover {
+      border-color: var(--dg-slate);
+      color: var(--dg-text);
+    }
+    .mode-pill.selected {
+      color: var(--dg-text);
+    }
+    .p1 .mode-pill.selected {
+      border-color: var(--dg-primary);
+      background: rgba(19, 239, 149, 0.1);
+    }
+    .p2 .mode-pill.selected {
+      border-color: var(--dg-secondary);
+      background: rgba(20, 154, 251, 0.1);
+    }
+
+    /* ── Provider sub-pills (LLM model picker) ── */
+    .provider-pills {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+      margin-bottom: 6px;
+    }
+    .provider-pill {
+      font-family: monospace;
+      font-size: 10px;
+      padding: 3px 10px;
+      border-radius: 3px;
+      border: 1px solid var(--dg-border);
+      background: var(--dg-almost-blk);
+      color: var(--dg-pebble);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .provider-pill:hover {
+      border-color: var(--dg-slate);
+      color: var(--dg-text);
+    }
+    .provider-pill.selected {
+      color: var(--dg-text);
+      border-color: var(--dg-slate);
+      background: rgba(148, 148, 152, 0.15);
+    }
+
+    /* ── Controls info ── */
+    .controls-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: center;
+    }
+    .control-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: var(--dg-pebble);
+    }
+
+    /* ── Kbd ── */
+    kbd {
+      display: inline-block;
+      font-family: monospace;
+      font-size: 10px;
+      padding: 2px 6px;
+      background: var(--dg-charcoal);
+      border: 1px solid var(--dg-border);
+      border-bottom: 2px solid #000;
+      border-radius: 3px;
+      color: var(--dg-slate);
+      box-shadow: 0 1px 0 rgba(0,0,0,0.3), inset 0 1px 0 rgba(78,78,82,0.2);
+      line-height: 1.4;
+      min-width: 18px;
+      text-align: center;
+    }
+    kbd.lg {
+      font-size: 12px;
+      padding: 4px 10px;
+    }
+
+    /* ── VS badge ── */
+    .vs {
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--dg-pebble);
+    }
+
+    /* ── Mode description ── */
+    .mode-desc {
+      font-size: 10px;
+      color: var(--dg-pebble);
+      margin-top: 2px;
+    }
+    .voice-info, .llm-info, .simulated-info {
+      font-size: 11px;
+      color: var(--dg-slate);
+    }
+    .voice-info span, .llm-info span, .simulated-info span {
+      color: var(--dg-pebble);
+      font-size: 10px;
+    }
+
+    /* ── Bottom prompt ── */
+    .start-prompt {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+      font-weight: bold;
+      color: var(--dg-primary);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+
+    .tips {
+      font-size: 11px;
+      color: var(--dg-pebble);
+    }
+
+    /* ── Landing screen ── */
+    .landing {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      padding: 20px;
+    }
+    .landing.hidden { display: none; }
+
+    .landing-tagline {
+      font-size: 13px;
+      color: var(--dg-slate);
+      margin-top: -12px;
+    }
+
+    .path-cards {
+      display: flex;
+      gap: 24px;
+    }
+
+    .path-card {
+      font-family: monospace;
+      background: var(--dg-charcoal);
+      border: 2px solid var(--dg-border);
+      border-radius: 8px;
+      padding: 32px 40px;
+      min-width: 260px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .path-card:hover {
+      transform: translateY(-2px);
+    }
+    .path-card.mp:hover { border-color: var(--dg-primary); }
+    .path-card.sp:hover { border-color: var(--dg-secondary); }
+    .path-card h3 {
+      font-size: 20px;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    .path-card.mp h3 { color: var(--dg-primary); }
+    .path-card.sp h3 { color: var(--dg-secondary); }
+    .path-card p {
+      font-size: 12px;
+      color: var(--dg-slate);
+      margin-bottom: 12px;
+    }
+    .path-sub {
+      font-size: 10px;
+      color: var(--dg-pebble);
+    }
+
+    /* ── Multiplayer menu ── */
+    .multiplayer-menu {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 20px;
+    }
+    .multiplayer-menu.hidden { display: none; }
+
+    .mp-steps {
+      font-size: 11px;
+      color: var(--dg-pebble);
+      letter-spacing: 0.5px;
+    }
+
+    .mp-options {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 340px;
+      width: 100%;
+    }
+
+    .mp-option {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 16px 24px;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      font-family: inherit;
+      color: var(--dg-text);
+      text-align: left;
+    }
+    .mp-option:hover {
+      border-color: var(--dg-primary);
+      background: linear-gradient(135deg, rgba(0, 255, 157, 0.1), rgba(0, 212, 255, 0.05));
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 255, 157, 0.15);
+    }
+    .mp-icon {
+      font-size: 20px;
+      width: 32px;
+      text-align: center;
+      color: var(--dg-primary);
+    }
+    .mp-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .mp-label {
+      font-size: 14px;
+      font-weight: bold;
+    }
+    .mp-desc {
+      font-size: 10px;
+      color: var(--dg-slate);
+    }
+
+    .back-btn {
+      font-family: inherit;
+      font-size: 11px;
+      color: var(--dg-slate);
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      cursor: pointer;
+      padding: 10px 20px;
+      margin-top: 15px;
+      transition: all 0.3s;
+      display: inline-block;
+    }
+    .back-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.25);
+      transform: scale(1.05);
+    }
+
+    /* ── Join room screen ── */
+    .join-room {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 20px;
+    }
+    .join-room.hidden { display: none; }
+
+    .join-hint {
+      font-size: 12px;
+      color: var(--dg-slate);
+    }
+
+    .room-code-input {
+      font-family: monospace;
+      font-size: 20px;
+      text-align: center;
+      padding: 12px 24px;
+      background: var(--dg-almost-blk);
+      border: 2px solid var(--dg-border);
+      border-radius: 8px;
+      color: var(--dg-text);
+      width: 320px;
+      letter-spacing: 2px;
+    }
+    .room-code-input:focus {
+      outline: none;
+      border-color: var(--dg-primary);
+    }
+    .room-code-input::placeholder {
+      color: var(--dg-pebble);
+      letter-spacing: 0;
+      font-size: 14px;
+    }
+
+    .join-btn {
+      font-family: monospace;
+      font-size: 14px;
+      font-weight: bold;
+      padding: 10px 32px;
+      border-radius: 6px;
+      border: 2px solid var(--dg-primary);
+      background: rgba(19, 239, 149, 0.1);
+      color: var(--dg-primary);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .join-btn:hover:not(:disabled) {
+      background: rgba(19, 239, 149, 0.2);
+    }
+    .join-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    .join-btn.loading, .mp-option.loading {
+      opacity: 0.7;
+      pointer-events: none;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    /* Match found flash */
+    .mm-match-found {
+      font-size: 24px;
+      font-weight: bold;
+      color: var(--dg-primary);
+      animation: match-flash 1s ease-out forwards;
+    }
+    @keyframes match-flash {
+      0% { opacity: 0; transform: scale(0.8); }
+      30% { opacity: 1; transform: scale(1.1); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+
+    .join-error {
+      font-size: 12px;
+      color: var(--dg-danger);
+      font-weight: bold;
+    }
+    .join-error.hidden { display: none; }
+
+    /* ── Room lobby screen ── */
+    .room-lobby {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 20px;
+    }
+    .room-lobby.hidden { display: none; }
+
+    .room-code-display {
+      font-size: 32px;
+      font-weight: bold;
+      letter-spacing: 3px;
+      color: var(--dg-primary);
+      background: var(--dg-charcoal);
+      border: 2px solid var(--dg-primary);
+      border-radius: 8px;
+      padding: 16px 32px;
+    }
+
+    .room-url-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .room-url-input {
+      font-family: monospace;
+      font-size: 12px;
+      padding: 8px 12px;
+      background: var(--dg-almost-blk);
+      border: 1px solid var(--dg-border);
+      border-radius: 6px;
+      color: var(--dg-slate);
+      width: 340px;
+      text-align: center;
+    }
+    .room-url-input:focus { outline: none; }
+
+    .copy-btn {
+      font-family: monospace;
+      font-size: 11px;
+      font-weight: bold;
+      padding: 8px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--dg-border);
+      background: var(--dg-charcoal);
+      color: var(--dg-slate);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .copy-btn:hover {
+      border-color: var(--dg-primary);
+      color: var(--dg-primary);
+    }
+
+    .room-url-row.hidden { display: none; }
+
+    /* ── Room controller selection ── */
+    .room-controller {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 20px;
+    }
+    .room-controller.hidden { display: none; }
+
+    .room-ctrl-status {
+      font-size: 12px;
+      color: var(--dg-pebble);
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .room-ctrl-status.ready {
+      color: var(--dg-primary);
+      animation: none;
+    }
+
+    .room-waiting {
+      font-size: 14px;
+      color: var(--dg-pebble);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    /* ── Match results screen ── */
+    .match-results {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 20px;
+    }
+    .match-results.hidden { display: none; }
+
+    .results-winner {
+      font-size: 48px;
+      font-weight: bold;
+      letter-spacing: 3px;
+    }
+    .results-winner.p1-wins { color: var(--dg-primary); }
+    .results-winner.p2-wins { color: var(--dg-secondary); }
+    .results-winner.draw { color: var(--dg-slate); }
+
+    .results-health {
+      display: flex;
+      gap: 40px;
+      font-size: 14px;
+      color: var(--dg-slate);
+    }
+    .results-health .p1-hp { color: var(--dg-primary); }
+    .results-health .p2-hp { color: var(--dg-secondary); }
+
+    .results-elo {
+      display: flex;
+      gap: 30px;
+      font-size: 13px;
+    }
+    .results-elo .elo-change {
+      padding: 8px 16px;
+      background: var(--dg-charcoal);
+      border: 1px solid var(--dg-border);
+      border-radius: 6px;
+    }
+    .elo-positive { color: var(--dg-primary); }
+    .elo-negative { color: var(--dg-danger); }
+    .elo-neutral { color: var(--dg-slate); }
+
+    .results-actions {
+      display: flex;
+      gap: 16px;
+      margin-top: 8px;
+    }
+    .results-actions 
+    .btn-rematch {
+      border: 2px solid var(--dg-primary);
+      background: rgba(19, 239, 149, 0.1);
+      color: var(--dg-primary);
+    }
+    .btn-rematch:hover { background: rgba(19, 239, 149, 0.2); }
+    .btn-leave {
+      border: 2px solid var(--dg-border);
+      background: var(--dg-charcoal);
+      color: var(--dg-slate);
+    }
+    .btn-leave:hover {
+      border-color: var(--dg-slate);
+      color: var(--dg-text);
+    }
+
+    /* ── Auth / header user section ── */
+    .header {
+      position: relative;
+    }
+    .header-auth {
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+    }
+    .header-auth.hidden { display: none; }
+
+    .auth-user-name {
+      color: var(--dg-primary);
+      font-weight: bold;
+    }
+    .auth-user-name.hidden { display: none; }
+    .auth-edit-btn.hidden { display: none; }
+
+    .auth-edit-btn {
+      font-family: monospace;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: none;
+      border: 1px solid transparent;
+      color: var(--dg-pebble);
+    }
+    .auth-edit-btn:hover {
+      border-color: var(--dg-primary);
+      color: var(--dg-primary);
+    }
+
+    .auth-name-input {
+      font-family: monospace;
+      font-size: 11px;
+      padding: 3px 8px;
+      background: var(--dg-almost-blk);
+      border: 1px solid var(--dg-primary);
+      border-radius: 4px;
+      color: var(--dg-text);
+      width: 160px;
+      outline: none;
+    }
+    .auth-name-input.hidden { display: none; }
+
+    .auth-name-error {
+      font-size: 10px;
+      color: var(--dg-danger);
+    }
+    .auth-name-error.hidden { display: none; }
+
+    .auth-login-btn,
+    .auth-logout-btn {
+      font-family: monospace;
+      font-size: 11px;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+      background: none;
+    }
+    .auth-login-btn {
+      border: 1px solid var(--dg-primary);
+      color: var(--dg-primary);
+    }
+    .auth-login-btn:hover {
+      background: rgba(19, 239, 149, 0.1);
+    }
+    .auth-logout-btn {
+      border: 1px solid var(--dg-border);
+      color: var(--dg-pebble);
+    }
+    .auth-logout-btn:hover {
+      border-color: var(--dg-slate);
+      color: var(--dg-text);
+    }
+
+    /* ── Leaderboard screen ── */
+    .leaderboard-screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .leaderboard-screen.hidden { display: none; }
+
+    .lb-filters {
+      display: flex;
+      gap: 6px;
+    }
+    .lb-filter {
+      font-family: monospace;
+      font-size: 12px;
+      padding: 6px 16px;
+      border-radius: 4px;
+      border: 2px solid var(--dg-border);
+      background: var(--dg-almost-blk);
+      color: var(--dg-pebble);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .lb-filter:hover {
+      border-color: var(--dg-slate);
+      color: var(--dg-text);
+    }
+    .lb-filter.active {
+      border-color: var(--dg-primary);
+      background: rgba(19, 239, 149, 0.1);
+      color: var(--dg-text);
+    }
+
+    .lb-table {
+      width: 100%;
+      max-width: 640px;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .lb-table th {
+      text-align: left;
+      padding: 8px 12px;
+      color: var(--dg-pebble);
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 1px solid var(--dg-border);
+    }
+    .lb-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--dg-border);
+    }
+    .lb-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .lb-table tr.lb-viewer td {
+      background: rgba(19, 239, 149, 0.08);
+      color: var(--dg-primary);
+      font-weight: bold;
+    }
+    .lb-rank { width: 50px; text-align: center; }
+    .lb-name { min-width: 120px; }
+    .lb-rating {
+      font-weight: bold;
+      background: linear-gradient(to right, var(--dg-grad-start), var(--dg-grad-end));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .lb-record { color: var(--dg-slate); font-size: 11px; }
+    .lb-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 3px;
+      border: 1px solid var(--dg-border);
+      color: var(--dg-slate);
+    }
+    .lb-badge.voice { border-color: var(--dg-secondary); color: var(--dg-secondary); }
+    .lb-badge.keyboard { border-color: var(--dg-primary); color: var(--dg-primary); }
+
+    .lb-empty {
+      color: var(--dg-pebble);
+      font-size: 14px;
+      padding: 40px;
+    }
+
+    .lb-viewer-row {
+      width: 100%;
+      max-width: 640px;
+      background: var(--dg-charcoal);
+      border: 1px solid var(--dg-primary);
+      border-radius: 6px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+    }
+    .lb-viewer-row.hidden { display: none; }
+    .lb-viewer-row .lb-rank { color: var(--dg-primary); font-weight: bold; font-size: 16px; }
+    .lb-viewer-row .lb-name { color: var(--dg-primary); font-weight: bold; }
+    .lb-viewer-row .lb-rating { font-size: 14px; }
+    .lb-viewer-row .lb-record { color: var(--dg-slate); }
+
+    /* ── Matchmaking screen ── */
+    .matchmaking-screen {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 20px;
+    }
+    .matchmaking-screen.hidden { display: none; }
+
+    .mm-searching-text {
+      font-size: 16px;
+      color: var(--dg-primary);
+      font-weight: bold;
+      animation: pulse 2s ease-in-out infinite;
+    }
+    .mm-wait-info {
+      font-size: 12px;
+      color: var(--dg-pebble);
+      text-align: center;
+    }
+    .mm-actions {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    .mm-warn {
+      font-size: 11px;
+      color: var(--dg-danger);
+      margin-top: 4px;
+    }
+
+    .lb-link {
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--dg-pebble);
+      cursor: pointer;
+      transition: color 0.15s;
+      border: none;
+      background: none;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .lb-link:hover { color: var(--dg-primary); }
+
+    /* ── Keyboard navigation focus indicator ── */
+    .kb-focus {
+      outline: 2px solid var(--dg-primary);
+      outline-offset: 3px;
+    }
+
+    /* ── Character select screen ── */
+    .character-select {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 20px;
+    }
+    .character-select.hidden { display: none; }
+
+    .char-cards {
+      display: flex;
+      gap: 24px;
+    }
+
+    .char-card {
+      font-family: monospace;
+      background: #111;
+      color: var(--neon-pink);
+      border: 3px solid var(--neon-pink);
+      padding: 12px 20px;
+      margin: 8px 4px;
+      font-family: 'Press Start 2P';
+      font-size: 14px;
+      cursor: pointer;
+      text-shadow: 0 0 10px var(--neon-pink);
+      transition: all 0.2s;
+    }
+    .char-card:hover { transform: scale(1.05); box-shadow: 0 0 20px var(--neon-pink); }
+    .char-card.selected {
+      border-color: var(--dg-secondary);
+      background: rgba(20, 154, 251, 0.1);
+    }
+
+    .char-icon {
+      font-size: 48px;
+      margin-bottom: 8px;
+    }
+    .char-name {
+      font-size: 18px;
+      font-weight: bold;
+      color: var(--dg-secondary);
+      margin-bottom: 4px;
+    }
+    .char-provider {
+      font-size: 10px;
+      color: var(--dg-pebble);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .char-desc {
+      font-size: 11px;
+      color: var(--dg-slate);
+      line-height: 1.5;
+    }
+
   </style>
 </head>
 
@@ -922,7 +1783,7 @@
   </div>
 
   <!-- MEME PANEL (Main Menu) -->
-  <div id="meme-panel" class="screen" style="top: 52% !important;">
+  <div id="landing" class="screen meme-panel" style="top: 52% !important;">
     <div style="text-align:center;margin-bottom:30px;">
       <img id="landing-logo" src="assets/smf-logo.png" alt="$SMF"
         style="height:140px;margin-bottom:20px;max-width:95%;filter: drop-shadow(0 0 15px var(--neon-green));transition: filter 0.3s ease, transform 0.2s ease;">
@@ -1020,7 +1881,216 @@
 
   </div>
 
-  <!-- VIRTUAL JOYSTICK CONTROLS (Mobile Only) -->
+
+  <!-- RESTORED MULTIPLAYER & GAME OVER SCREENS -->
+  <!-- Multiplayer menu -->
+  <div class="screen multiplayer-menu hidden" id="multiplayer-menu">
+    <h2>MULTIPLAYER</h2>
+    <p class="mp-steps">Step 1: Create or Join &rarr; Step 2: Pick Controller &rarr; Step 3: Fight!</p>
+    <div class="mp-options">
+      <button class="mp-option" id="btn-create-room">
+        <span class="mp-icon">＋</span>
+        <div class="mp-text">
+          <span class="mp-label">Create Room</span>
+          <span class="mp-desc">Get a shareable room code</span>
+        </div>
+      </button>
+      <button class="mp-option" id="btn-join-room">
+        <span class="mp-icon">→</span>
+        <div class="mp-text">
+          <span class="mp-label">Join Room</span>
+          <span class="mp-desc">Enter a room code to join</span>
+        </div>
+      </button>
+      <button class="mp-option" id="btn-matchmaking">
+        <span class="mp-icon">⚔</span>
+        <div class="mp-text">
+          <span class="mp-label">Matchmaking</span>
+          <span class="mp-desc">Find an ELO-matched opponent</span>
+        </div>
+      </button>
+    </div>
+    <button class="back-btn" id="btn-mp-back">← BACK</button>
+  </div>
+
+  <!-- Join room screen -->
+  <div class="screen join-room hidden" id="join-room">
+    <h2>JOIN ROOM</h2>
+    <p class="join-hint">Enter the 3-word room code</p>
+    <input type="text" class="room-code-input" id="room-code-input"
+      placeholder="e.g. red-tiger-paw" autocomplete="off" spellcheck="false">
+    <button class="premium-btn" id="btn-join-go" disabled style="margin-top: 15px;">JOIN</button>
+    <p class="join-error hidden" id="join-error"></p>
+    <button class="back-btn" id="btn-join-back">← BACK</button>
+  </div>
+
+  <!-- Room lobby (after creating or joining a room) -->
+  <div class="screen room-lobby hidden" id="room-lobby">
+    <h2 id="room-lobby-title">ROOM CREATED</h2>
+    <p class="join-hint" id="room-lobby-hint">Share this code with your opponent</p>
+    <div class="room-code-display" id="room-code-display">---</div>
+    <div class="room-url-row" id="room-url-row">
+      <input type="text" class="room-url-input" id="room-url-display" readonly>
+      <button class="copy-btn" id="btn-copy-url" title="Copy URL">COPY</button>
+    </div>
+    <p class="room-waiting" id="room-waiting-text">Waiting for opponent...</p>
+    <button class="back-btn" id="btn-lobby-back">← LEAVE ROOM</button>
+  </div>
+
+  <!-- Room controller selection (multiplayer — each player picks their own input) -->
+  <div class="screen room-controller hidden" id="room-controller">
+    <h2>SELECT YOUR CONTROLLER</h2>
+    <p class="join-hint" id="room-ctrl-hint">Choose your input mode for this match</p>
+    <div class="player-card p1" id="room-ctrl-card">
+      <h3 id="room-ctrl-player">PLAYER 1</h3>
+      <div class="mode-pills" id="room-ctrl-pills">
+        <button class="mode-pill selected" data-mode="0">Keys</button>
+        <button class="mode-pill" data-mode="1">Voice</button>
+        <button class="mode-pill" data-mode="2">Phone</button>
+        <button class="mode-pill" data-mode="3">Sim</button>
+        <button class="mode-pill" data-mode="4">LLM</button>
+      </div>
+      <div class="controls-info" id="room-ctrl-info"></div>
+    </div>
+    <button class="premium-btn" id="btn-ctrl-confirm">CONFIRM</button>
+    <p class="room-ctrl-status" id="room-ctrl-status"></p>
+    <button class="back-btn" id="btn-ctrl-back">← LEAVE ROOM</button>
+  </div>
+
+  <!-- Matchmaking screen -->
+  <div class="screen matchmaking-screen hidden" id="matchmaking">
+    <h2>MATCHMAKING</h2>
+
+    <!-- Controller selection (before searching) -->
+    <div id="mm-select">
+      <p class="join-hint">Choose your controller and search for an opponent</p>
+      <div class="player-card p1" id="mm-ctrl-card">
+        <h3>YOUR FIGHTER</h3>
+        <div class="mode-pills" id="mm-ctrl-pills">
+          <button class="mode-pill selected" data-mode="0">Keys</button>
+          <button class="mode-pill" data-mode="1">Voice</button>
+          <button class="mode-pill" data-mode="2">Phone</button>
+          <button class="mode-pill" data-mode="3">Sim</button>
+          <button class="mode-pill" data-mode="4">LLM</button>
+        </div>
+        <div class="controls-info" id="mm-ctrl-info"></div>
+      </div>
+      <button class="premium-btn" id="btn-mm-search">SEARCH FOR OPPONENT</button>
+    </div>
+
+    <!-- Searching state (shown after joining queue) -->
+    <div id="mm-searching" class="hidden">
+      <p class="mm-searching-text" id="mm-searching-text">Searching for opponent...</p>
+      <p class="mm-wait-info" id="mm-wait-info"></p>
+      <div class="mm-actions">
+        <button class="premium-btn pink" id="btn-mm-cancel" style="margin: 0; flex: 1;">CANCEL SEARCH</button>
+        <button class="back-btn" id="btn-mm-play-wait">Play while you wait &rarr;</button>
+      </div>
+    </div>
+
+    <button class="back-btn" id="btn-mm-back">&larr; BACK</button>
+  </div>
+
+  <!-- Character select screen (single-player opponent) -->
+  <div class="screen character-select hidden" id="character-select">
+    <h2>CHOOSE YOUR OPPONENT</h2>
+    <p class="join-hint">Select an AI character to fight</p>
+    <div class="char-cards" id="char-cards">
+      <!-- Populated by JS from /api/characters -->
+    </div>
+    <button class="premium-btn" id="btn-char-fight" disabled>FIGHT</button>
+    <button class="lb-link" id="btn-char-classic">or choose classic mode &rarr;</button>
+    <button class="back-btn" id="btn-char-back">&larr; BACK</button>
+  </div>
+
+  <!-- Onboarding screen (single-player fighter selection) -->
+  <div class="screen onboarding hidden" id="onboarding" style="max-width: 800px !important; width: 95% !important;">
+    <h2>SELECT FIGHTERS</h2>
+
+    <div class="players">
+      <div class="player-card p1">
+        <h3>PLAYER 1</h3>
+        <div class="select-hint"><kbd>A</kbd> <kbd>D</kbd> select</div>
+        <div class="mode-pills" data-player="1">
+          <button class="mode-pill selected" data-mode="0">Keys</button>
+          <button class="mode-pill" data-mode="1">Voice</button>
+          <button class="mode-pill" data-mode="2">Phone</button>
+          <button class="mode-pill" data-mode="3">Sim</button>
+          <button class="mode-pill" data-mode="4">LLM</button>
+        </div>
+        <div class="controls-info" data-player="1">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="vs">VS</div>
+
+      <div class="player-card p2">
+        <h3>PLAYER 2</h3>
+        <div class="select-hint"><kbd>&larr;</kbd> <kbd>&rarr;</kbd> select</div>
+        <div class="mode-pills" data-player="2">
+          <button class="mode-pill selected" data-mode="0">Keys</button>
+          <button class="mode-pill" data-mode="1">Voice</button>
+          <button class="mode-pill" data-mode="2">Phone</button>
+          <button class="mode-pill" data-mode="3">Sim</button>
+          <button class="mode-pill" data-mode="4">LLM</button>
+        </div>
+        <div class="controls-info" data-player="2">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+
+    <div class="start-prompt">Press <kbd class="lg">ENTER</kbd> to fight</div>
+    <div class="tips">Double-tap jump for somersault &middot; Hold back to block &middot; Attacks clash when hitboxes meet</div>
+  </div>
+
+  <!-- Leaderboard screen -->
+  <div class="screen leaderboard-screen hidden" id="leaderboard" style="max-width: 680px !important; width: 95% !important; max-height: 85vh; overflow-y: auto;">
+    <h2>LEADERBOARD</h2>
+    <div class="lb-filters" id="lb-filters">
+      <button class="lb-filter active" data-category="voice">Voice League</button>
+      <button class="lb-filter" data-category="keyboard">Keyboard League</button>
+    </div>
+    <div class="lb-viewer-row hidden" id="lb-viewer-row">
+      <!-- Populated by JS: viewer's own rank when not in top entries -->
+    </div>
+    <table class="lb-table">
+      <thead>
+        <tr>
+          <th class="lb-rank">#</th>
+          <th class="lb-name">Player</th>
+          <th>ELO</th>
+          <th>Record</th>
+          <th>Mode</th>
+        </tr>
+      </thead>
+      <tbody id="lb-body">
+        <!-- Populated by JS -->
+      </tbody>
+    </table>
+    <p class="lb-empty hidden" id="lb-empty">No ranked players yet. Play some matches!</p>
+    <button class="back-btn" id="btn-lb-back">← BACK</button>
+  </div>
+
+  <!-- Match results screen -->
+  <div class="screen match-results hidden" id="match-results">
+    <h2 id="results-title">MATCH OVER</h2>
+    <div class="results-winner" id="results-winner">---</div>
+    <div class="results-health" id="results-health">
+      <span class="p1-hp" id="results-p1-hp">P1: ---</span>
+      <span class="p2-hp" id="results-p2-hp">P2: ---</span>
+    </div>
+    <div class="results-elo hidden" id="results-elo"></div>
+    <div class="results-actions" style="display: flex; gap: 10px; width: 100%; margin-top: 15px;">
+      <button class="premium-btn" id="btn-rematch" style="margin: 0; flex: 1;">REMATCH</button>
+      <button class="premium-btn pink" id="btn-leave" style="margin: 0; flex: 1;">LEAVE</button>
+    </div>
+  </div>
+
+
+
+    <!-- VIRTUAL JOYSTICK CONTROLS (Mobile Only) -->
   <div id="mobile-controls">
     <!-- LEFT: Virtual Joystick -->
     <div class="joystick-zone">
@@ -1107,8 +2177,8 @@
         if (status) status.innerHTML = 'Failed to load tokens.';
       } finally {
         // FORCE HIDE panel to unblock game
-        const memePanel = document.getElementById('meme-panel');
-        if (memePanel) memePanel.classList.add('hidden');
+        const landingPanel = document.getElementById('landing');
+        if (landingPanel) landingPanel.classList.add('hidden');
         const canvas = document.getElementById('game');
         if (canvas) canvas.classList.add('active');
         if (window._showMobileControls) window._showMobileControls();
@@ -1155,8 +2225,8 @@
         if (status) status.innerHTML = `Fighting <strong>$${token.symbol}</strong>!`;
 
         // Hide panel
-        const memePanel = document.getElementById('meme-panel');
-        if (memePanel) memePanel.classList.add('hidden');
+        const landingPanel = document.getElementById('landing');
+        if (landingPanel) landingPanel.classList.add('hidden');
         const canvas = document.getElementById('game');
         if (canvas) canvas.classList.add('active');
         if (window._showMobileControls) window._showMobileControls();
@@ -1359,8 +2429,8 @@
     };
 
     window.showMultiplayer = () => {
-      const memePanel = document.getElementById('meme-panel');
-      if (memePanel) memePanel.classList.add('hidden');
+      const landingPanel = document.getElementById('landing');
+      if (landingPanel) landingPanel.classList.add('hidden');
       if (typeof window.showScreen === 'function') {
         window.showScreen('multiplayer');
       }
