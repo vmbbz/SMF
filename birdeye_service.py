@@ -257,35 +257,15 @@ class BirdeyeService:
     async def _warmer_loop(self):
         """
         Optimized background warmer:
-          Phase 1 — Refresh list snapshots (trending + graduated) only if cache stale (180s TTL)
+          Phase 1 — Removed list snapshot pre-warming. We now use lazy caching to save API quota.
           Phase 2 — Re-warm HOT tokens (actively being fought) every cycle (30s TTL)
-          Phase 3 — Completely removed to avoid idle API consumption!
         """
-        # Initial warm-up at startup
-        await asyncio.sleep(2)
-        print("[BirdeyeWarmer] Initial cache warm-up...")
-        await self._refresh_trending(12)
-        await asyncio.sleep(1.5)
-        await self._refresh_graduated(8)
-        print("[BirdeyeWarmer] Initial warm-up complete.")
+        # Removed aggressive startup pre-fetching to save API calls during development restarts.
 
         while True:
             await asyncio.sleep(60)
             try:
                 now = time.time()
-
-                # ── Phase 1: Refresh list snapshots ONLY IF STALE (180s TTL) ──
-                trending_cache = self.list_cache.get("trending")
-                if not trending_cache or (now - trending_cache[1]) >= self.LIST_TTL:
-                    print("[BirdeyeWarmer] Refreshing trending list...")
-                    await self._refresh_trending(12)
-                    await asyncio.sleep(1.5)
-
-                graduated_cache = self.list_cache.get("graduated")
-                if not graduated_cache or (now - graduated_cache[1]) >= self.LIST_TTL:
-                    print("[BirdeyeWarmer] Refreshing graduated list...")
-                    await self._refresh_graduated(8)
-                    await asyncio.sleep(1.5)
 
                 # ── Phase 2: Re-warm HOT tokens (active fights, 30s TTL) ──
                 # Expire stale hot entries first
