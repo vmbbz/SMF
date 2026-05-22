@@ -1,22 +1,21 @@
 {
-  "name": "Stick-Lash • $SMF Karate",
-  "short_name": "SMF Fight",
-  "start_url": ".",
-  "display": "standalone",
-  "background_color": "#0b0b0c",
-  "theme_color": "#13ef95",
+  "name": "Solana Meme Fighter",
+  "short_name": "SMF",
   "icons": [
     {
       "src": "/assets/web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     },
     {
       "src": "/assets/web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
-  ]
+  ],
+  "theme_color": "#06050b",
+  "background_color": "#06050b",
+  "display": "standalone"
 }
