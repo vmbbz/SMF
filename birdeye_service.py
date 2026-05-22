@@ -37,6 +37,7 @@ class BirdeyeService:
         # Prevents N concurrent callers from all hitting Birdeye simultaneously
         # when a cache entry expires. First caller fetches; others wait.
         self._inflight: dict[str, asyncio.Event] = {}
+        self._inflight_lists: dict[str, asyncio.Event] = {}
 
         # Hot-token tracking: mint -> last_accessed timestamp
         # Tokens are "hot" (actively being fought) for 10 minutes after last access.
@@ -183,7 +184,19 @@ class BirdeyeService:
         cached = self.list_cache.get("trending")
         if cached and time.time() - cached[1] < self.LIST_TTL:
             return cached[0][:limit]
-        return await self._refresh_trending(limit)
+            
+        if "trending" in self._inflight_lists:
+            await self._inflight_lists["trending"].wait()
+            cached = self.list_cache.get("trending")
+            return cached[0][:limit] if cached else []
+            
+        event = asyncio.Event()
+        self._inflight_lists["trending"] = event
+        try:
+            return await self._refresh_trending(limit)
+        finally:
+            event.set()
+            self._inflight_lists.pop("trending", None)
 
     async def _refresh_trending(self, limit: int = 12) -> list:
         try:
@@ -207,7 +220,19 @@ class BirdeyeService:
         cached = self.list_cache.get("graduated")
         if cached and time.time() - cached[1] < self.LIST_TTL:
             return cached[0][:limit]
-        return await self._refresh_graduated(limit)
+            
+        if "graduated" in self._inflight_lists:
+            await self._inflight_lists["graduated"].wait()
+            cached = self.list_cache.get("graduated")
+            return cached[0][:limit] if cached else []
+            
+        event = asyncio.Event()
+        self._inflight_lists["graduated"] = event
+        try:
+            return await self._refresh_graduated(limit)
+        finally:
+            event.set()
+            self._inflight_lists.pop("graduated", None)
 
     async def _refresh_graduated(self, limit: int = 8) -> list:
         try:
