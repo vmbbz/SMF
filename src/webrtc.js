@@ -178,6 +178,27 @@ export class PeerConnection {
             }
             resolved = true;
             resolve();
+
+            // Sync local profile details with peer over signaling
+            try {
+              const profileStr = localStorage.getItem('smf_user_profile');
+              if (profileStr) {
+                const profile = JSON.parse(profileStr);
+                this._sendSignal({
+                  type: 'profile_sync',
+                  name: profile.name,
+                  avatar: profile.avatar
+                });
+              }
+            } catch (e) {
+              console.warn('[webrtc] Failed to send profile sync signal:', e);
+            }
+          } else if (data.type === 'profile_sync') {
+            console.log('[webrtc] Received remote profile via signaling:', data);
+            this.opponentProfile = { name: data.name, avatar: data.avatar };
+            if (this._onRemoteProfile) {
+              this._onRemoteProfile(this.opponentProfile);
+            }
           } else if (data.type === 'offer') {
             await this._handleOffer(data);
           } else if (data.type === 'answer') {

@@ -2215,6 +2215,7 @@ async def auth_me(request: Request) -> dict[str, Any]:
         "id": result.get("sub", ""),
         "name": result.get("name", result.get("nickname", result.get("email", ""))),
         "email": result.get("email", ""),
+        "avatar": result.get("picture", result.get("avatar", "")),
     }
 
 

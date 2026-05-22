@@ -168,7 +168,7 @@ async def fetch_userinfo(config: OIDCConfig, access_token: str) -> dict:
 def extract_user_from_id_token(id_token: str) -> dict:
     """Extract user info from an ID token payload.
 
-    Returns a normalized user dict with id, name, and email.
+    Returns a normalized user dict with id, name, email, and avatar.
     """
     claims = decode_id_token_payload(id_token)
     if not claims:
@@ -178,4 +178,5 @@ def extract_user_from_id_token(id_token: str) -> dict:
         "id": claims.get("sub", ""),
         "name": claims.get("name", claims.get("nickname", claims.get("email", ""))),
         "email": claims.get("email", ""),
+        "avatar": claims.get("picture", claims.get("avatar", "")),
     }

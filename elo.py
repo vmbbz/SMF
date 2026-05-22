@@ -363,11 +363,12 @@ class EloManager:
                     draw,
                 )
 
-        # Return updated stats
+        # Return updated stats with previous rating tracked
         winner_new = {
             "user_id": winner_id,
             "category": category,
             "rating": new_winner_rating,
+            "old_rating": winner_rating,
             "wins": int(winner_stats["wins"]) + (0 if draw else 1),
             "losses": int(winner_stats["losses"]),
             "draws": int(winner_stats["draws"]) + (1 if draw else 0),
@@ -377,6 +378,7 @@ class EloManager:
             "user_id": loser_id,
             "category": category,
             "rating": new_loser_rating,
+            "old_rating": loser_rating,
             "wins": int(loser_stats["wins"]),
             "losses": int(loser_stats["losses"]) + (0 if draw else 1),
             "draws": int(loser_stats["draws"]) + (1 if draw else 0),
