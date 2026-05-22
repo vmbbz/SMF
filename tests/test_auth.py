@@ -102,7 +102,7 @@ class TestExtractUser:
     def test_extract_user_with_name(self) -> None:
         token = _make_jwt({"sub": "u1", "name": "Bob", "email": "bob@test.com"})
         user = extract_user_from_id_token(token)
-        assert user == {"id": "u1", "name": "Bob", "email": "bob@test.com"}
+        assert user == {"id": "u1", "name": "Bob", "email": "bob@test.com", "avatar": ""}
 
     def test_extract_user_fallback_to_nickname(self) -> None:
         token = _make_jwt({"sub": "u2", "nickname": "bobby", "email": "bob@test.com"})
