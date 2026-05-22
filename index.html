@@ -13,6 +13,12 @@
   <link rel="manifest" href="manifest.json">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+    @import url('https://fonts.cdnfonts.com/css/shojumaru');
+
+    h1, h2, h3, .shojumaru-title {
+      font-family: 'Shojumaru', 'Press Start 2P', sans-serif !important;
+      letter-spacing: 2px;
+    }
 
     :root {
       --neon-green: #00ff9d;
@@ -94,12 +100,13 @@
     }
 
     .premium-btn {
+      font-family: 'Shojumaru', 'Press Start 2P', sans-serif;
       background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
       color: #fff;
       border: 1px solid rgba(255, 255, 255, 0.2);
       padding: 20px;
       margin: 10px 0;
-      font-size: 14px;
+      font-size: 16px;
       width: 100%;
       border-radius: 16px;
       cursor: pointer;
@@ -1864,8 +1871,8 @@
     <div style="text-align:center;margin-bottom:30px;">
       <img id="landing-logo" src="assets/smf-logo.png" alt="$SMF"
         style="height:140px;margin-bottom:20px;max-width:95%;filter: drop-shadow(0 0 15px var(--neon-green));transition: filter 0.3s ease, transform 0.2s ease;">
-      <div
-        style="font-size:24px;color:#fff;font-weight:bold;letter-spacing:2px;text-shadow: 0 0 10px var(--neon-pink);">
+      <div class="shojumaru-title"
+        style="font-size:36px;color:#fff;font-weight:bold;letter-spacing:2px;text-shadow: 0 0 10px var(--neon-pink);">
         STICKLASH</div>
       <script>
         (function () {
