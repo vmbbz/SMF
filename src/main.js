@@ -669,9 +669,12 @@ function startRoomPolling() {
 function handleRoomStatusUpdate(data) {
   const myNum = localStorage.getItem('sf_playerNum');
 
-  if (data.status === 'selecting' && state === 'roomLobby') {
-    // Both players in room — go to controller selection
+  if (data.status === 'selecting' && (state === 'roomLobby' || state === 'victoryOverlay' || state === 'matchResults')) {
+    // Both players in room — go to controller selection (e.g. after a rematch reset)
+    const overlay = document.getElementById('victory-overlay');
+    if (overlay) overlay.classList.add('hidden');
     showRoomControllerScreen();
+  }
   } else if (data.status === 'fighting' && state === 'waitingInArena') {
     // Opponent confirmed — transition from waiting arena to real fight
     stopRoomPolling();
@@ -1065,6 +1068,53 @@ function startMultiplayerFight(_roomData) {
 
     peerConnection.connect();
 
+    // 1. Mark this as a multiplayer match
+    window.isMultiplayerMatch = true;
+
+    // 2. Fetch and apply local player avatar from OIDC claims
+    try {
+      const profileStr = localStorage.getItem('smf_user_profile');
+      if (profileStr) {
+        const profile = JSON.parse(profileStr);
+        if (profile) {
+          const localFighter = myNum === 1 ? game.p1 : game.p2;
+          if (localFighter) {
+            if (profile.avatar) {
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => { localFighter.headImage = img; };
+              img.src = profile.avatar;
+            }
+            if (profile.name) {
+              if (myNum === 1) game.p1Label = profile.name;
+              else game.p2Label = profile.name;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Multiplayer] Failed to load local profile avatar:', e);
+    }
+
+    // 3. Listen to remote profile metadata exchange to apply remote head and label
+    peerConnection.onRemoteProfile((profile) => {
+      console.log('[Multiplayer] Remote profile received:', profile);
+      window.opponentProfile = profile;
+      const remoteFighter = myNum === 1 ? game.p2 : game.p1;
+      if (remoteFighter) {
+        if (profile.avatar) {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => { remoteFighter.headImage = img; };
+          img.src = profile.avatar;
+        }
+        if (profile.name) {
+          if (myNum === 1) game.p2Label = profile.name;
+          else game.p1Label = profile.name;
+        }
+      }
+    });
+
     // Tap into localInput.endFrame to buffer inputs for replay and send
     // to peer + server. Captures the exact actions the game loop just consumed.
     const origEndFrame = localInput.endFrame.bind(localInput);
@@ -1192,10 +1242,6 @@ async function handleMultiplayerRoundOver(msg) {
     }
   }
 
-  const eloEl = document.getElementById('results-elo');
-  eloEl.classList.add('hidden');
-  eloEl.innerHTML = '';
-
   try {
     const resp = await fetch('/api/match/complete', {
       method: 'POST',
@@ -1204,18 +1250,19 @@ async function handleMultiplayerRoundOver(msg) {
     });
     if (resp.ok) {
       const result = await resp.json();
-      if (result.elo?.updated) {
-        showEloChanges(result.elo, myNum);
-      }
+      window.multiplayerEloData = result.elo; // Store rating changes globally
     }
   } catch (err) {
     console.warn('[match] Failed to report match result:', err);
   }
 
-  // Show results screen
-  canvas.classList.remove('active');
-  showScreen('matchResults');
+  // Show premium victory overlay instead of results screen!
+  if (window.showVictoryOverlay) {
+    window.showVictoryOverlay(msg.winner, null, null);
+  }
+
   game = null;
+  state = 'victoryOverlay';
 }
 
 /** Display ELO rating changes on the results screen */
@@ -2085,6 +2132,23 @@ function updateAuthUI() {
   if (isLoggedIn()) {
     const user = getUser();
     const name = user?.name || 'User';
+
+    // Sync to smf_user_profile
+    try {
+      const profileStr = localStorage.getItem('smf_user_profile');
+      let profile = { name: "Guest Fighter", avatar: "", boosts: 15, walletConnected: false, walletAddress: "", smfBalance: 0 };
+      if (profileStr) {
+        profile = JSON.parse(profileStr);
+      }
+      profile.name = name;
+      if (user?.avatar) {
+        profile.avatar = user.avatar;
+      }
+      localStorage.setItem('smf_user_profile', JSON.stringify(profile));
+    } catch (e) {
+      console.warn('[auth] Failed to sync session user to smf_user_profile:', e);
+    }
+
     headerAuth.innerHTML = `
       <span class="auth-user-name" id="auth-display-name">${name}</span>
       <button class="auth-edit-btn" id="btn-auth-edit" title="Edit username">✎</button>
@@ -2420,9 +2484,30 @@ window.shareVictory = async function() {
     `$${symbol}'s chart was pumping too hard, they knocked me OUT! 🥊📈\n\nWho can take them down? Play at ${origin}\n\n#Solana #MemeFighter #SMF`
   ];
 
-  const text = isWin 
-    ? winVariations[Math.floor(Math.random() * winVariations.length)]
-    : loseVariations[Math.floor(Math.random() * loseVariations.length)];
+  let text = '';
+  if (window.isMultiplayerMatch) {
+    const oppName = window.opponentProfile?.name || 'an opponent';
+    const oppText = oppName.toUpperCase();
+    const winPvPVariations = [
+      `I just SMASHED ${oppText} in real-time PvP inside the $SMF Stick Fight Arena! 🥊🔥\n\nWho wants the smoke next? Challenge me at ${origin}\n\n#Solana #MemeFighter #PvP`,
+      `Just sent ${oppText} to the absolute shadow realm in $SMF PvP! 💀🥊\n\nWho's next to get bodied? Play at ${origin}\n\n#Solana #MemeFighter #PvP`,
+      `My custom stickman just completely BODIED ${oppText} live in the $SMF PvP arena! 👊⚡\n\nCome and get some: ${origin}\n\n#Solana #MemeFighter #PvP`
+    ];
+
+    const losePvPVariations = [
+      `${oppText} just SMASHED me in the $SMF PvP Stick Fight Arena! 🥊💀\n\nI need a rematch right now! Play at ${origin}\n\n#Solana #MemeFighter #PvP`,
+      `Got absolutely bodied by ${oppText} in the $SMF PvP arena! 💸🪦\n\nGoing back in for revenge! Play at ${origin}\n\n#Solana #MemeFighter #PvP`,
+      `${oppText} caught me with a clean combo in $SMF PvP! 🥊📈\n\nWho can take them down? Play at ${origin}\n\n#Solana #MemeFighter #PvP`
+    ];
+    
+    text = isWin
+      ? winPvPVariations[Math.floor(Math.random() * winPvPVariations.length)]
+      : losePvPVariations[Math.floor(Math.random() * losePvPVariations.length)];
+  } else {
+    text = isWin 
+      ? winVariations[Math.floor(Math.random() * winVariations.length)]
+      : loseVariations[Math.floor(Math.random() * loseVariations.length)];
+  }
 
   // Try Web Share API with image (works on mobile Chrome/Safari)
   const screenshot = window._lastVictoryScreenshot;
@@ -2432,8 +2517,14 @@ window.shareVictory = async function() {
       const res  = await fetch(screenshot);
       const blob = await res.blob();
       const file = new File([blob], 'sticklash-battle.png', { type: 'image/png' });
+      
+      const oppName = window.opponentProfile?.name || 'opponent';
+      const shareTitle = window.isMultiplayerMatch 
+        ? (isWin ? `I beat ${oppName} in PvP!` : `${oppName} beat me in PvP!`)
+        : (isWin ? `I beat $${symbol}!` : `$${symbol} wrecked me!`);
+
       await navigator.share({
-        title: isWin ? `I beat $${symbol}!` : `$${symbol} wrecked me!`,
+        title: shareTitle,
         text,
         files: [file],
       });
@@ -2648,6 +2739,52 @@ window.rematchFight = async function() {
 
   const overlay = document.getElementById('victory-overlay');
   if (overlay) overlay.classList.add('hidden');
+
+  // Check if we are in a multiplayer match
+  if (window.isMultiplayerMatch) {
+    const roomCode = localStorage.getItem('sf_roomCode');
+    const playerId = localStorage.getItem('sf_playerId');
+    if (!roomCode || !playerId) { showLanding(); return; }
+
+    try {
+      const resp = await fetch('/api/room/rematch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: roomCode, playerId }),
+      });
+
+      if (!resp.ok) {
+        console.warn('[rematch] Failed:', resp.status);
+        showLanding();
+        return;
+      }
+
+      // Cleanup existing game objects before going to controller selection
+      if (game) {
+        game.running = false;
+        game.roundOver = true;
+      }
+      await cleanupAdapters();
+      game = null;
+      window.currentGame = null;
+      window.game = null;
+      
+      const canvas = document.getElementById('game');
+      if (canvas) {
+        canvas.classList.remove('active');
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // Back to controller selection
+      showRoomControllerScreen();
+      startRoomPolling();
+    } catch (err) {
+      console.warn('[rematch] Error:', err);
+      showLanding();
+    }
+    return;
+  }
 
   // 1. Check if we fought an enriched token (Trending Arena / Meme fighter)
   const token = game?.p2?.tokenData || window.currentGame?.p2?.tokenData || window.game?.p2?.tokenData;

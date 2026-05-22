@@ -67,10 +67,12 @@ Price polling: every 60s with 30s warm-up delay, server-side Birdeye cache share
 
 ### 🏆 Victory Screen
 
-- **Winner/Loser dual cards** with flip animation — click to toggle between them
+- **Winner/Loser dual cards** with flip animation — click to toggle between them (in single-player/trending modes)
+- **Dedicated PvP Victory Cards**: Side-by-side glassmorphic cards showing Winner (green border) and Loser (pink border) actual OIDC profile images and display names with animated old-to-new ELO transition (e.g. `1200 → 1224 (+24)`).
+- **Rematch Integration**: Bypasses the results screen in multiplayer, allowing instant room rematch re-entry and selections via uvicorn/Litestar.
 - **Rich card tabs**: ABOUT (market stats), SOCIAL, SAFETY
 - **BUY button**: direct DexScreener link for the token
-- **Share to X**: pre-filled tweet with match result
+- **Share to X**: pre-filled tweet with match result, including custom PvP adaptive share copy with opponent names
 - **Endless mode session header**: Round counter, W/L record, streak badge (🔥 3 STREAK / 💀 ON TILT)
 - **8-second auto-advance countdown**: animated progress bar, cancels if you click any button manually
 

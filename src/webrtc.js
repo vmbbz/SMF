@@ -274,6 +274,21 @@ export class PeerConnection {
       if (this._onConnectionChange) {
         this._onConnectionChange({ connected: true, fallback: false });
       }
+
+      // REDUNDANT BACKUP: Send local profile over data channel on open
+      try {
+        const profileStr = localStorage.getItem('smf_user_profile');
+        if (profileStr) {
+          const profile = JSON.parse(profileStr);
+          channel.send(JSON.stringify({
+            type: 'profile_sync',
+            name: profile.name,
+            avatar: profile.avatar
+          }));
+        }
+      } catch (e) {
+        console.warn('[webrtc] Failed to send backup profile sync:', e);
+      }
     };
 
     channel.onclose = () => {
@@ -293,6 +308,12 @@ export class PeerConnection {
         const msg = JSON.parse(event.data);
         if (msg.type === 'input' && this._onRemoteInput) {
           this._onRemoteInput(msg);
+        } else if (msg.type === 'profile_sync') {
+          console.log('[webrtc] Received remote profile via WebRTC data channel:', msg);
+          this.opponentProfile = { name: msg.name, avatar: msg.avatar };
+          if (this._onRemoteProfile) {
+            this._onRemoteProfile(this.opponentProfile);
+          }
         }
       } catch (err) {
         console.warn('[webrtc] Data channel message parse error:', err);
