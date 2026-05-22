@@ -21,7 +21,7 @@ COPY room_cleanup.py .
 COPY room_manager.py .
 COPY signaling.py .
 COPY game_engine/ game_engine/
-COPY index.html .
+COPY index.html wallet-connect.js manifest.json favicon.ico ./
 COPY src/ src/
 COPY assets/ assets/
 COPY public/ public/
