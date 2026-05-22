@@ -674,7 +674,6 @@ function handleRoomStatusUpdate(data) {
     const overlay = document.getElementById('victory-overlay');
     if (overlay) overlay.classList.add('hidden');
     showRoomControllerScreen();
-  }
   } else if (data.status === 'fighting' && state === 'waitingInArena') {
     // Opponent confirmed — transition from waiting arena to real fight
     stopRoomPolling();
