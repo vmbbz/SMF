@@ -8,6 +8,11 @@
 
 ---
 
+### 📲 Download & Play (Android APK)
+🚀 **[Download the Official STICKLASH Release APK (stickler-app-release.apk)](android/app/release/stickler-app-release.apk)** — *Built, V4-signed, and optimized for the Solana Seeker mobile dApp store!*
+
+---
+
 ## 🎮 Overview
 
 STICKLASH is a 2D stickman fighting game where **Pump.fun / Solana meme tokens are your AI opponents**. Token market metrics — 24h volume, price change, liquidity — are pulled live and directly translate into in-game power stats. A token that just pumped 2× hits harder, moves faster, and has more health. One that's bleeding out on DexScreener is a pushover.
