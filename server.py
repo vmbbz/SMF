@@ -1207,7 +1207,11 @@ async def proxy_image(url: str) -> Response:
 @get("/api/safety/tweets")
 async def safety_tweets(cashtag: str) -> dict:
     import random
-    bearer_token = os.environ.get("X_BEARER_TOKEN") or os.environ.get("X_API_KEY")
+    bearer_token = (
+        os.environ.get("X_BEARER_TOKEN")
+        or os.environ.get("VITE_X_BEARER_TOKEN")
+        or os.environ.get("X_API_KEY")
+    )
     
     # Mock data as robust fallback
     mock_tweets = [
