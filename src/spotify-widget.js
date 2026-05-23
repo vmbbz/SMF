@@ -105,13 +105,32 @@ export class SpotifyWidget {
 
     const albumArt = this.currentTrackArt || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="%231db954" fill-opacity="0.1" stroke="%231db954" stroke-width="2"/><path d="M50 20a30 30 0 0 0-30 30 30 30 0 0 0 30 30 30 30 0 0 0 30-30A30 30 0 0 0 50 20zm-5 13h10v10H45V33zm0 18h10v16H45V51z" fill="%231db954"/></svg>';
 
-    // HUD Vinyl Disk Pill style
+    // HUD Layout: User Profile Button + Spotify Vinyl Pill
+    const profileStr = localStorage.getItem('smf_user_profile');
+    let avatarSrc = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="%2314f195" fill-opacity="0.1" stroke="%2314f195" stroke-width="2"/><path d="M50 30a12 12 0 1 0 0 24 12 12 0 1 0 0-24zm0 28c-18 0-30 10-30 20v4h60v-4c0-10-12-20-30-20z" fill="%2314f195"/></svg>';
+    try {
+      if (profileStr) {
+        const profile = JSON.parse(profileStr);
+        if (profile && profile.avatar) avatarSrc = profile.avatar;
+      }
+    } catch(e){}
+
     this.container.innerHTML = `
-      <div class="spotify-vinyl-pill" onclick="window.spotifyWidget.openMusicCenter()" style="display:flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:50%; background: rgba(10, 10, 15, 0.85); border: 2px solid ${this.isConnected ? 'var(--neon-green)' : '#888'}; box-shadow: 0 0 15px rgba(0,0,0,0.5); cursor:pointer; overflow:hidden; position:relative; transition: all 0.3s ease;">
-        <img id="hud-vinyl-img" src="${albumArt}" class="${this.isPlaying ? 'spinning-vinyl' : ''}" style="width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; transition: transform 0.3s ease;" />
-        ${!this.isConnected ? `
-          <div style="position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); color:var(--neon-green); font-size:16px;">🎵</div>
-        ` : ''}
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <!-- User Profile Menu Button -->
+        <div id="user-pic" class="hud-btn" onclick="if(window.showWalletConnect) window.showWalletConnect()" style="width: 44px; height: 44px; padding: 0; border-radius: 50%; overflow: hidden; border: 2px solid var(--neon-blue); box-shadow: 0 0 15px rgba(0, 194, 255, 0.4); cursor: pointer; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: rgba(10,10,15,0.85);">
+          <img src="${avatarSrc}" style="width: 100%; height: 100%; object-fit: cover; display: block;" />
+        </div>
+
+        <!-- Spotify Pill -->
+        <div class="spotify-vinyl-pill" onclick="window.spotifyWidget.openMusicCenter()" style="display:flex; align-items:center; justify-content:center; width:44px; height:44px; border-radius:50%; background: rgba(10, 10, 15, 0.85); border: 2px solid ${this.isConnected ? 'var(--neon-green)' : 'rgba(255,255,255,0.2)'}; box-shadow: 0 0 15px rgba(0,0,0,0.5); cursor:pointer; overflow:hidden; position:relative; transition: all 0.3s ease; flex-shrink: 0;">
+          <img id="hud-vinyl-img" src="${albumArt}" class="${this.isPlaying ? 'spinning-vinyl' : ''}" style="width:100%; height:100%; object-fit:cover; border-radius:50%; display:block; transition: transform 0.3s ease;" />
+          ${!this.isConnected ? `
+            <div style="position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.5); backdrop-filter: blur(2px);">
+              <span style="font-size:18px; filter: drop-shadow(0 0 5px var(--neon-green));">🎵</span>
+            </div>
+          ` : ''}
+        </div>
       </div>
       <style>
         .spinning-vinyl {
