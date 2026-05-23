@@ -67,6 +67,11 @@ const FIGHTER_COMBAT_LINES = {
   hit_landed: ["yes!", "gotcha!", "take that!", "nice one!", "boom!", "that's what I'm talking about!"],
 };
 
+const STT_RECONNECT_BASE_DELAY = 1000; // ms
+const STT_RECONNECT_MAX_DELAY = 10000; // ms
+const STT_RECONNECT_JITTER = 350; // ms
+const STT_RECONNECT_CAP_ATTEMPTS = 10;
+
 export class VoiceAdapter {
   constructor(player) {
     this.player = player;
@@ -88,15 +93,16 @@ export class VoiceAdapter {
     this._turnFade = 0;        // fade timer after turn ends
     this._isClosing = false;
     this._reconnectAttempts = 0;
-    this._reconnectDelay = 1000;
+    this._reconnectDelay = STT_RECONNECT_BASE_DELAY;
     this._reconnectTimer = null;
+    this._sttSocketGeneration = 0;
   }
 
   async attach() {
     this._audioBuffer = [];
     this._isClosing = false;
     this._reconnectAttempts = 0;
-    this._reconnectDelay = 1000;
+    this._reconnectDelay = STT_RECONNECT_BASE_DELAY;
 
     // 1. Request mic FIRST (needs user gesture context)
     console.log(`[Voice P${this.player}] Requesting microphone...`);
@@ -148,33 +154,33 @@ export class VoiceAdapter {
 
   _connectWS() {
     if (this._isClosing) return;
-    if (this.sttWs) {
-      try {
-        this.sttWs.onopen = null;
-        this.sttWs.onmessage = null;
-        this.sttWs.onerror = null;
-        this.sttWs.onclose = null;
-        this.sttWs.close();
-      } catch (e) {}
-      this.sttWs = null;
+    if (this.sttWs && (this.sttWs.readyState === WebSocket.OPEN || this.sttWs.readyState === WebSocket.CONNECTING)) {
+      return;
     }
+    this._clearReconnectTimer();
+    this._disposeSttSocket();
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/stt`;
     console.log(`[Voice P${this.player}] Connecting to STT WebSocket at ${wsUrl} (reconnect attempt: ${this._reconnectAttempts})`);
 
-    this.sttWs = new WebSocket(wsUrl);
-    this.sttWs.binaryType = 'arraybuffer';
+    const ws = new WebSocket(wsUrl);
+    const generation = ++this._sttSocketGeneration;
+    this.sttWs = ws;
+    ws.binaryType = 'arraybuffer';
 
-    this.sttWs.onopen = () => {
+    ws.onopen = () => {
+      if (generation !== this._sttSocketGeneration || this.sttWs !== ws) return;
       console.log(`[Voice P${this.player}] STT WebSocket connected`);
       this.ready = true;
       this._reconnectAttempts = 0;
-      this._reconnectDelay = 1000;
+      this._reconnectDelay = STT_RECONNECT_BASE_DELAY;
+      this._clearReconnectTimer();
       this._flushAudioBuffer();
     };
 
-    this.sttWs.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (generation !== this._sttSocketGeneration || this.sttWs !== ws) return;
       try {
         const msg = JSON.parse(event.data);
         this._handleSTTMessage(msg);
@@ -183,11 +189,13 @@ export class VoiceAdapter {
       }
     };
 
-    this.sttWs.onerror = (e) => {
+    ws.onerror = (e) => {
+      if (generation !== this._sttSocketGeneration || this.sttWs !== ws) return;
       console.error(`[Voice P${this.player}] STT WebSocket error`, e);
     };
 
-    this.sttWs.onclose = (e) => {
+    ws.onclose = (e) => {
+      if (generation !== this._sttSocketGeneration || this.sttWs !== ws) return;
       console.log(`[Voice P${this.player}] STT WebSocket closed: code=${e.code}`);
       this.ready = false;
       this.sttWs = null;
@@ -200,16 +208,45 @@ export class VoiceAdapter {
 
   _scheduleReconnect() {
     if (this._isClosing) return;
-    if (this._reconnectTimer) {
-      clearTimeout(this._reconnectTimer);
+    if (this._reconnectTimer) return;
+    const attempt = this._reconnectAttempts + 1;
+    const cappedBaseDelay = Math.min(this._reconnectDelay, STT_RECONNECT_MAX_DELAY);
+    const jitter = Math.floor(Math.random() * STT_RECONNECT_JITTER);
+    const delay = cappedBaseDelay + jitter;
+    if (attempt <= STT_RECONNECT_CAP_ATTEMPTS) {
+      console.log(`[Voice P${this.player}] Scheduling STT reconnect ${attempt}/${STT_RECONNECT_CAP_ATTEMPTS} in ${delay}ms`);
+    } else {
+      console.log(`[Voice P${this.player}] Scheduling STT reconnect ${attempt} (capped backoff) in ${delay}ms`);
     }
-    console.log(`[Voice P${this.player}] Scheduling STT WebSocket reconnect in ${this._reconnectDelay}ms`);
     this._reconnectTimer = setTimeout(() => {
-      this._reconnectAttempts++;
+      this._reconnectTimer = null;
+      if (this._isClosing) return;
+      this._reconnectAttempts = attempt;
       this._connectWS();
-      // Exponential backoff up to 10 seconds
-      this._reconnectDelay = Math.min(this._reconnectDelay * 2, 10000);
-    }, this._reconnectDelay);
+      this._reconnectDelay = Math.min(cappedBaseDelay * 2, STT_RECONNECT_MAX_DELAY);
+    }, delay);
+  }
+
+  _clearReconnectTimer() {
+    if (!this._reconnectTimer) return;
+    clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = null;
+  }
+
+  _disposeSttSocket() {
+    if (!this.sttWs) return;
+    const ws = this.sttWs;
+    this.sttWs = null;
+    this.ready = false;
+    try {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onerror = null;
+      ws.onclose = null;
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close(1000, 'normal closure');
+      }
+    } catch (_) {}
   }
 
   _handleSTTMessage(msg) {
@@ -500,10 +537,7 @@ export class VoiceAdapter {
 
   async detach() {
     this._isClosing = true;
-    if (this._reconnectTimer) {
-      clearTimeout(this._reconnectTimer);
-      this._reconnectTimer = null;
-    }
+    this._clearReconnectTimer();
     if (this.processor) {
       this.processor.disconnect();
       this.processor = null;
@@ -520,16 +554,8 @@ export class VoiceAdapter {
       this.mediaStream.getTracks().forEach(t => t.stop());
       this.mediaStream = null;
     }
-    if (this.sttWs) {
-      try {
-        this.sttWs.onopen = null;
-        this.sttWs.onmessage = null;
-        this.sttWs.onerror = null;
-        this.sttWs.onclose = null;
-        this.sttWs.close();
-      } catch (e) {}
-      this.sttWs = null;
-    }
+    this._disposeSttSocket();
+    this._sttSocketGeneration++;
     this.ready = false;
   }
 

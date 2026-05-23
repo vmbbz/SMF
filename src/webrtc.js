@@ -10,6 +10,10 @@
 
 const RECONNECT_DELAY = 2000; // ms
 const MAX_RECONNECT_ATTEMPTS = 3;
+const WS_RECONNECT_BASE_DELAY = 1000; // ms
+const WS_RECONNECT_MAX_DELAY = 15000; // ms
+const WS_RECONNECT_JITTER = 350; // ms
+const WS_RECONNECT_CAP_ATTEMPTS = 8;
 
 /**
  * Manages a WebRTC peer connection + data channel for one multiplayer room,
@@ -44,6 +48,11 @@ export class PeerConnection {
     this.wsConnected = false;   // game WebSocket is open
     this.fallbackMode = false;  // true = WebRTC failed, WS-only mode
     this._reconnectAttempts = 0;
+    this._reconnectTimer = null;
+    this._wsReconnectAttempts = 0;
+    this._wsReconnectDelay = WS_RECONNECT_BASE_DELAY;
+    this._wsReconnectTimer = null;
+    this._wsGeneration = 0;
     this._closed = false;
     this.opponentProfile = null;
   }
@@ -103,30 +112,23 @@ export class PeerConnection {
 
     // Always send to server via WebSocket for authoritative validation
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(msg);
+      try {
+        this.ws.send(msg);
+      } catch (err) {
+        console.warn('[webrtc] WS send error:', err);
+      }
     }
   }
 
   /** Tear down all connections and clean up. */
   close() {
     this._closed = true;
-
-    if (this.signalSource) {
-      this.signalSource.close();
-      this.signalSource = null;
-    }
-    if (this.dataChannel) {
-      this.dataChannel.close();
-      this.dataChannel = null;
-    }
-    if (this.pc) {
-      this.pc.close();
-      this.pc = null;
-    }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
+    this._clearReconnectTimer();
+    this._clearWsReconnectTimer();
+    this._disposeSignalSource();
+    this._disposeDataChannel();
+    this._disposePeerConnection();
+    this._disposeWebSocket();
 
     this.connected = false;
     this.wsConnected = false;
@@ -134,18 +136,97 @@ export class PeerConnection {
 
   // ── WebSocket (server relay) ──────────────────
 
+  _clearReconnectTimer() {
+    if (!this._reconnectTimer) return;
+    clearTimeout(this._reconnectTimer);
+    this._reconnectTimer = null;
+  }
+
+  _clearWsReconnectTimer() {
+    if (!this._wsReconnectTimer) return;
+    clearTimeout(this._wsReconnectTimer);
+    this._wsReconnectTimer = null;
+  }
+
+  _disposeSignalSource() {
+    if (!this.signalSource) return;
+    try {
+      this.signalSource.onmessage = null;
+      this.signalSource.onerror = null;
+      this.signalSource.close();
+    } catch (_) {}
+    this.signalSource = null;
+  }
+
+  _disposeDataChannel() {
+    if (!this.dataChannel) return;
+    try {
+      this.dataChannel.onopen = null;
+      this.dataChannel.onclose = null;
+      this.dataChannel.onerror = null;
+      this.dataChannel.onmessage = null;
+      this.dataChannel.close();
+    } catch (_) {}
+    this.dataChannel = null;
+  }
+
+  _disposePeerConnection() {
+    if (!this.pc) return;
+    try {
+      this.pc.onicecandidate = null;
+      this.pc.onconnectionstatechange = null;
+      this.pc.ondatachannel = null;
+      this.pc.close();
+    } catch (_) {}
+    this.pc = null;
+  }
+
+  _disposeWebSocket() {
+    const ws = this.ws;
+    if (!ws) return;
+    this.ws = null;
+    this.wsConnected = false;
+    try {
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close(1000, 'normal closure');
+      }
+    } catch (_) {}
+  }
+
   _connectWebSocket() {
+    if (this._closed) return;
+    const currentState = this.ws?.readyState;
+    if (currentState === WebSocket.OPEN || currentState === WebSocket.CONNECTING) {
+      return;
+    }
+
+    this._clearWsReconnectTimer();
+    this._disposeWebSocket();
+
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const url = `${proto}//${location.host}/ws/game/${this.roomCode}?player=${this.playerNum}`;
+    const ws = new WebSocket(url);
+    const generation = ++this._wsGeneration;
+    this.ws = ws;
 
-    this.ws = new WebSocket(url);
-
-    this.ws.onopen = () => {
+    ws.onopen = () => {
+      if (generation !== this._wsGeneration || this.ws !== ws) return;
       console.log('[webrtc] Game WebSocket connected');
       this.wsConnected = true;
+      this._wsReconnectAttempts = 0;
+      this._wsReconnectDelay = WS_RECONNECT_BASE_DELAY;
+      this._clearWsReconnectTimer();
+      if (this._onConnectionChange) {
+        this._onConnectionChange({ connected: this.connected, fallback: this.fallbackMode, wsConnected: true });
+      }
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (generation !== this._wsGeneration || this.ws !== ws) return;
       try {
         const msg = JSON.parse(event.data);
         if (this._onServerState) this._onServerState(msg);
@@ -154,14 +235,46 @@ export class PeerConnection {
       }
     };
 
-    this.ws.onclose = () => {
+    ws.onclose = () => {
+      if (generation !== this._wsGeneration || this.ws !== ws) return;
       console.log('[webrtc] Game WebSocket disconnected');
       this.wsConnected = false;
+      this.ws = null;
+      if (this._closed) return;
+      this._scheduleWsReconnect();
+      if (this._onConnectionChange) {
+        this._onConnectionChange({ connected: this.connected, fallback: this.fallbackMode, wsConnected: false });
+      }
     };
 
-    this.ws.onerror = (err) => {
+    ws.onerror = (err) => {
+      if (generation !== this._wsGeneration || this.ws !== ws) return;
       console.warn('[webrtc] Game WebSocket error:', err);
     };
+  }
+
+  _scheduleWsReconnect() {
+    if (this._closed || this._wsReconnectTimer || this.wsConnected) return;
+
+    const nextAttempt = this._wsReconnectAttempts + 1;
+    this._wsReconnectAttempts = nextAttempt;
+    const baseDelay = this._wsReconnectDelay;
+    const jitter = Math.floor(Math.random() * WS_RECONNECT_JITTER);
+    const delay = baseDelay + jitter;
+
+    if (nextAttempt <= WS_RECONNECT_CAP_ATTEMPTS) {
+      console.log(`[webrtc] WS reconnect attempt ${nextAttempt}/${WS_RECONNECT_CAP_ATTEMPTS} in ${delay}ms`);
+    } else {
+      console.log(`[webrtc] WS reconnect attempt ${nextAttempt} (capped backoff) in ${delay}ms`);
+    }
+
+    this._wsReconnectTimer = setTimeout(() => {
+      this._wsReconnectTimer = null;
+      if (this._closed || this.wsConnected) return;
+      this._connectWebSocket();
+    }, delay);
+
+    this._wsReconnectDelay = Math.min(baseDelay * 2, WS_RECONNECT_MAX_DELAY);
   }
 
   // ── WebRTC Signaling ──────────────────────────
@@ -229,6 +342,7 @@ export class PeerConnection {
       this.signalSource.onerror = () => {
         console.warn('[webrtc] Signal SSE error');
         if (!resolved) {
+          this._disposeSignalSource();
           reject(new Error('Signaling SSE failed'));
         }
       };
@@ -405,14 +519,17 @@ export class PeerConnection {
   // ── Reconnection & Fallback ───────────────────
 
   _handleDisconnect() {
-    if (this._closed || this.fallbackMode) return;
+    if (this._closed || this.fallbackMode || this._reconnectTimer) return;
 
     this.connected = false;
     this._reconnectAttempts++;
 
     if (this._reconnectAttempts <= MAX_RECONNECT_ATTEMPTS) {
       console.log(`[webrtc] Reconnect attempt ${this._reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}...`);
-      setTimeout(() => this._attemptReconnect(), RECONNECT_DELAY);
+      this._reconnectTimer = setTimeout(() => {
+        this._reconnectTimer = null;
+        this._attemptReconnect();
+      }, RECONNECT_DELAY);
     } else {
       console.log('[webrtc] Max reconnect attempts reached, entering fallback mode');
       this._enterFallback();
@@ -423,11 +540,8 @@ export class PeerConnection {
     if (this._closed || this.connected) return;
 
     // Clean up old peer connection
-    if (this.pc) {
-      this.pc.close();
-      this.pc = null;
-    }
-    this.dataChannel = null;
+    this._disposeDataChannel();
+    this._disposePeerConnection();
 
     try {
       this._createPeerConnection();
@@ -443,20 +557,12 @@ export class PeerConnection {
   _enterFallback() {
     this.fallbackMode = true;
     this.connected = false;
+    this._clearReconnectTimer();
 
     // Clean up WebRTC resources
-    if (this.signalSource) {
-      this.signalSource.close();
-      this.signalSource = null;
-    }
-    if (this.dataChannel) {
-      this.dataChannel.close();
-      this.dataChannel = null;
-    }
-    if (this.pc) {
-      this.pc.close();
-      this.pc = null;
-    }
+    this._disposeSignalSource();
+    this._disposeDataChannel();
+    this._disposePeerConnection();
 
     console.log('[webrtc] Fallback mode: using server relay only');
     if (this._onConnectionChange) {

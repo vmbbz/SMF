@@ -1,10 +1,12 @@
-import { describe, test, expect, beforeEach, jest } from '@jest/globals';
+import { describe, test, expect, beforeEach, afterEach, jest } from '@jest/globals';
 
 // ── Mock browser globals before importing module ──────────
 
 // Mock WebSocket
 class MockWebSocket {
+  static CONNECTING = 0;
   static OPEN = 1;
+  static CLOSING = 2;
   static CLOSED = 3;
   constructor(url) {
     this.url = url;
@@ -173,6 +175,11 @@ describe('PeerConnection', () => {
     pc = new PeerConnection('red-tiger-paw', 'player-uuid-1', 1);
   });
 
+  afterEach(() => {
+    try { pc?.close(); } catch (_) {}
+    jest.useRealTimers();
+  });
+
   describe('constructor', () => {
     test('stores room code, player ID, and player number', () => {
       expect(pc.roomCode).toBe('red-tiger-paw');
@@ -206,6 +213,41 @@ describe('PeerConnection', () => {
       pc.ws.onopen();
       pc.ws.onclose();
       expect(pc.wsConnected).toBe(false);
+    });
+
+    test('WebSocket reconnect uses backoff timer without duplicates', () => {
+      jest.useFakeTimers();
+      const randSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      pc._connectWebSocket();
+      pc.ws.onopen();
+      pc.ws.onclose();
+      expect(pc._wsReconnectAttempts).toBe(1);
+      const firstTimer = pc._wsReconnectTimer;
+
+      pc._scheduleWsReconnect(); // should no-op while timer exists
+      expect(pc._wsReconnectAttempts).toBe(1);
+      expect(pc._wsReconnectTimer).toBe(firstTimer);
+
+      jest.advanceTimersByTime(1100);
+      expect(pc.ws).not.toBeNull();
+
+      randSpy.mockRestore();
+    });
+
+    test('close clears pending WS reconnect timer', () => {
+      jest.useFakeTimers();
+      const randSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+
+      pc._connectWebSocket();
+      pc.ws.onopen();
+      pc.ws.onclose();
+      expect(pc._wsReconnectTimer).not.toBeNull();
+
+      pc.close();
+      expect(pc._wsReconnectTimer).toBeNull();
+
+      randSpy.mockRestore();
     });
 
     test('WebSocket messages forwarded to onServerState callback', () => {
