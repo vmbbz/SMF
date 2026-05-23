@@ -3,6 +3,11 @@ from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv()
 
+from urllib.parse import quote
+
+# In-memory dictionary to store paired Spotify tokens for the APK Device Flow
+SPOTIFY_DEVICE_SESSIONS: dict[str, str] = {}
+
 import asyncio
 import base64
 import hashlib
@@ -1276,7 +1281,7 @@ async def safety_tweets(cashtag: str) -> dict:
         return {"tweets": mock_tweets[:2]}
 
 @get("/api/spotify/login")
-async def spotify_login(request: Request) -> Response[Any]:
+async def spotify_login(request: Request, device: Optional[str] = None) -> Response[Any]:
     if not SPOTIFY_CLIENT_ID:
         return Response(content="Spotify integration not configured.", status_code=500, media_type="text/plain")
     scopes = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state'
@@ -1289,18 +1294,63 @@ async def spotify_login(request: Request) -> Response[Any]:
         f"&redirect_uri={quote(redirect_uri)}"
         f"&scope={scopes.replace(' ', '%20')}"
     )
+    if device:
+        url += f"&state={quote(device)}"
     return Redirect(url)
+
+@post("/api/spotify/save-token")
+async def spotify_save_token(data: dict[str, str]) -> dict[str, str]:
+    device = data.get("device")
+    token = data.get("token")
+    if not device or not token:
+        raise HTTPException(status_code=400, detail="Missing device or token")
+    SPOTIFY_DEVICE_SESSIONS[device] = token
+    return {"status": "success"}
+
+@get("/api/spotify/check")
+async def spotify_check(device: str) -> dict[str, str]:
+    token = SPOTIFY_DEVICE_SESSIONS.get(device)
+    if token:
+        SPOTIFY_DEVICE_SESSIONS.pop(device, None)
+        return {"status": "success", "token": token}
+    return {"status": "pending"}
 
 @get("/auth/spotify/callback")
 async def spotify_callback() -> Response[str]:
     html_content = """
         <html><body><script>
             const hash = window.location.hash.substring(1);
-            const params = new URLSearchParams(hash);
-            const token = params.get('access_token');
+            const hashParams = new URLSearchParams(hash);
+            const queryParams = new URLSearchParams(window.location.search);
+            const token = hashParams.get('access_token');
+            const state = hashParams.get('state') || queryParams.get('state');
+            
             if (token) {
-                localStorage.setItem('spotify_access_token', token);
-                window.location.href = '/';
+                if (state && state !== 'null' && state !== 'undefined' && state !== '') {
+                    // Device flow! Save on server
+                    fetch('/api/spotify/save-token', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ device: state, token: token })
+                    })
+                    .then(res => {
+                        document.body.innerHTML = `
+                            <div style="background: #0a0a0f; color: white; font-family: monospace; text-align: center; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;">
+                                <div style="font-size: 50px; margin-bottom: 20px;">🎵</div>
+                                <h2 style="color: #14f195; letter-spacing: 2px;">SPOTIFY CONNECTED</h2>
+                                <p style="color: #ccc; font-size: 14px; margin-top: 10px;">Your device has been paired successfully!</p>
+                                <p style="color: #666; font-size: 11px; margin-top: 20px;">You can now close this tab and return to the game.</p>
+                            </div>
+                        `;
+                    })
+                    .catch(err => {
+                        document.body.innerHTML = '<div style="color: red; padding: 20px;">Error pairing device: ' + err + '</div>';
+                    });
+                } else {
+                    // Standard WebApp flow
+                    localStorage.setItem('spotify_access_token', token);
+                    window.location.href = '/';
+                }
             } else {
                 document.body.innerHTML = 'Spotify connection failed. Please make sure you have the client ID configured. <br><a href="/">Return to Game</a>';
             }
@@ -2615,6 +2665,8 @@ app = Litestar(
         proxy_image,
         spotify_login,
         spotify_callback,
+        spotify_save_token,
+        spotify_check,
         create_static_files_router(path="/src", directories=[ROOT / "src"]),
         create_static_files_router(path="/assets", directories=[ROOT / "assets"]),
         create_static_files_router(path="/", directories=[ROOT / ""]),

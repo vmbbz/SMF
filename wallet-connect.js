@@ -348,12 +348,39 @@ export async function showWalletConnect() {
               DISCONNECT WALLET
             </button>
           </div>
+        ` : (window.showWalletConnectionOptions ? `
+          <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); padding: 10px; border-radius: 8px; font-size: 9px; line-height: 1.4; color: #ccc;">
+            <div style="font-weight:bold; color:var(--neon-green); font-size: 9px; margin-bottom: 8px; text-align:center;">🔗 CONNECT SOLANA WALLET</div>
+            
+            <p style="font-size: 8px; color: #bbb; margin-bottom: 10px; line-height: 1.3;">
+              To buy boosts and sign transactions, open this game in your wallet's browser. Or, sync your address manually in Read-Only mode.
+            </p>
+
+            <button onclick="window.copyGameUrlToClipboard()" class="premium-btn" style="padding: 6px 10px; font-size: 8px; width: 100%; margin-bottom: 8px; border-color: rgba(20,241,149,0.3);">
+              OPTION A: COPY GAME LINK TO WALLET
+            </button>
+
+            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; margin-top: 6px;">
+              <div style="font-weight:bold; color:var(--neon-blue); font-size: 8px; margin-bottom: 6px;">OPTION B: SYNC ADDRESS (READ-ONLY)</div>
+              <div style="display:flex; gap:6px;">
+                <input type="text" id="manual-wallet-input" placeholder="Paste Solana Public Key" style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:4px 8px; color:white; font-family:monospace; font-size:8px;">
+                <button onclick="window.syncManualSolanaAddress()" style="background:var(--neon-blue); border:none; color:black; font-family:inherit; font-size:8px; font-weight:bold; border-radius:4px; padding:4px 10px; cursor:pointer;">
+                  SYNC
+                </button>
+              </div>
+              <span id="manual-wallet-error" style="color:#ff3b30; font-size:7px; display:block; margin-top:3px;"></span>
+            </div>
+
+            <button onclick="window.cancelWalletOptions()" style="background:transparent; border:none; color:#888; font-family:inherit; font-size:8px; display:block; margin:8px auto 0 auto; cursor:pointer; text-decoration:underline;">
+              Cancel
+            </button>
+          </div>
         ` : `
           <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $SMF tokens to buy premium boost packs.</p>
           <button onclick="window.connectSolanaWallet()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px;">
             CONNECT SOLANA WALLET
           </button>
-        `}
+        `)}
       </div>
       
       <!-- PREMIUM BOOST STORE SECTION -->
@@ -492,7 +519,9 @@ export function hideWalletConnect() {
 // Global hook: connect wallet (Real & Mock-Free)
 window.connectSolanaWallet = async function() {
   if (!window.solana) {
-    alert('⚠️ No Solana wallet detected! Please install Phantom or Backpack.');
+    // If no window.solana is detected, show the beautiful manual sync / deep link copy options panel
+    window.showWalletConnectionOptions = true;
+    showWalletConnect();
     return;
   }
   try {
@@ -520,6 +549,61 @@ window.connectSolanaWallet = async function() {
     console.error('Wallet connection rejected/failed:', err);
     alert('⚠️ Wallet connection failed: ' + (err.message || err));
   }
+};
+
+window.copyGameUrlToClipboard = function() {
+  const gameUrl = 'https://sticklash.fun';
+  navigator.clipboard.writeText(gameUrl).then(() => {
+    alert('📋 Game URL copied to clipboard! Paste it in the Browser tab of Phantom or Backpack.');
+  }).catch(() => {
+    alert('📋 Game URL is: https://sticklash.fun (Copy and open in Phantom browser)');
+  });
+};
+
+window.syncManualSolanaAddress = async function() {
+  const inputEl = document.getElementById('manual-wallet-input');
+  const errorEl = document.getElementById('manual-wallet-error');
+  if (!inputEl) return;
+  const address = inputEl.value.trim();
+  
+  if (!address) {
+    if (errorEl) errorEl.textContent = 'Please enter an address.';
+    return;
+  }
+  
+  // Basic validation (Solana public key base58, 32-44 chars)
+  const isBase58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+  if (!isBase58) {
+    if (errorEl) errorEl.textContent = 'Invalid Solana address format.';
+    return;
+  }
+  
+  try {
+    const profile = getProfile();
+    profile.walletConnected = true;
+    profile.walletAddress = address;
+    
+    // Clear the options flag
+    window.showWalletConnectionOptions = false;
+    
+    // Fetch live on-chain balance via RPC
+    await updateOnChainBalance(profile);
+    
+    saveProfile(profile);
+    showWalletConnect();
+    
+    const activeGame = window.currentGame || window.game || window._game;
+    if (activeGame && activeGame.showBoostMessage) {
+      activeGame.showBoostMessage("⚡ SOLANA ADDRESS SYNCED!", "runner");
+    }
+  } catch (e) {
+    if (errorEl) errorEl.textContent = 'Failed to sync: ' + e.message;
+  }
+};
+
+window.cancelWalletOptions = function() {
+  window.showWalletConnectionOptions = false;
+  showWalletConnect();
 };
 
 // Global hook: disconnect wallet
@@ -694,19 +778,12 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
 
 // Global hook: disconnect Spotify directly from modal
 window.disconnectSpotifyInModal = function() {
-  localStorage.removeItem('spotify_access_token');
-  
-  // Refresh Spotify Widget
   if (window.spotifyWidget) {
-    window.spotifyWidget.isConnected = false;
-    window.spotifyWidget.accessToken = null;
-    if (window.spotifyWidget.player) {
-      try { window.spotifyWidget.player.disconnect(); } catch (e) {}
-      window.spotifyWidget.player = null;
-    }
-    window.spotifyWidget.render();
+    window.spotifyWidget.disconnect();
+  } else {
+    localStorage.removeItem('spotify_access_token');
   }
-
+  
   // Redraw modal
   showWalletConnect();
   console.log('[Spotify] Logged out successfully from profile panel.');
