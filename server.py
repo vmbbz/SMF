@@ -89,6 +89,7 @@ matchmaking_task: MatchmakingTask | None = None
 
 DEFAULT_SMF_MINT = "EPjFWdd5AufqSSjvtq8aLv9hqpstb218c3sL955m1od1"
 DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
+DEFAULT_PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_SMF_PRICE_FALLBACK = Decimal("0.00762")
 BOOST_INTENT_TTL_SECONDS = int(os.environ.get("BOOST_INTENT_TTL_SECONDS", "600"))
 STARTER_BOOSTS = int(os.environ.get("STARTER_BOOSTS", "15"))
@@ -510,6 +511,11 @@ def _get_smf_mint() -> str:
 
 def _get_solana_rpc() -> str:
     return os.environ.get("SOLANA_RPC", DEFAULT_SOLANA_RPC)
+
+
+def _get_public_solana_rpc() -> str:
+    # Never leak private provider URLs (e.g. key-bearing RPC) to browser clients.
+    return os.environ.get("SOLANA_RPC_PUBLIC", DEFAULT_PUBLIC_SOLANA_RPC)
 
 
 def _as_decimal(value: Any, fallback: Decimal) -> Decimal:
@@ -1617,10 +1623,10 @@ async def favicon() -> Response:
 
 @get("/api/smf-config")
 async def api_smf_config() -> dict[str, str]:
-    """Retrieve SMF mint address and Solana RPC URL from environment variables."""
+    """Retrieve SMF mint address and client-safe Solana RPC URL."""
     return {
         "smfMint": _get_smf_mint(),
-        "solanaRpc": _get_solana_rpc(),
+        "solanaRpc": _get_public_solana_rpc(),
     }
 
 
@@ -1886,7 +1892,7 @@ async def api_boost_create_intent(request: Request, data: dict[str, Any]) -> dic
         "requiredSmfRawAmount": str(quote["required_smf_raw"]),
         "tokenDecimals": quote["token_decimals"],
         "mint": quote["mint"],
-        "solanaRpc": quote["rpc"],
+        "solanaRpc": _get_public_solana_rpc(),
         "smfPriceUsd": quote["smf_price"],
         "expiresAtUnix": expires_at_unix,
         "currentBoostBalance": boosts,

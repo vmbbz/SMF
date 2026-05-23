@@ -52,6 +52,7 @@ The STICKLASH backend and infrastructure are powered by standard-setting Web3 an
 | **Upstash** | Serverless Redis | Multi-region WebRTC signaling, matchmaking queue, & active room lobby storage | `![Upstash](https://img.shields.io/badge/Upstash-Serverless--Redis-FF4F00?style=flat-square&logo=redis&logoColor=white)` |
 | **Deepgram** | Aura 2 Zeus & Flux v2 | Dynamic 24kHz Zeus voice lines, WebSocket speech capture, & AI-fighter command pipeline | `![Deepgram](https://img.shields.io/badge/Deepgram-Aura--Zeus-13EF95?style=flat-square&logo=deepgram&logoColor=black)` |
 | **Solana Web3** | On-Chain SPL Program | Phantom/Backpack/Solflare wallet pairing, decimal lookups, & SPL token burn transactions | `![Solana](https://img.shields.io/badge/Solana-SPL--Token-9945FF?style=flat-square&logo=solana&logoColor=white)` |
+| **Alchemy** | Solana Node API + Streaming | Mainnet RPC reliability for wallet balance reads, boost burn transaction broadcast/simulation, and low-latency subscription infrastructure (WebSockets / gRPC path) | `![Alchemy](https://img.shields.io/badge/Alchemy-Solana--RPC-1FC7D4?style=flat-square&logo=alchemy&logoColor=white)` |
 | **Twitter / X** | Web Intent API | Zero-auth viral gameplay sharing, automated screenshot capture matching, & ELO brag links | `![Twitter](https://img.shields.io/badge/Twitter/X-Viral--Share-000000?style=flat-square&logo=x&logoColor=white)` |
 | **Birdeye** | DeFi Market API | Live on-chain price data, market cap scaling, & pump.fun graduated feeds | `![Birdeye](https://img.shields.io/badge/Birdeye-DeFi--Data-00C2FF?style=flat-square&logo=coinmarketcap&logoColor=white)` |
 | **Supabase** | PostgreSQL | Persistent multi-player ELO rating records, match stats, & active leaderboard graphs | `![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase&logoColor=white)` |
@@ -235,6 +236,10 @@ stick-fighter/
 
 ```env
 BIRDEYE_API_KEY=your_key_here
+# Server-only/private endpoint used by backend workers
+SOLANA_RPC=https://solana-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
+# Client-safe endpoint exposed to browser/mobile web client
+SOLANA_RPC_PUBLIC=https://api.mainnet-beta.solana.com
 ```
 
 ---
