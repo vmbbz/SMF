@@ -373,11 +373,11 @@ export class SFX {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, now);
         
-        // Guzheng plucked characteristic: instant attack, rapid decay, very long resonant tail
+        // Guzheng plucked characteristic: instant attack, rapid decay, clean ringing tail
         gain.gain.setValueAtTime(0, now);
         gain.gain.linearRampToValueAtTime(volume, now + 0.002);
-        gain.gain.exponentialRampToValueAtTime(volume * 0.08, now + 0.04);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.0); // Longer ringing tail (2.0s instead of 0.5s)
+        gain.gain.exponentialRampToValueAtTime(volume * 0.1, now + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.8); // Shortened ringing tail (0.8s instead of 2.0s)
         
         // Sharp pluck noise / pick strike (using a quick decaying high-frequency sawtooth)
         const pick = ctx.createOscillator();
@@ -392,24 +392,24 @@ export class SFX {
         pick.start(now);
         pick.stop(now + 0.02);
 
-        // Ringing metallic string resonance - made longer for Guzheng physical depth
+        // Ringing metallic string resonance
         const resonance = ctx.createOscillator();
         const resGain = ctx.createGain();
         resonance.type = 'sine';
         resonance.frequency.setValueAtTime(freq * 2, now);
         resGain.gain.setValueAtTime(0, now);
         resGain.gain.linearRampToValueAtTime(volume * 0.25, now + 0.002);
-        resGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.50); // Longer tail (0.50s instead of 0.15s)
+        resGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15); // Reverted resonance tail (0.15s instead of 0.5s)
         resonance.connect(resGain);
         resGain.connect(ctx.destination);
         resonance.start(now);
-        resonance.stop(now + 0.50);
+        resonance.stop(now + 0.15);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
         
         osc.start(now);
-        osc.stop(now + 2.0);
+        osc.stop(now + 0.8);
       };
 
       const playPad = (freq, time, duration, volume = 0.004) => { // Quieter pad (0.004 instead of 0.02)

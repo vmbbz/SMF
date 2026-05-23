@@ -1,250 +1,149 @@
 # $SMF — STICKLASH 🥊⚡
 
 > **The world's first Solana meme-token fighting game.**
-> Real on-chain data powers your opponent's health, damage, and speed. Fight trending tokens live from Pump.fun and Birdeye. Every match is different because the blockchain never stops.
+> Real on-chain market data powers your opponent's health, damage, and speed. Fight trending tokens live from Pump.fun and Birdeye. Every match is dynamic because the blockchain never sleeps. 
 
 ---
 
-## 🎮 Overview
+## 📱 Mobile App Downloads (Android)
 
-STICKLASH is a 2D stickman fighting game where **Pump.fun / Solana meme tokens are your AI opponents**. Token market metrics — 24h volume, price change, liquidity — are pulled live and directly translate into in-game power stats. A token that just pumped 2× hits harder, moves faster, and has more health. One that's bleeding out on DexScreener is a pushover.
-
-Built with vanilla Canvas2D, a custom combat engine, and a FastAPI/Python backend for live Birdeye data.
+Get straight into the arena with our pre-built packages:
+* **📥 [Download Debug APK (Developer Edition)](file:///C:/Users/cosyc/StickFight/stick-fighter/android/app/build/intermediates/apk/debug/app-debug.apk)** — *Pre-compiled build for instant local testing and development analysis.*
+* **🚀 GitHub Releases** — Download both debug and fully optimized release builds directly from the GitHub repository release section.
 
 ---
 
-## ✨ Feature Overview
+## 🎨 Design & Viral Aesthetics
+
+STICKLASH is loaded with premium Web3 and traditional Eastern aesthetics:
+* **🏮 Shojumaru Traditional Chinese Font**: The UI is wrapped in Google Font's gorgeous `'Shojumaru'` stylized font, giving the wallet modal, leaderboard, and user profiles a legendary martial arts vibe.
+* **🎵 Procedural Guzheng & Pipa Plucks**: Powered by the Web Audio API, the background music dynamically synthesizes high-pitched traditional Chinese string plucks with C5–A6 pentatonic melodies, immediate pick-strike sawtooth transients, and a warm string resonance tail.
+* **🛎️ Chinese Gong Splash ("dhsssss")**: A custom synthesized Chinese Gong sweep triggers at fight start and every 32 beats, blending a deep low-frequency pitch sweep with 7 high-frequency square wave oscillators routed through bandpass filters to form a sweeping metallic splash.
+* **🥋 Physical Whip Impact SFX (`whip_impact.wav`)**: Hits landing on opponent's limbs (**arm** or **leg**) trigger a whip cracking impact sound, keeping physical kick sweeps and roundhouses sounding phenomenally distinct!
+* **📱 Adaptive Viewport Stage Adjustments**: Built-in landscape auto-detection drops the floor Y coordinate to `logicalH - 95px` (exactly **80px lower** than legacy builds), shifting the fighters clear of the top HUD bars and timer for balanced mobile gaming.
+
+---
+
+## 🚀 Live Boost System: "LMAO WHIPLASH!"
+
+Opponent stats are scaled directly from live token metrics. When a token is pumping hard in real-time, **Live Boosts** fire immediately to empower the opponent bot:
+
+| Tier | Price Pump Trigger | Combat Effect |
+|---|---|---|
+| 🟠 **Runner** | `+20% to +45%` gain | Automatic 3-hit forward dash combo + brief stun |
+| 🔴 **Spike** | `+45% to +100%` gain | 5-hit combo + P1 levitated in the air for `1.5s` |
+| 🟣 **Overdrive** | `+100%+` (2× pump) | 10 rapid Hadoukens + P1 levitated for `3s` in full chaos |
+
+### ⚠️ Survival Strategy
+> **You MUST rely on active buy pressure or burn Live Boosts to stand a chance against pumping high-volume opponent tokens. Trying to fight a 2× pump vanilla will result in getting completely whipped — LMAO WHIPLASH!**
+
+---
+
+## 🎮 Game Features & Controls
 
 ### 🏟️ Game Modes
+* **Trending Arena**: Fight a random token currently trending on Solana.
+* **Endless Pump Stream**: An endless gauntlet of 12 trending tokens; includes an 8-second auto-advance victory bar.
+* **Custom Fight**: Paste any Solana token mint address to fetch and fight it directly.
+* **Multiplayer**: Peer-to-peer WebRTC matches with real-time profile picture ELO updates.
 
-| Mode | Description |
-|---|---|
-| **Trending Arena** | Fight a random token from the current Birdeye trending list |
-| **Endless Pump Stream** | Auto-queues 12 trending tokens; 8-second countdown auto-advances to the next fight after each win or loss |
-| **Custom Fight** | Paste any Solana token mint address and fight that specific token |
-| **Multiplayer** | WebRTC peer-to-peer 2P local or remote matches (requires auth) |
-
-### ⚔️ Combat Engine
-
-- **Custom RAF game loop** — deterministic 60fps canvas rendering with fixed-timestep physics
-- **Full move set**: light/heavy punch, light/heavy kick, jump, crouch, dash, block, Hadouken (projectile)
-- **Hitbox system**: limb-specific collision with head/crotch shot bonuses and clash detection
-- **Combo engine**: buffered input system with timing windows for multi-hit strings
-- **AI opponent**: LLM-driven command planning (with mock fallback) — commands queued in 5-action batches
-- **Damage log**: real-time HUD showing recent hits between the two fighters
-
-### 📊 Token Power Scaling
-
-Token market data is converted into three in-game stats:
-
-| Stat | Source | Range |
-|---|---|---|
-| **Health** | Volume × price change × liquidity (safePower formula) | 50–1000 HP |
-| **Damage Multiplier** | Proportional cap: `1.0 + (power-1) × 0.1` | 0.8× – 1.5× |
-| **Speed Multiplier** | Conservative: `1.0 + (power-1) × 0.05` | 0.95× – 1.2× |
-
-> Even a 75× power token caps at 1.5× damage — the game stays playable no matter how insane the pump is.
-
-### 🚀 Live Boost System
-
-When the currently-fought token's price pumps **during your fight**, timed boost events fire:
-
-| Tier | Trigger | Effect |
-|---|---|---|
-| 🟠 **Runner** | +20–45% price gain | 3-hit dash combo on P1, brief stun |
-| 🔴 **Spike** | +45–100% price gain | 5-hit combo + P1 levitated 1.5s |
-| 🟣 **Overdrive** | +100%+ (2× pump) | 10 Hadoukens + P1 levitated 3s, chaos mode |
-
-Price polling: every 60s with 30s warm-up delay, server-side Birdeye cache shared across all users.
-
-### 📈 Live Market Feed (Trending Strip)
-
-- Scrolling marquee at the bottom of the screen showing live trending tokens
-- Each pill shows: token icon, symbol, 24h price change (green/red)
-- Click any pill to instantly fight that token
-- Toggle between **ALL TRENDING** and **PUMP.FUN GRADUATES ONLY**
-- Two strip instances: one on the landing page, one during combat
-
-### 🏆 Victory Screen
-
-- **Winner/Loser dual cards** with flip animation — click to toggle between them (in single-player/trending modes)
-- **Dedicated PvP Victory Cards**: Side-by-side glassmorphic cards showing Winner (green border) and Loser (pink border) actual OIDC profile images and display names with animated old-to-new ELO transition (e.g. `1200 → 1224 (+24)`).
-- **Rematch Integration**: Bypasses the results screen in multiplayer, allowing instant room rematch re-entry and selections via uvicorn/Litestar.
-- **Rich card tabs**: ABOUT (market stats), SOCIAL, SAFETY
-- **BUY button**: direct DexScreener link for the token
-- **Share to X**: pre-filled tweet with match result, including custom PvP adaptive share copy with opponent names
-- **Endless mode session header**: Round counter, W/L record, streak badge (🔥 3 STREAK / 💀 ON TILT)
-- **8-second auto-advance countdown**: animated progress bar, cancels if you click any button manually
-
-### 🎙️ Voice Controls & Deepgram TTS Announcer
-
-- **Deepgram Aura 2 Zeus Integration**: All voice lines and announcer shouts (like *"FIGHT!"* or *"KNOCKOUT!"*) are rendered dynamically with Deepgram's **Aura 2 Zeus** (deep, authoritative male voice) running at **24,000Hz**.
-- **WebSocket STT Stream**: Player mic is captured at 16,000Hz and streamed via `/ws/stt` proxy to Deepgram Flux v2.
-- **Phonetic Homophone Cleaning**: Robust client-side pre-processing strips punctuation and maps slurred phrases (e.g. *"how do you can"*, *"hurricane"*, *"outer scan"*) to clean game moves (*"hadouken"*), raising recognition to 100% accuracy.
-- **Zero-Latency Combat Verbalisations**: Getting hit or landing hits bypasses the slow LLM network roundtrip (~1s) and picks a local random reactive phrase, executing it instantly (~100ms) for high-performance combat game feel.
-- **LLM Context Injection**: General conversational chat routes through Anthropic Claude / Gemini with a structured try/catch backup, falling back gracefully to pre-scripted phrases on rate limits.
-
-### 🎮 Mobile Virtual Joystick
-
-- **Left side**: analog joystick (130px base) — 8-direction movement, deadzone 18%
-  - Push up = JUMP
-  - Left/right = walk/dash
-  - Down = crouch
-- **Right side** attack grid:
-  - ⚡ **SP** (top, octagon shape, gold pulsing glow) — Hadouken/Special
-  - 👊 LP — Light Punch
-  - 🦵 LK — Light Kick
-  - 🔥 HP — Heavy Punch
-  - 💥 HK — Heavy Kick
-- **Only visible during gameplay** — hidden on the landing/home screen
-- **3-layer reliability**: re-registers on every `resetAndFight`, watchdog polling every 500ms, `_showMobileControls` polling until `p1Input` is available
-
-### 🌦️ Weather System
-
-- Live weather overlay on the game stage canvas
-- Controlled by the "WEATHER" toggle in the HUD
-
-### 🎵 Spotify Widget
-
-- Connects via Spotify Web Playback SDK
-- Shows currently playing track name, play/pause, next track controls
-- Appears in the HUD widget bar (responsive: bottom of screen on PC, top 10% on mobile)
+### 🎮 Touch Joysticks
+* **Left Joystick**: Dynamic 8-directional virtual stick (Push up = JUMP, Down = CROUCH).
+* **Right Attack Grid**: LP (Light Punch), LK (Light Kick), HP (Heavy Punch), HK (Heavy Kick), and a pulsing gold **SP** button for Hadouken energy projectiles.
 
 ---
 
-## 🏗️ Architecture
+## 🛠️ Step-by-Step Spotify Integration & Pairing Setup
 
-```
-stick-fighter/
-├── index.html              # Main shell — game canvas, UI panels, mobile joystick, scripts
-├── birdeye_service.py      # FastAPI backend — Birdeye API proxy, caching, trending/price endpoints
-├── src/
-│   ├── main.js             # Orchestration layer — game lifecycle, loadOpponent, resetAndFight, nextFight
-│   ├── game.js             # Core combat engine — RAF loop, hitbox, projectiles, round management
-│   ├── fighter.js          # Fighter class — animations, move execution, applyMarketStats
-│   ├── input.js            # InputManager — adapter pattern, merges keyboard/joystick/voice/LLM actions
-│   ├── virtual-joystick.js # VirtualJoystickAdapter — touch events, 8-direction, attack buttons
-│   ├── live-boost-system.js# Price polling, tier detection, boost effects + TTS announcer
-│   ├── token-power-scaling.js # calculateFighterPower() — market data → health/damage/speed
-│   ├── token-utils.js      # getTrendingTokens(), getTokenByMint(), generatePersonality()
-│   ├── trending-strip.js   # Marquee strip component — renders token pills, handles click-to-fight
-│   ├── loser-card.js       # Rich card renderer — ABOUT/SOCIAL/SAFETY tabs in victory overlay
-│   ├── voice.js            # Voice input adapter — STT WebSocket + LLM command pipeline
-│   ├── llm.js              # LLM adapter — queues 5-action battle plans via /api/llm/command
-│   ├── webrtc.js           # WebRTC peer-to-peer multiplayer
-│   ├── spotify-widget.js   # Spotify Web Playback SDK integration
-│   ├── effects.js          # Visual effects — coin rain, particle systems
-│   ├── player-effects.js   # Per-fighter aura/glow effects for boost tiers
-│   ├── sfx.js              # Sound effects manager
-│   ├── session.js          # Session state model
-│   ├── ui.js               # Mode selection UI
-│   └── auth.js             # Authentication helpers
-└── assets/
-    ├── smf-logo.png
-    └── smf-bg.jpg
-```
+To connect Spotify inside your mobile APK WebView and resolve authentication redirect errors:
 
-### Key Globals / API Surface
-
-| Global | Owner | Purpose |
-|---|---|---|
-| `window.loadOpponent(token, forceRestart?)` | `main.js` | Load a token fighter into P2 |
-| `window.resetAndFight(token)` | `main.js` | Full teardown + fresh game start (the single source of truth for "next fight") |
-| `window.nextFight()` | `main.js` | Picks next token (pumpQueue → trending strip → API fallback) and calls resetAndFight |
-| `window.fightToken(mint)` | `index.html` | Fetches token by mint and calls loadOpponent |
-| `window.startEndlessMode()` | `index.html` | Loads 12 trending tokens into pumpQueue, sets endlessSession.active |
-| `window.showVictoryOverlay(winnerNum, token, loserToken)` | `main.js` | Renders victory screen + session stats + countdown |
-| `window.endlessSession` | `main.js` | `{active, round, wins, losses, streak}` — session state for endless mode |
-| `window._cancelEndlessCountdown()` | `main.js` | Cancels 8s auto-advance timer |
-| `window._showMobileControls()` | `index.html` | Shows joystick UI + registers adapter with current p1Input |
-| `window.liveBoostSystem` | `main.js` | LiveBoostSystem instance for current fight |
-| `window.currentGame` / `window.game` | `main.js` | Current Game instance (both aliases kept for compatibility) |
-
----
-
-## 🔌 Backend API
-
-The Python FastAPI backend (`birdeye_service.py`) proxies Birdeye and exposes:
-
-| Endpoint | Description |
-|---|---|
-| `GET /api/trending?count=N` | Top N trending Solana tokens with full market data |
-| `GET /api/token/{mint}` | Full token data by mint address |
-| `GET /api/price/{mint}` | Current spot price (cached, refreshed on schedule) |
-| `GET /api/graduated?count=N` | Pump.fun graduated tokens only |
-| `POST /api/llm/command` | LLM battle plan endpoint |
-| `POST /api/voice/tts` | TTS audio generation |
-| `WS /api/voice/stt` | Real-time speech-to-text WebSocket |
-
-### Caching Strategy
-
-- **Trending list**: refreshed every ~60s, shared across all users (Birdeye rate limit aware)
-- **Price data**: per-mint cache, refreshed on poll schedule
-- **Live boost checks**: 30s warm-up after fight start, then 60s poll interval with ±8s jitter
-- Utilisation target: **~8% of Birdeye quota** for ~200 concurrent users with headroom
-
----
-
-## 📱 Mobile UX
-
-- Viewport: `width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no`
-- Virtual joystick only appears on touch devices (`hover:none and pointer:coarse`)
-- Joystick hidden on landing screen, revealed when a fight starts
-- Mobile trending strip pills: tighter padding, smaller font (media query ≤768px)
-- HUD widgets: `bottom: 77px` on PC, `top: 10%` on mobile (doesn't overlap joystick)
-- All HUD widget text capped at `12px` on mobile
-
----
-
-## 🔑 Environment Variables
-
+### 1. Configure the `.env` File
+In order for server-side code token exchanging to function, copy your client secret from the Spotify dashboard and append it to `stick-fighter/.env`:
 ```env
-BIRDEYE_API_KEY=your_key_here
+SPOTIFY_CLIENT_ID=your_spotify_client_id
+SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 ```
 
----
+### 2. Configure Authorized Redirect URIs
+Spotify's security policies require you to explicitly whitelist your exact callback URLs. 
+1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+2. Select your App, click **Edit Settings**.
+3. Under the **Redirect URIs** section, you **must add both of the following URLs**:
+   * `https://sticklash.fun/auth/spotify/callback` *(Production server)*
+   * `http://localhost:8000/auth/spotify/callback` *(Local testing)*
+4. Save the settings. 
 
-## 🚀 Running Locally
-
-```bash
-# Backend
-cd stick-fighter
-uv run python birdeye_service.py
-
-# Frontend (separate terminal)
-python -m http.server 3000
-# Then open http://localhost:3000
-```
+*This completely eliminates the `redirect_uri not matching configuration` error regardless of whether you verify via Email or SMS.*
 
 ---
 
-## 🛠️ Tech Stack
+## 📦 How to Build a Release APK
 
-| Layer | Technology |
-|---|---|
-| Frontend | Vanilla HTML/CSS/JS, Canvas 2D API |
-| Game Engine | Custom RAF loop (no framework) |
-| Backend | Python FastAPI + uvicorn |
-| Data | Birdeye API (trending, prices), Pump.fun graduated feed |
-| Voice STT | Deepgram WebSocket (Flux v2 model) |
-| Voice TTS | Deepgram Speak API (Aura 2 Zeus at 24kHz) |
-| AI Commands | LLM via `/api/voice/llm` |
-| Multiplayer | WebRTC peer-to-peer |
-| Music | Spotify Web Playback SDK |
-| Fonts | Press Start 2P (Google Fonts) |
+To package a fully optimized, production-ready signed Release APK for distribution:
+
+### Option A: Via Android Studio (Recommended)
+1. Open the `./android` folder inside **Android Studio**.
+2. Go to **Build ➔ Generate Signed Bundle / APK...** in the top menu.
+3. Select **APK** and click **Next**.
+4. Create a new Keystore Path (`.jks` file) or select your existing release key, fill out the keystore passwords and alias, then click **Next**.
+5. Set the Build Variant to **release** and select **V4 (Full Signature)**.
+6. Click **Create / Finish**. The signed release APK will be generated under:
+   `android/app/release/app-release.apk`
+
+### Option B: Via Command Line (Gradle)
+1. Open PowerShell and navigate to the android directory:
+   ```bash
+   cd android
+   ```
+2. Run the Gradle build task:
+   ```powershell
+   ./gradlew assembleRelease
+   ```
+3. Locate the compiled release APK under:
+   `android/app/build/intermediates/apk/release/app-release-unsigned.apk`
 
 ---
 
-## 🎯 Design Principles
+## 📱 Solana Seeker Mobile dApp Store Publishing Guide
 
-1. **Token data is the game** — no fake stats. Every fight reflects real market conditions at that moment.
-2. **Playable no matter the pump** — damage multiplier capped at 1.5× so even a 100× token can't one-shot you.
-3. **Seamless "Next Fight"** — `resetAndFight()` is the single authoritative teardown that clears all state (RAF loop, boost system, game instance, p1Input registration) before starting fresh.
-4. **Mobile-first resilience** — joystick registration uses 3 independent layers so it can't silently lose its connection to a new game instance.
-5. **Server-side caching** — all users share one cached trending list; individual price polls are staggered with jitter to stay within API rate limits.
+STICKLASH is fully optimized for listing in the official **Solana Seeker Mobile dApp Store**!
+
+### 1. Publisher Console Registration
+* Visit the [Solana dApp Store Publisher Console](https://publisher.solanamobile.com).
+* Log in using a publisher wallet. Publishing a dApp is done entirely on-chain by minting a **dApp Release NFT** representing your application's cryptographic metadata.
+
+### 2. Key Listing Specifications
+* **On-Chain Solana Integration**: Leverage our dual-mode Wallet Connect panel. Inside the Solana Seeker dApp Store browser, `window.solana` is natively injected, allowing players to connect Phantom/Backpack/Solflare directly, query live `$SMF` ATA balances, and sign transactions.
+* **Target SDK Requirements**: 
+  * Targets **SDK 34 (Android 14)** as mandated by the Seeker Mobile Store.
+  * Integration of Google's security requirements: HTTPS-only Android Scheme and clear CORS policies inside `server.py` to prevent unauthorized domain access.
+
+---
+
+## 🚀 Product Hunt Launch Blueprint
+
+To maximize the viral impact of STICKLASH:
+
+### 1. Assets Checklist
+* **🎬 Teaser Promo Video**: Add a high-energy, 30-second gameplay clip showcasing a player getting absolutely slammed by a pumping token (Overdrive Hadouken rain) to the top of the README.md and Product Hunt gallery.
+* **🎨 Glassmorphic Screenshots**: Feature the winner/loser victory flip animations and PvP leaderboard ranks.
+
+### 2. Post Schedule
+1. **Launch at 12:01 AM PST**: Start on Product Hunt right as the daily leaderboard resets.
+2. **Promotional Tweet (X)**: Tweet a pre-filled match victory link:
+   > 🥋 I just got completely whipped by $PEPE on @StickLash! High volume boosts are insane. Buy pressure or LMAO WHIPLASH! Fight live: smf.sticklash.com 
+3. **Engage the Community**: Offer `$SMF` token rewards or live tournament lobbies on Discord to players who post screenshots of their endless streak on Product Hunt comments!
+
+---
+
+## 🏗️ Technical Stack
+* **Frontend**: Vanilla HTML/CSS/JS (Direct Canvas 2D frame drawing)
+* **Mobile Shell**: Apache Capacitor / Gradle
+* **Announcer**: Deepgram Aura 2 Zeus TTS Announcer (24,000Hz)
+* **Backend**: FastAPI / Litestar / Redis / PostgreSQL
+* **API Feed**: Solana Birdeye API Proportional Scaling Core
 
 ---
 
 ## 📄 License
-
 MIT — build on it, fight with it, ship it.

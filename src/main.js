@@ -243,6 +243,7 @@ let p1Input = null;
 let p2Input = null;
 const sfx = new SFX();
 window.sfx = sfx;
+sfx.preload().catch(e => console.warn('[SFX] Background preload failed:', e));
 
 window.toggleBGM = function() {
   const btn = document.getElementById('btn-bgm');
