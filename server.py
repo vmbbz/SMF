@@ -5,6 +5,7 @@ load_dotenv()
 
 import asyncio
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -19,6 +20,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from pathlib import Path
 from typing import Any, List, Dict, Optional
+from urllib.parse import urlparse
 from birdeye_service import birdeye_service
 
 import asyncpg  # type: ignore[import-untyped]
@@ -90,6 +92,8 @@ DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_SMF_PRICE_FALLBACK = Decimal("0.00762")
 BOOST_INTENT_TTL_SECONDS = int(os.environ.get("BOOST_INTENT_TTL_SECONDS", "600"))
 STARTER_BOOSTS = int(os.environ.get("STARTER_BOOSTS", "15"))
+WALLET_AUTH_CHALLENGE_TTL_SECONDS = int(os.environ.get("WALLET_AUTH_CHALLENGE_TTL_SECONDS", "300"))
+WALLET_AUTH_SESSION_TTL_SECONDS = int(os.environ.get("WALLET_AUTH_SESSION_TTL_SECONDS", "86400"))
 
 TOKEN_PROGRAM_IDS = {
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # SPL Token
@@ -97,6 +101,16 @@ TOKEN_PROGRAM_IDS = {
 }
 
 WALLET_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+BASE58_INDEX = {c: i for i, c in enumerate(BASE58_ALPHABET)}
+BOOST_RATE_LIMITS = {
+    "wallet-auth-challenge": {"limit": 20, "window": 60},
+    "wallet-auth-verify": {"limit": 30, "window": 60},
+    "create-intent": {"limit": 8, "window": 60},
+    "confirm": {"limit": 20, "window": 60},
+    "consume": {"limit": 90, "window": 60},
+}
+_boost_rate_window: dict[str, list[float]] = {}
 
 BOOST_PACKS: dict[str, dict[str, int | str]] = {
     "micro": {"boosts": 5, "usd_cents": 100},
@@ -170,6 +184,31 @@ CREATE INDEX IF NOT EXISTS idx_boost_consumption_wallet_created
 CREATE UNIQUE INDEX IF NOT EXISTS uq_boost_consumption_consume_id
     ON boost_consumption_ledger (consume_id)
     WHERE consume_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS wallet_auth_challenges (
+    challenge_id TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_auth_challenges_wallet_created
+    ON wallet_auth_challenges (wallet_address, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS wallet_auth_sessions (
+    token_hash TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL,
+    challenge_id TEXT REFERENCES wallet_auth_challenges(challenge_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_auth_sessions_wallet_created
+    ON wallet_auth_sessions (wallet_address, created_at DESC);
 """
 
 # ─────────────────────────────────────────────
@@ -344,6 +383,125 @@ async def ensure_boost_schema(pool: asyncpg.Pool) -> None:  # type: ignore[type-
     """Create boost ledger tables if they don't exist."""
     async with pool.acquire() as conn:
         await conn.execute(BOOST_SCHEMA_SQL)
+
+
+def _audit_boost_event(event: str, **fields: Any) -> None:
+    parts = [f"{k}={v}" for k, v in fields.items()]
+    safe_print(f"[boost-audit] {event} {' '.join(parts)}")
+
+
+def _check_rate_limit(action: str, wallet: str) -> None:
+    cfg = BOOST_RATE_LIMITS.get(action)
+    if not cfg:
+        return
+    now = time.time()
+    key = f"{action}:{wallet}"
+    window = int(cfg["window"])
+    limit = int(cfg["limit"])
+    events = _boost_rate_window.get(key, [])
+    events = [t for t in events if now - t <= window]
+    if len(events) >= limit:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded for {action}. Try again soon.",
+        )
+    events.append(now)
+    _boost_rate_window[key] = events
+
+
+def _base58_decode(value: str) -> bytes:
+    if not value:
+        raise ValueError("Empty base58 value")
+    num = 0
+    for char in value:
+        if char not in BASE58_INDEX:
+            raise ValueError("Invalid base58 character")
+        num = num * 58 + BASE58_INDEX[char]
+    decoded = b""
+    while num > 0:
+        num, rem = divmod(num, 256)
+        decoded = bytes([rem]) + decoded
+    leading_zeros = len(value) - len(value.lstrip("1"))
+    return b"\x00" * leading_zeros + decoded
+
+
+def _decode_signature(signature: str) -> bytes:
+    sig = signature.strip()
+    # Preferred path: base64 (wallet client sends base64 for transport)
+    padding = "=" * ((4 - len(sig) % 4) % 4)
+    try:
+        raw = base64.b64decode(sig + padding, validate=True)
+        if len(raw) == 64:
+            return raw
+    except (binascii.Error, ValueError):
+        pass
+    # Fallback: base58-encoded signature
+    raw_bs58 = _base58_decode(sig)
+    if len(raw_bs58) == 64:
+        return raw_bs58
+    raise ValueError("Signature format invalid. Expect base64 or base58 64-byte signature.")
+
+
+def _extract_bearer_token(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return ""
+    return auth[7:].strip()
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _wallet_auth_domain(request: Request) -> str:
+    base = os.environ.get("BASE_URL", "").strip()
+    if base:
+        parsed = urlparse(base)
+        if parsed.netloc:
+            return parsed.netloc
+    parsed_req = urlparse(str(request.base_url))
+    return parsed_req.netloc or "sticklash.fun"
+
+
+def _wallet_auth_message(request: Request, wallet: str, nonce: str, issued_at_unix: int, expires_at_unix: int) -> str:
+    issued_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(issued_at_unix))
+    expires_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires_at_unix))
+    domain = _wallet_auth_domain(request)
+    return (
+        f"{domain} wants you to sign in with your Solana account:\n"
+        f"{wallet}\n\n"
+        "Sign in to StickLash and authorize secure boost actions.\n\n"
+        f"URI: https://{domain}\n"
+        "Version: 1\n"
+        "Chain ID: solana:mainnet-beta\n"
+        f"Nonce: {nonce}\n"
+        f"Issued At: {issued_iso}\n"
+        f"Expiration Time: {expires_iso}"
+    )
+
+
+async def _require_wallet_session(conn: asyncpg.Connection, request: Request, wallet: str) -> None:  # type: ignore[type-arg]
+    token = _extract_bearer_token(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="Wallet auth token required")
+    token_hash = _token_hash(token)
+    row = await conn.fetchrow(
+        """
+        SELECT wallet_address, expires_at, revoked_at
+        FROM wallet_auth_sessions
+        WHERE token_hash = $1
+        """,
+        token_hash,
+    )
+    if row is None:
+        raise HTTPException(status_code=401, detail="Invalid wallet auth token")
+    if str(row["wallet_address"]) != wallet:
+        raise HTTPException(status_code=403, detail="Wallet auth token does not match wallet")
+    if row["revoked_at"] is not None:
+        raise HTTPException(status_code=401, detail="Wallet auth token revoked")
+    expires_at = row["expires_at"]
+    if expires_at is not None and expires_at.timestamp() < time.time():
+        raise HTTPException(status_code=401, detail="Wallet auth token expired")
 
 
 def _get_smf_mint() -> str:
@@ -1466,6 +1624,170 @@ async def api_smf_config() -> dict[str, str]:
     }
 
 
+@post("/api/wallet-auth/challenge")
+async def api_wallet_auth_challenge(request: Request, data: dict[str, Any]) -> dict[str, Any]:
+    """Create a short-lived wallet sign-in challenge."""
+    if boost_pg_pool is None:
+        raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    wallet = _normalize_wallet_address(data.get("wallet"))
+    if not _is_valid_wallet_address(wallet):
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+    _check_rate_limit("wallet-auth-challenge", wallet)
+
+    challenge_id = str(uuid.uuid4())
+    nonce = secrets.token_hex(16)
+    issued_at_unix = int(time.time())
+    expires_at_unix = issued_at_unix + WALLET_AUTH_CHALLENGE_TTL_SECONDS
+    message = _wallet_auth_message(request, wallet, nonce, issued_at_unix, expires_at_unix)
+
+    async with boost_pg_pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO wallet_auth_challenges (
+                challenge_id, wallet_address, nonce, message, expires_at
+            )
+            VALUES ($1, $2, $3, $4, to_timestamp($5))
+            """,
+            challenge_id,
+            wallet,
+            nonce,
+            message,
+            expires_at_unix,
+        )
+
+    _audit_boost_event("wallet_auth_challenge_issued", wallet=wallet, challenge_id=challenge_id)
+    return {
+        "challengeId": challenge_id,
+        "wallet": wallet,
+        "message": message,
+        "nonce": nonce,
+        "expiresAtUnix": expires_at_unix,
+    }
+
+
+@post("/api/wallet-auth/verify")
+async def api_wallet_auth_verify(data: dict[str, Any]) -> dict[str, Any]:
+    """Verify wallet signature for challenge and issue bearer session token."""
+    if boost_pg_pool is None:
+        raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    wallet = _normalize_wallet_address(data.get("wallet"))
+    challenge_id = str(data.get("challengeId") or data.get("challenge_id") or "").strip()
+    signature = str(data.get("signature") or "").strip()
+
+    if not _is_valid_wallet_address(wallet):
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+    if not challenge_id:
+        raise HTTPException(status_code=400, detail="challengeId is required")
+    if not signature:
+        raise HTTPException(status_code=400, detail="signature is required")
+    _check_rate_limit("wallet-auth-verify", wallet)
+
+    try:
+        signature_bytes = _decode_signature(signature)
+        wallet_bytes = _base58_decode(wallet)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if len(wallet_bytes) != 32:
+        raise HTTPException(status_code=400, detail="Wallet public key bytes length invalid")
+
+    try:
+        import nacl.signing  # type: ignore[import-not-found]
+        from nacl.exceptions import BadSignatureError  # type: ignore[import-not-found]
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Wallet auth dependency missing on server (PyNaCl).",
+        )
+
+    session_token = secrets.token_urlsafe(48)
+    session_hash = _token_hash(session_token)
+    session_expires_at_unix = int(time.time()) + WALLET_AUTH_SESSION_TTL_SECONDS
+
+    async with boost_pg_pool.acquire() as conn:
+        async with conn.transaction():
+            challenge = await conn.fetchrow(
+                """
+                SELECT challenge_id, wallet_address, message, expires_at, consumed_at
+                FROM wallet_auth_challenges
+                WHERE challenge_id = $1
+                FOR UPDATE
+                """,
+                challenge_id,
+            )
+            if challenge is None:
+                raise HTTPException(status_code=404, detail="Challenge not found")
+            if str(challenge["wallet_address"]) != wallet:
+                raise HTTPException(status_code=403, detail="Challenge wallet mismatch")
+            if challenge["consumed_at"] is not None:
+                raise HTTPException(status_code=409, detail="Challenge already used")
+            expires_at = challenge["expires_at"]
+            if expires_at is not None and expires_at.timestamp() < time.time():
+                raise HTTPException(status_code=409, detail="Challenge expired")
+
+            verify_key = nacl.signing.VerifyKey(wallet_bytes)
+            try:
+                verify_key.verify(str(challenge["message"]).encode("utf-8"), signature_bytes)
+            except BadSignatureError:
+                raise HTTPException(status_code=401, detail="Invalid wallet signature")
+
+            await conn.execute(
+                """
+                UPDATE wallet_auth_challenges
+                SET consumed_at = NOW()
+                WHERE challenge_id = $1
+                """,
+                challenge_id,
+            )
+            await conn.execute(
+                """
+                INSERT INTO wallet_auth_sessions (
+                    token_hash, wallet_address, challenge_id, expires_at
+                )
+                VALUES ($1, $2, $3, to_timestamp($4))
+                """,
+                session_hash,
+                wallet,
+                challenge_id,
+                session_expires_at_unix,
+            )
+
+    _audit_boost_event("wallet_auth_verified", wallet=wallet, challenge_id=challenge_id)
+    return {
+        "wallet": wallet,
+        "token": session_token,
+        "expiresAtUnix": session_expires_at_unix,
+    }
+
+
+@post("/api/wallet-auth/logout")
+async def api_wallet_auth_logout(request: Request, data: dict[str, Any]) -> dict[str, Any]:
+    """Revoke wallet session token for a wallet."""
+    if boost_pg_pool is None:
+        raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    wallet = _normalize_wallet_address(data.get("wallet"))
+    if not _is_valid_wallet_address(wallet):
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+
+    async with boost_pg_pool.acquire() as conn:
+        await _require_wallet_session(conn, request, wallet)
+        token = _extract_bearer_token(request)
+        await conn.execute(
+            """
+            UPDATE wallet_auth_sessions
+            SET revoked_at = NOW()
+            WHERE token_hash = $1 AND wallet_address = $2
+            """,
+            _token_hash(token),
+            wallet,
+        )
+
+    _audit_boost_event("wallet_auth_logout", wallet=wallet)
+    return {"status": "ok", "wallet": wallet}
+
+
 @get("/api/boost/packs")
 async def api_boost_packs() -> dict[str, Any]:
     """Return canonical boost pack catalog."""
@@ -1511,7 +1833,7 @@ async def api_boost_balance(wallet: str) -> dict[str, Any]:
 
 
 @post("/api/boost/create-intent")
-async def api_boost_create_intent(data: dict[str, Any]) -> dict[str, Any]:
+async def api_boost_create_intent(request: Request, data: dict[str, Any]) -> dict[str, Any]:
     """Create a purchase intent for a boost pack."""
     if boost_pg_pool is None:
         raise HTTPException(status_code=503, detail="Boost ledger database not available")
@@ -1533,6 +1855,8 @@ async def api_boost_create_intent(data: dict[str, Any]) -> dict[str, Any]:
     expires_at_unix = int(time.time()) + BOOST_INTENT_TTL_SECONDS
 
     async with boost_pg_pool.acquire() as conn:
+        await _require_wallet_session(conn, request, wallet)
+        _check_rate_limit("create-intent", wallet)
         await conn.execute(
             """
             INSERT INTO boost_purchase_intents (
@@ -1552,6 +1876,7 @@ async def api_boost_create_intent(data: dict[str, Any]) -> dict[str, Any]:
         )
         boosts = await _get_or_create_boost_balance(conn, wallet)
 
+    _audit_boost_event("boost_intent_created", wallet=wallet, intent_id=intent_id, pack=quote["pack_id"])
     return {
         "intentId": intent_id,
         "wallet": wallet,
@@ -1569,7 +1894,7 @@ async def api_boost_create_intent(data: dict[str, Any]) -> dict[str, Any]:
 
 
 @post("/api/boost/confirm")
-async def api_boost_confirm(data: dict[str, Any]) -> dict[str, Any]:
+async def api_boost_confirm(request: Request, data: dict[str, Any]) -> dict[str, Any]:
     """Confirm a signed burn transaction and credit boosts exactly once."""
     if boost_pg_pool is None:
         raise HTTPException(status_code=503, detail="Boost ledger database not available")
@@ -1586,6 +1911,8 @@ async def api_boost_confirm(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="signature is required")
 
     async with boost_pg_pool.acquire() as conn:
+        await _require_wallet_session(conn, request, wallet)
+        _check_rate_limit("confirm", wallet)
         async with conn.transaction():
             intent = await conn.fetchrow(
                 """
@@ -1608,6 +1935,7 @@ async def api_boost_confirm(data: dict[str, Any]) -> dict[str, Any]:
 
             if status == "confirmed":
                 boosts = await _get_or_create_boost_balance(conn, wallet)
+                _audit_boost_event("boost_confirm_idempotent", wallet=wallet, intent_id=intent_id, signature=existing_signature)
                 return {
                     "status": "confirmed",
                     "intentId": intent_id,
@@ -1635,6 +1963,7 @@ async def api_boost_confirm(data: dict[str, Any]) -> dict[str, Any]:
                 rpc_url=_get_solana_rpc(),
             )
             if not ok:
+                _audit_boost_event("boost_confirm_failed", wallet=wallet, intent_id=intent_id, reason=reason)
                 raise HTTPException(status_code=400, detail=reason)
 
             await conn.execute(
@@ -1691,6 +2020,7 @@ async def api_boost_confirm(data: dict[str, Any]) -> dict[str, Any]:
             )
             boosts = int(balance_row["boosts"]) if balance_row else STARTER_BOOSTS
 
+    _audit_boost_event("boost_confirmed", wallet=wallet, intent_id=intent_id, signature=signature, boosts=boosts)
     return {
         "status": "confirmed",
         "intentId": intent_id,
@@ -1702,7 +2032,7 @@ async def api_boost_confirm(data: dict[str, Any]) -> dict[str, Any]:
 
 
 @post("/api/boost/consume")
-async def api_boost_consume(data: dict[str, Any]) -> dict[str, Any]:
+async def api_boost_consume(request: Request, data: dict[str, Any]) -> dict[str, Any]:
     """Atomically consume boost units for gameplay actions (e.g., hadouken)."""
     if boost_pg_pool is None:
         raise HTTPException(status_code=503, detail="Boost ledger database not available")
@@ -1728,6 +2058,8 @@ async def api_boost_consume(data: dict[str, Any]) -> dict[str, Any]:
         reason = "hadouken"
 
     async with boost_pg_pool.acquire() as conn:
+        await _require_wallet_session(conn, request, wallet)
+        _check_rate_limit("consume", wallet)
         async with conn.transaction():
             await _get_or_create_boost_balance(conn, wallet)
 
@@ -1742,6 +2074,7 @@ async def api_boost_consume(data: dict[str, Any]) -> dict[str, Any]:
                     wallet,
                 )
                 if existing is not None:
+                    _audit_boost_event("boost_consume_idempotent", wallet=wallet, consume_id=consume_id)
                     return {
                         "status": "ok",
                         "wallet": wallet,
@@ -1770,6 +2103,7 @@ async def api_boost_consume(data: dict[str, Any]) -> dict[str, Any]:
                     wallet,
                 )
                 boosts_left = int(current["boosts"]) if current else 0
+                _audit_boost_event("boost_consume_failed", wallet=wallet, reason="insufficient", balance=boosts_left)
                 raise HTTPException(
                     status_code=409,
                     detail=f"Insufficient boosts. Current balance: {boosts_left}",
@@ -1790,6 +2124,7 @@ async def api_boost_consume(data: dict[str, Any]) -> dict[str, Any]:
                 boosts_left,
             )
 
+    _audit_boost_event("boost_consumed", wallet=wallet, units=units, balance=boosts_left)
     return {
         "status": "ok",
         "wallet": wallet,
@@ -3205,6 +3540,9 @@ app = Litestar(
         leaderboard,
         get_elo,
         api_smf_config,
+        api_wallet_auth_challenge,
+        api_wallet_auth_verify,
+        api_wallet_auth_logout,
         api_boost_packs,
         api_boost_balance,
         api_boost_create_intent,

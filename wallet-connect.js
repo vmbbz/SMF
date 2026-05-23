@@ -19,9 +19,13 @@ export function getProfile() {
       avatar: null,
       boosts: 15, // Free $3 starter boosts initialized automatically
       walletConnected: false,
+      walletReadOnly: false,
       walletAddress: '',
       smfBalance: 0 // Fetch real balance on-chain
     };
+    saveProfile(profile);
+  } else if (typeof profile.walletReadOnly !== 'boolean') {
+    profile.walletReadOnly = false;
     saveProfile(profile);
   }
   return profile;
@@ -146,20 +150,179 @@ function updateBoostIndicators(boosts) {
   }
 }
 
-async function consumeServerBoost(walletAddress, units = 1, reason = 'hadouken') {
-  const consumeId = (window.crypto && typeof window.crypto.randomUUID === 'function')
-    ? window.crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const resp = await fetch('/api/boost/consume', {
+const WALLET_AUTH_STORAGE_KEY = 'smf_wallet_auth_session';
+
+function getWalletAuthSession() {
+  try {
+    const raw = localStorage.getItem(WALLET_AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn('[WalletAuth] Failed to parse stored session:', e);
+    return null;
+  }
+}
+
+function setWalletAuthSession(session) {
+  localStorage.setItem(WALLET_AUTH_STORAGE_KEY, JSON.stringify(session));
+}
+
+function clearWalletAuthSession() {
+  localStorage.removeItem(WALLET_AUTH_STORAGE_KEY);
+}
+
+function bytesToBase64(bytes) {
+  let binary = '';
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+async function signWalletAuthMessage(message) {
+  if (!window.solana || typeof window.solana.signMessage !== 'function') {
+    throw new Error('Wallet does not support message signing.');
+  }
+  const encoded = new TextEncoder().encode(message);
+  const signed = await window.solana.signMessage(encoded, 'utf8');
+  const signatureBytes = signed?.signature || signed;
+  if (!signatureBytes) {
+    throw new Error('Wallet did not return a signature.');
+  }
+  return bytesToBase64(signatureBytes);
+}
+
+function isSessionValidForWallet(session, walletAddress) {
+  if (!session) return false;
+  if (session.wallet !== walletAddress) return false;
+  if (!session.token) return false;
+  if (!session.expiresAtUnix) return false;
+  const now = Math.floor(Date.now() / 1000);
+  return now < Number(session.expiresAtUnix);
+}
+
+async function ensureWalletAuthSession(walletAddress, { forceRefresh = false } = {}) {
+  if (!walletAddress) throw new Error('Wallet address missing.');
+  if (!window.solana) throw new Error('Wallet provider unavailable.');
+
+  const existing = getWalletAuthSession();
+  if (!forceRefresh && isSessionValidForWallet(existing, walletAddress)) {
+    return existing.token;
+  }
+
+  const challengeResp = await fetch('/api/wallet-auth/challenge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wallet: walletAddress })
+  });
+  if (!challengeResp.ok) {
+    const err = await challengeResp.text();
+    throw new Error(`Wallet auth challenge failed (${challengeResp.status}): ${err}`);
+  }
+  const challenge = await challengeResp.json();
+  const signature = await signWalletAuthMessage(String(challenge.message || ''));
+
+  const verifyResp = await fetch('/api/wallet-auth/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       wallet: walletAddress,
-      units,
-      reason,
-      consumeId
+      challengeId: challenge.challengeId,
+      signature
     })
   });
+  if (!verifyResp.ok) {
+    const err = await verifyResp.text();
+    throw new Error(`Wallet auth verify failed (${verifyResp.status}): ${err}`);
+  }
+  const verified = await verifyResp.json();
+  const session = {
+    wallet: walletAddress,
+    token: verified.token,
+    expiresAtUnix: verified.expiresAtUnix
+  };
+  setWalletAuthSession(session);
+  return session.token;
+}
+
+async function buildWalletAuthHeaders(walletAddress, { forceRefresh = false } = {}) {
+  const token = await ensureWalletAuthSession(walletAddress, { forceRefresh });
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${token}`
+  };
+}
+
+async function fetchWithWalletAuth(walletAddress, url, options = {}) {
+  const method = options.method || 'GET';
+  const body = options.body;
+  let headers = {
+    ...(options.headers || {}),
+    ...(await buildWalletAuthHeaders(walletAddress))
+  };
+  let resp = await fetch(url, {
+    ...options,
+    method,
+    headers,
+    body
+  });
+  if (resp.status === 401) {
+    headers = {
+      ...(options.headers || {}),
+      ...(await buildWalletAuthHeaders(walletAddress, { forceRefresh: true }))
+    };
+    resp = await fetch(url, {
+      ...options,
+      method,
+      headers,
+      body
+    });
+  }
+  return resp;
+}
+
+async function logoutWalletAuthSession(walletAddress) {
+  const session = getWalletAuthSession();
+  if (!isSessionValidForWallet(session, walletAddress)) {
+    clearWalletAuthSession();
+    return;
+  }
+  try {
+    await fetch('/api/wallet-auth/logout', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.token}`
+      },
+      body: JSON.stringify({ wallet: walletAddress })
+    });
+  } catch (e) {
+    console.warn('[WalletAuth] logout call failed:', e);
+  } finally {
+    clearWalletAuthSession();
+  }
+}
+
+async function consumeServerBoost(walletAddress, units = 1, reason = 'hadouken') {
+  const consumeId = (window.crypto && typeof window.crypto.randomUUID === 'function')
+    ? window.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  let resp = null;
+  try {
+    resp = await fetchWithWalletAuth(walletAddress, '/api/boost/consume', {
+      method: 'POST',
+      body: JSON.stringify({
+        wallet: walletAddress,
+        units,
+        reason,
+        consumeId
+      })
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      status: 401,
+      error: e.message || 'Wallet session required'
+    };
+  }
   if (!resp.ok) {
     let detail = '';
     try {
@@ -414,8 +577,8 @@ export async function showWalletConnect() {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
           <span style="font-size: 10px; font-weight: bold; color: var(--neon-blue); letter-spacing: 0.5px;">🔑 WEB3 SOLANA WALLET</span>
           <div style="display:flex; align-items:center; gap:4px;">
-            <span style="width: 6px; height: 6px; border-radius:50%; background: ${profile.walletConnected ? 'var(--neon-green)' : '#ff3b30'}; box-shadow: 0 0 6px ${profile.walletConnected ? 'var(--neon-green)' : '#ff3b30'};"></span>
-            <span style="font-size: 8px; color: #aaa;">${profile.walletConnected ? 'CONNECTED' : 'DISCONNECTED'}</span>
+            <span style="width: 6px; height: 6px; border-radius:50%; background: ${profile.walletConnected ? (profile.walletReadOnly ? '#ffcc00' : 'var(--neon-green)') : '#ff3b30'}; box-shadow: 0 0 6px ${profile.walletConnected ? (profile.walletReadOnly ? '#ffcc00' : 'var(--neon-green)') : '#ff3b30'};"></span>
+            <span style="font-size: 8px; color: #aaa;">${profile.walletConnected ? (profile.walletReadOnly ? 'READ-ONLY' : 'CONNECTED') : 'DISCONNECTED'}</span>
           </div>
         </div>
         
@@ -429,6 +592,11 @@ export async function showWalletConnect() {
               <span style="color:#aaa;">Token Balance:</span>
               <span style="color:var(--neon-green); font-weight:bold;">${Number(profile.smfBalance).toLocaleString(undefined, {maximumFractionDigits: 4})} $SMF</span>
             </div>
+            ${profile.walletReadOnly ? `
+              <div style="font-size: 8px; color: #ffcc00; margin-bottom: 8px; line-height: 1.35;">
+                READ-ONLY MODE: Open StickLash inside Phantom/Backpack browser to sign secure actions.
+              </div>
+            ` : ''}
             <button onclick="window.disconnectSolanaWallet()" style="background: rgba(255,59,48,0.1); border: 1px solid #ff3b30; color: #ff3b30; font-family:inherit; font-size:8px; border-radius: 4px; padding: 4px 8px; cursor:pointer; width: 100%; transition: all 0.2s;">
               DISCONNECT WALLET
             </button>
@@ -484,39 +652,39 @@ export async function showWalletConnect() {
         <!-- PACKAGES -->
         <div style="display:flex; flex-direction:column; gap:6px; margin-bottom: 8px;">
           <!-- Pack 1 -->
-          <div class="store-package-card ${!profile.walletConnected ? 'locked' : ''}">
+          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">🔵 Micro Pack (5 Premium Boosts)</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly) ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
               BUY & BURN
             </button>
           </div>
           <!-- Pack 2 -->
-          <div class="store-package-card ${!profile.walletConnected ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
+          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly) ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:var(--neon-green);">🔥 Degen Pack (20 Boosts) - BEST VALUE</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly) ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
               BUY & BURN
             </button>
           </div>
           <!-- Pack 3 -->
-          <div class="store-package-card ${!profile.walletConnected ? 'locked' : ''}">
+          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">⚡ Chaos Pack (45 Premium Boosts)</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly) ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
               BUY & BURN
             </button>
           </div>
         </div>
         
-        ${!profile.walletConnected ? `
-          <div style="font-size: 7px; color:#ff3b30; text-align:center; font-weight:bold; letter-spacing:0.3px;">⚠️ CONNECT SOLANA WALLET TO UNLOCK PURCHASES</div>
+        ${(!profile.walletConnected || profile.walletReadOnly) ? `
+          <div style="font-size: 7px; color:${profile.walletReadOnly ? '#ffcc00' : '#ff3b30'}; text-align:center; font-weight:bold; letter-spacing:0.3px;">${profile.walletReadOnly ? '⚠️ READ-ONLY MODE CANNOT PURCHASE. OPEN IN WALLET BROWSER.' : '⚠️ CONNECT SOLANA WALLET TO UNLOCK PURCHASES'}</div>
         ` : ''}
       </div>
 
@@ -593,9 +761,11 @@ window.connectSolanaWallet = async function() {
   try {
     const resp = await window.solana.connect();
     const publicKeyStr = resp.publicKey.toString();
+    await ensureWalletAuthSession(publicKeyStr);
     
     const profile = getProfile();
     profile.walletConnected = true;
+    profile.walletReadOnly = false;
     profile.walletAddress = publicKeyStr;
     
     // Fetch live on-chain balance
@@ -648,7 +818,9 @@ window.syncManualSolanaAddress = async function() {
   try {
     const profile = getProfile();
     profile.walletConnected = true;
+    profile.walletReadOnly = true;
     profile.walletAddress = address;
+    clearWalletAuthSession();
     
     // Clear the options flag
     window.showWalletConnectionOptions = false;
@@ -677,7 +849,13 @@ window.cancelWalletOptions = function() {
 // Global hook: disconnect wallet
 window.disconnectSolanaWallet = function() {
   const profile = getProfile();
+  if (profile.walletAddress) {
+    logoutWalletAuthSession(profile.walletAddress).catch(() => {});
+  } else {
+    clearWalletAuthSession();
+  }
   profile.walletConnected = false;
+  profile.walletReadOnly = false;
   profile.walletAddress = '';
   profile.smfBalance = 0;
   saveProfile(profile);
@@ -690,6 +868,7 @@ window.disconnectSolanaWallet = function() {
 window.purchaseBoostPack = async function(packId) {
   const profile = getProfile();
   if (!profile.walletConnected) return alert('⚠️ Wallet is not connected.');
+  if (profile.walletReadOnly) return alert('⚠️ Read-only wallet mode cannot purchase. Open game in your wallet browser.');
   if (!window.solana) {
     return alert('⚠️ No Solana wallet adapter detected!');
   }
@@ -710,9 +889,8 @@ window.purchaseBoostPack = async function(packId) {
   try {
     const { Connection, PublicKey, Transaction, TransactionInstruction } = window.solanaWeb3;
 
-    const intentResp = await fetch('/api/boost/create-intent', {
+    const intentResp = await fetchWithWalletAuth(profile.walletAddress, '/api/boost/create-intent', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         wallet: profile.walletAddress,
         packId
@@ -814,9 +992,8 @@ window.purchaseBoostPack = async function(packId) {
       throw new Error('Transaction failed on-chain: ' + JSON.stringify(confirmation.value.err));
     }
 
-    const confirmResp = await fetch('/api/boost/confirm', {
+    const confirmResp = await fetchWithWalletAuth(profile.walletAddress, '/api/boost/confirm', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         wallet: profile.walletAddress,
         intentId: intent.intentId,

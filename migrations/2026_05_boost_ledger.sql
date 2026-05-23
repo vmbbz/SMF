@@ -66,3 +66,28 @@ CREATE INDEX IF NOT EXISTS idx_boost_consumption_wallet_created
 CREATE UNIQUE INDEX IF NOT EXISTS uq_boost_consumption_consume_id
     ON boost_consumption_ledger (consume_id)
     WHERE consume_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS wallet_auth_challenges (
+    challenge_id TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL,
+    nonce TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_auth_challenges_wallet_created
+    ON wallet_auth_challenges (wallet_address, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS wallet_auth_sessions (
+    token_hash TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL,
+    challenge_id TEXT REFERENCES wallet_auth_challenges(challenge_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_auth_sessions_wallet_created
+    ON wallet_auth_sessions (wallet_address, created_at DESC);

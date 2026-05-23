@@ -91,7 +91,7 @@ Multiplayer rooms, WebRTC SDP exchange, and matchmaking queues are managed on th
 To keep the token economy highly active, firing **Hadouken projectiles** in P1 player mode requires **Premium Boosts**:
 * **The Hadouken Intercept**: When P1 presses the Special attack button (`Actions.HADOUKEN`), wallet-linked players trigger a server-authoritative consume flow (`POST /api/boost/consume`) before the projectile fires. Each user begins with **15 free starter boosts**, and every Hadouken spends **1 boost**.
 * **Zero Boost Lockout**: If boosts reach 0, firing Hadouken is blocked, a warning `⚠️ Out of premium boosts!` displays, and the player is prompted to buy more.
-* **SPL On-Chain Burn + Server Ledger (`wallet-connect.js` + `server.py`)**: To replenish ammo, the player opens the profile modal, signs a burn transaction in wallet, and submits the signature to backend verification. Boosts are credited only after the server verifies the on-chain burn instruction and records it in the purchase ledger.
+* **SPL On-Chain Burn + Server Ledger (`wallet-connect.js` + `server.py`)**: To replenish ammo, the player completes wallet-auth message signing, signs a burn transaction in wallet, and submits the signature to backend verification. Boosts are credited only after the server verifies the on-chain burn instruction and records it in the purchase ledger.
 
 ---
 

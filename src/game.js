@@ -370,6 +370,7 @@ export class Game {
 
         if (
           profile.walletConnected &&
+          !profile.walletReadOnly &&
           profile.walletAddress &&
           typeof window.consumeBoostForHadouken === 'function'
         ) {
@@ -389,6 +390,10 @@ export class Game {
                   this._showOutOfPremiumBoosts();
                   return;
                 }
+                if (consumeResult && consumeResult.status === 401) {
+                  this.showBoostMessage("⚠️ Wallet session expired.", "spike");
+                  return;
+                }
                 this.showBoostMessage("⚠️ Boost verification failed.", "spike");
               })
               .catch((err) => {
@@ -399,6 +404,10 @@ export class Game {
                 this._hadoukenConsumePending = false;
               });
           }
+        } else if (profile.walletConnected && profile.walletReadOnly) {
+          p1Pressed.delete(Actions.HADOUKEN);
+          p1Actions.delete(Actions.HADOUKEN);
+          this.showBoostMessage("⚠️ Read-only wallet cannot spend boosts.", "spike");
         } else {
           // Guest/offline fallback for non-wallet profiles.
           if (profile.boosts > 0) {

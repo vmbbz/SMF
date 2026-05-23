@@ -161,6 +161,36 @@ def test_boost_consume_without_db_returns_503() -> None:
         server.boost_pg_pool = saved
 
 
+def test_wallet_auth_challenge_without_db_returns_503() -> None:
+    with TestClient(app=app) as client:
+        saved = server.boost_pg_pool
+        server.boost_pg_pool = None
+        resp = client.post(
+            "/api/wallet-auth/challenge",
+            content=json.dumps({"wallet": "11111111111111111111111111111111"}),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 503
+        server.boost_pg_pool = saved
+
+
+def test_wallet_auth_verify_without_db_returns_503() -> None:
+    with TestClient(app=app) as client:
+        saved = server.boost_pg_pool
+        server.boost_pg_pool = None
+        resp = client.post(
+            "/api/wallet-auth/verify",
+            content=json.dumps({
+                "wallet": "11111111111111111111111111111111",
+                "challengeId": "abc",
+                "signature": "sig",
+            }),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 503
+        server.boost_pg_pool = saved
+
+
 def test_index_returns_html() -> None:
     with TestClient(app=app) as client:
         resp = client.get("/")
