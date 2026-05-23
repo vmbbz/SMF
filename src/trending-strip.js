@@ -28,11 +28,17 @@ export class TrendingStrip {
 
   render() {
     this.container.innerHTML = `
-      <div class="strip-header" style="display:flex; justify-content:space-between; align-items:center;">
-        <span style="font-weight:900;color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-size:9px;margin-right:15px;text-shadow:0 0 10px var(--neon-blue);">🚀 LIVE STREAM</span>
-        <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn" style="background:var(--neon-pink);color:#000;border:none;padding:4px 8px;border-radius:4px;font-weight:bold;cursor:pointer;font-family:inherit;font-size:9px;">
-          ${this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS'}
-        </button>
+      <div class="strip-header" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+        <span style="font-weight:900;color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-size:9px;margin-right:15px;text-shadow:0 0 10px var(--neon-blue); flex:1; text-align:left;">🚀 LIVE STREAM</span>
+        
+        <!-- Center aligned glowing Info Button -->
+        <div onclick="window.openHelpModal && window.openHelpModal()" style="display:inline-flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); border:1px solid var(--neon-pink); width:18px; height:18px; border-radius:50%; font-family:'Shojumaru', sans-serif; font-size:10px; color:#fff; cursor:pointer; box-shadow:0 0 8px var(--neon-pink); transition:all 0.2s; user-select:none; margin:0 auto; flex:0 0 auto;" onmouseover="this.style.transform='scale(1.25)';" onmouseout="this.style.transform='scale(1)';" title="Game Guide">i</div>
+        
+        <div style="flex:1; text-align:right;">
+          <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn" style="background:var(--neon-pink);color:#000;border:none;padding:4px 8px;border-radius:4px;font-weight:bold;cursor:pointer;font-family:inherit;font-size:9px;display:inline-block;">
+            ${this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS'}
+          </button>
+        </div>
       </div>
       <div class="marquee-container" style="overflow:hidden;white-space:nowrap;margin-top:6px;position:relative;width:100%;">
         <div class="marquee" id="${this.container.id}-inner" style="display:inline-block;animation:marquee 40s linear infinite;"></div>
