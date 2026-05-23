@@ -21,6 +21,13 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- Android 12+ Splash Screen API configuration -->
+        <item name="windowSplashScreenBackground">#000000</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/smf_logo_alt</item>
+        <item name="windowSplashScreenIconBackgroundColor">#000000</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+
+        <!-- Legacy Splash Screen (Android 11 and below) configuration -->
         <item name="android:windowBackground">@drawable/splash</item>
         <item name="android:background">@drawable/splash</item>
         <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>

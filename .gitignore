@@ -44,3 +44,8 @@ __pycache__
 
 # Playwright MCP
 .playwright-mcp
+
+# Scratch and Release Ignored Files
+scratch/
+android/app/release/
+*.log
