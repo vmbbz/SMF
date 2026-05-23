@@ -50,80 +50,6 @@ from room_cleanup import RoomCleanupTask
 from matchmaking import MatchmakingTask
 from characters import CHARACTER_LIST, get_character
 import sys
-import sqlite3
-
-def init_sqlite_db():
-    conn = sqlite3.connect("stickfighter.db")
-    cursor = conn.cursor()
-    # Profiles table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS wallet_profiles (
-            wallet_address TEXT PRIMARY KEY,
-            name TEXT DEFAULT 'Guest Fighter',
-            avatar TEXT,
-            boosts INTEGER DEFAULT 15
-        )
-    """)
-    # Pairing sessions
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS device_pairings (
-            device_id TEXT PRIMARY KEY,
-            pair_code TEXT UNIQUE,
-            wallet_address TEXT,
-            paired_at REAL
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-def get_db_profile(address: str) -> dict:
-    conn = sqlite3.connect("stickfighter.db")
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    cursor.execute("SELECT name, avatar, boosts FROM wallet_profiles WHERE wallet_address = ?", (address,))
-    row = cursor.fetchone()
-    if row is None:
-        # Create default profile
-        cursor.execute("INSERT INTO wallet_profiles (wallet_address, boosts) VALUES (?, 15)", (address,))
-        conn.commit()
-        profile = {"name": "Guest Fighter", "avatar": None, "boosts": 15, "walletConnected": True, "walletAddress": address}
-    else:
-        profile = {
-            "name": row["name"] or "Guest Fighter",
-            "avatar": row["avatar"],
-            "boosts": row["boosts"] if row["boosts"] is not None else 15,
-            "walletConnected": True,
-            "walletAddress": address
-        }
-    conn.close()
-    return profile
-
-def update_db_profile(address: str, name: str, avatar: Optional[str]) -> dict:
-    conn = sqlite3.connect("stickfighter.db")
-    cursor = conn.cursor()
-    # Check if exists
-    cursor.execute("SELECT wallet_address FROM wallet_profiles WHERE wallet_address = ?", (address,))
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO wallet_profiles (wallet_address, name, avatar, boosts) VALUES (?, ?, ?, 15)", (address, name, avatar))
-    else:
-        cursor.execute("UPDATE wallet_profiles SET name = ?, avatar = ? WHERE wallet_address = ?", (name, avatar, address))
-    conn.commit()
-    conn.close()
-    return get_db_profile(address)
-
-def add_db_boosts(address: str, count: int) -> dict:
-    conn = sqlite3.connect("stickfighter.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT boosts FROM wallet_profiles WHERE wallet_address = ?", (address,))
-    row = cursor.fetchone()
-    if row is None:
-        cursor.execute("INSERT INTO wallet_profiles (wallet_address, boosts) VALUES (?, ?)", (address, 15 + count))
-    else:
-        current = row[0] if row[0] is not None else 15
-        cursor.execute("UPDATE wallet_profiles SET boosts = ? WHERE wallet_address = ?", (current + count, address))
-    conn.commit()
-    conn.close()
-    return get_db_profile(address)
 
 def safe_print(*args, **kwargs):
     """Print utility that safely intercepts and downsamples Unicode strings on Windows terminals."""
@@ -228,11 +154,6 @@ def _cancel_controller_wait_timer(code: str) -> None:
 async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
     """Safe lifespan for $SMF Stick Lash - no required Redis or Postgres"""
     print("[lifespan] Starting safe mode for $SMF Stick Lash")
-    try:
-        init_sqlite_db()
-        print("[sqlite] DB initialized successfully")
-    except Exception as e:
-        print(f"[sqlite] DB initialization error: {e}")
 
     global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, cleanup_task, matchmaking_task
 
@@ -1245,130 +1166,6 @@ async def favicon() -> Response:
 # ─────────────────────────────────────────────
 # Solscan & Spotify Discovery Engine Endpoints
 # ─────────────────────────────────────────────
-
-@get("/pair")
-async def get_pair_page() -> Response[str]:
-    path = ROOT / "www" / "pair.html"
-    if path.exists():
-        content = path.read_text(encoding="utf-8")
-        return Response(content=content, media_type="text/html")
-    return Response(content="Pairing page not found", media_type="text/html", status_code=404)
-
-@get("/api/wallet/profile")
-async def api_wallet_profile(address: str) -> dict:
-    if not address:
-        raise HTTPException(status_code=400, detail="address parameter is required")
-    return get_db_profile(address)
-
-@post("/api/wallet/update-profile")
-async def api_wallet_update_profile(data: dict) -> dict:
-    address = data.get("address")
-    name = data.get("name", "Guest Fighter")
-    avatar = data.get("avatar")
-    if not address:
-        raise HTTPException(status_code=400, detail="address is required")
-    return update_db_profile(address, name, avatar)
-
-@post("/api/wallet/verify-burn")
-async def api_wallet_verify_burn(data: dict) -> dict:
-    signature = data.get("signature")
-    wallet = data.get("wallet")
-    pack_id = data.get("packId")
-    boosts_count = data.get("boostsCount", 0)
-
-    if not signature or not wallet or not pack_id:
-        raise HTTPException(status_code=400, detail="Missing required parameters")
-
-    # Connect to Solana RPC
-    rpc_url = os.environ.get("SOLANA_RPC", "https://api.mainnet-beta.solana.com")
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "getTransaction",
-        "params": [
-            signature,
-            {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0}
-        ]
-    }
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(rpc_url, json=payload)
-            if resp.status_code == 200:
-                tx_data = resp.json()
-                if "error" not in tx_data and tx_data.get("result"):
-                    print(f"[verify-burn] Solana transaction {signature} verified on-chain!")
-                else:
-                    print(f"[verify-burn] transaction not found or RPC error: {tx_data.get('error')}")
-    except Exception as e:
-        print(f"[verify-burn] Error verifying Solana transaction: {e}")
-
-    # Optimistically credit boosts so players never experience API hangs
-    return add_db_boosts(wallet, boosts_count)
-
-@get("/api/wallet/pair-code")
-async def api_wallet_pair_code(device: str) -> dict:
-    if not device:
-        raise HTTPException(status_code=400, detail="device parameter is required")
-    
-    # Generate a random 6-digit code
-    code = "".join([str(random.randint(0, 9)) for _ in range(6)])
-    
-    conn = sqlite3.connect("stickfighter.db")
-    cursor = conn.cursor()
-    # Delete any existing pairing for this device or code
-    cursor.execute("DELETE FROM device_pairings WHERE device_id = ? OR pair_code = ?", (device, code))
-    cursor.execute(
-        "INSERT INTO device_pairings (device_id, pair_code, paired_at) VALUES (?, ?, ?)",
-        (device, code, time.time())
-    )
-    conn.commit()
-    conn.close()
-    
-    return {"code": code}
-
-@post("/api/wallet/pair-submit")
-async def api_wallet_pair_submit(data: dict) -> dict:
-    code = data.get("code")
-    wallet = data.get("wallet")
-    if not code or not wallet:
-        raise HTTPException(status_code=400, detail="code and wallet are required")
-    
-    conn = sqlite3.connect("stickfighter.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT device_id FROM device_pairings WHERE pair_code = ?", (code,))
-    row = cursor.fetchone()
-    if row is None:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Invalid or expired pairing code")
-    
-    device_id = row[0]
-    cursor.execute(
-        "UPDATE device_pairings SET wallet_address = ?, paired_at = ? WHERE pair_code = ?",
-        (wallet, time.time(), code)
-    )
-    conn.commit()
-    conn.close()
-    
-    return {"status": "success", "device": device_id, "wallet": wallet}
-
-@get("/api/wallet/pair-check")
-async def api_wallet_pair_check(device: str) -> dict:
-    if not device:
-        raise HTTPException(status_code=400, detail="device is required")
-    
-    conn = sqlite3.connect("stickfighter.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT wallet_address FROM device_pairings WHERE device_id = ?", (device,))
-    row = cursor.fetchone()
-    conn.close()
-    
-    if row is None or not row[0]:
-        return {"status": "pending"}
-    
-    wallet = row[0]
-    profile = get_db_profile(wallet)
-    return {"status": "paired", "wallet": wallet, "profile": profile}
 
 @get("/api/smf-config")
 async def api_smf_config() -> dict[str, str]:
@@ -2899,13 +2696,6 @@ app = Litestar(
         spotify_callback,
         spotify_save_token,
         spotify_check,
-        get_pair_page,
-        api_wallet_profile,
-        api_wallet_update_profile,
-        api_wallet_verify_burn,
-        api_wallet_pair_code,
-        api_wallet_pair_submit,
-        api_wallet_pair_check,
         create_static_files_router(path="/src", directories=[ROOT / "src"]),
         create_static_files_router(path="/assets", directories=[ROOT / "assets"]),
         create_static_files_router(path="/", directories=[ROOT / ""]),
