@@ -190,7 +190,7 @@ export class Game {
     const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
     if (isMobile) {
       const isLandscape = window.innerWidth > window.innerHeight;
-      return isLandscape ? (this.logicalH - 234) : (this.logicalH - 292); // Lowered by 20% (from 292 to 234) on landscape rotation
+      return isLandscape ? (this.logicalH - 204) : (this.logicalH - 292); // Lowered by 30% (from 292 to 204) on landscape rotation to clear joypad
     }
     return this.logicalH - 230;
   }

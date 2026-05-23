@@ -1829,6 +1829,28 @@
       }
     }
 
+    /* Proportional scaling for active modal screens in landscape/small heights */
+    @media (max-height: 820px) {
+      .screen:not(.hidden) {
+        transform: translate(-50%, -50%) scale(0.85) !important;
+      }
+    }
+    @media (max-height: 680px) {
+      .screen:not(.hidden) {
+        transform: translate(-50%, -50%) scale(0.72) !important;
+      }
+    }
+    @media (max-height: 520px) {
+      .screen:not(.hidden) {
+        transform: translate(-50%, -50%) scale(0.55) !important;
+      }
+    }
+    @media (max-height: 420px) {
+      .screen:not(.hidden) {
+        transform: translate(-50%, -50%) scale(0.48) !important;
+      }
+    }
+
   </style>
 </head>
 
