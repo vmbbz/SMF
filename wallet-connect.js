@@ -348,38 +348,31 @@ export async function showWalletConnect() {
               DISCONNECT WALLET
             </button>
           </div>
-        ` : (window.showWalletConnectionOptions ? `
+        ` : `
           <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); padding: 10px; border-radius: 8px; font-size: 9px; line-height: 1.4; color: #ccc;">
-            <div style="font-weight:bold; color:var(--neon-green); font-size: 9px; margin-bottom: 8px; text-align:center;">🔗 CONNECT SOLANA WALLET</div>
+            <div style="font-weight:bold; color:var(--neon-green); font-size: 9px; margin-bottom: 8px; text-align:center;">🔗 SOLANA DEVICE PAIRING</div>
             
             <p style="font-size: 8px; color: #bbb; margin-bottom: 10px; line-height: 1.3;">
-              To buy boosts and sign transactions, open this game in your wallet's browser. Or, sync your address manually in Read-Only mode.
+              To sync boosts and profile in the APK safely without private keys, generate a pairing code and link your wallet browser.
             </p>
 
-            <button onclick="window.copyGameUrlToClipboard()" class="premium-btn" style="padding: 6px 10px; font-size: 8px; width: 100%; margin-bottom: 8px; border-color: rgba(20,241,149,0.3);">
-              OPTION A: COPY GAME LINK TO WALLET
-            </button>
-
-            <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; margin-top: 6px;">
-              <div style="font-weight:bold; color:var(--neon-blue); font-size: 8px; margin-bottom: 6px;">OPTION B: SYNC ADDRESS (READ-ONLY)</div>
-              <div style="display:flex; gap:6px;">
-                <input type="text" id="manual-wallet-input" placeholder="Paste Solana Public Key" style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:4px 8px; color:white; font-family:monospace; font-size:8px;">
-                <button onclick="window.syncManualSolanaAddress()" style="background:var(--neon-blue); border:none; color:black; font-family:inherit; font-size:8px; font-weight:bold; border-radius:4px; padding:4px 10px; cursor:pointer;">
-                  SYNC
-                </button>
+            ${window.activePairingCode ? `
+              <div style="background: rgba(255,0,127,0.05); border: 1px solid rgba(255,0,127,0.2); padding: 10px; border-radius: 8px; text-align: center; margin-bottom: 10px;">
+                <div style="font-size: 7px; color: #aaa; margin-bottom: 4px;">YOUR 6-DIGIT APK PAIR CODE:</div>
+                <div style="font-size: 20px; font-weight: bold; color: var(--neon-pink); letter-spacing: 2px; text-shadow: 0 0 8px rgba(255,0,127,0.3); font-family: monospace;">${window.activePairingCode}</div>
+                <div style="font-size: 7px; color: #888; margin-top: 6px; line-height: 1.3;">
+                  Open <strong>https://sticklash.fun/pair</strong> in Phantom browser and enter this code!
+                </div>
               </div>
-              <span id="manual-wallet-error" style="color:#ff3b30; font-size:7px; display:block; margin-top:3px;"></span>
-            </div>
-
-            <button onclick="window.cancelWalletOptions()" style="background:transparent; border:none; color:#888; font-family:inherit; font-size:8px; display:block; margin:8px auto 0 auto; cursor:pointer; text-decoration:underline;">
-              Cancel
-            </button>
+              <button onclick="window.copyPairingLink()" class="premium-btn" style="padding: 6px 10px; font-size: 8px; width: 100%; border-color: rgba(0,194,255,0.3); color: var(--neon-blue);">
+                COPY PAIRING LINK
+              </button>
+            ` : `
+              <button onclick="window.generatePairingCode()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px;">
+                GENERATE PAIRING CODE
+              </button>
+            `}
           </div>
-        ` : `
-          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $SMF tokens to buy premium boost packs.</p>
-          <button onclick="window.connectSolanaWallet()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px;">
-            CONNECT SOLANA WALLET
-          </button>
         `)}
       </div>
       
@@ -519,9 +512,7 @@ export function hideWalletConnect() {
 // Global hook: connect wallet (Real & Mock-Free)
 window.connectSolanaWallet = async function() {
   if (!window.solana) {
-    // If no window.solana is detected, show the beautiful manual sync / deep link copy options panel
-    window.showWalletConnectionOptions = true;
-    showWalletConnect();
+    window.generatePairingCode();
     return;
   }
   try {
@@ -551,59 +542,68 @@ window.connectSolanaWallet = async function() {
   }
 };
 
-window.copyGameUrlToClipboard = function() {
-  const gameUrl = 'https://sticklash.fun';
-  navigator.clipboard.writeText(gameUrl).then(() => {
-    alert('📋 Game URL copied to clipboard! Paste it in the Browser tab of Phantom or Backpack.');
-  }).catch(() => {
-    alert('📋 Game URL is: https://sticklash.fun (Copy and open in Phantom browser)');
-  });
-};
-
-window.syncManualSolanaAddress = async function() {
-  const inputEl = document.getElementById('manual-wallet-input');
-  const errorEl = document.getElementById('manual-wallet-error');
-  if (!inputEl) return;
-  const address = inputEl.value.trim();
-  
-  if (!address) {
-    if (errorEl) errorEl.textContent = 'Please enter an address.';
-    return;
-  }
-  
-  // Basic validation (Solana public key base58, 32-44 chars)
-  const isBase58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
-  if (!isBase58) {
-    if (errorEl) errorEl.textContent = 'Invalid Solana address format.';
-    return;
+window.generatePairingCode = async function() {
+  let deviceId = localStorage.getItem('smf_device_id');
+  if (!deviceId) {
+    deviceId = 'apk_' + Math.random().toString(36).substring(2, 12);
+    localStorage.setItem('smf_device_id', deviceId);
   }
   
   try {
-    const profile = getProfile();
-    profile.walletConnected = true;
-    profile.walletAddress = address;
-    
-    // Clear the options flag
-    window.showWalletConnectionOptions = false;
-    
-    // Fetch live on-chain balance via RPC
-    await updateOnChainBalance(profile);
-    
-    saveProfile(profile);
-    showWalletConnect();
-    
-    const activeGame = window.currentGame || window.game || window._game;
-    if (activeGame && activeGame.showBoostMessage) {
-      activeGame.showBoostMessage("⚡ SOLANA ADDRESS SYNCED!", "runner");
+    const res = await fetch(`/api/wallet/pair-code?device=${deviceId}`);
+    if (res.ok) {
+      const data = await res.json();
+      window.activePairingCode = data.code;
+      showWalletConnect();
+      
+      // Start polling
+      if (window.pairingPollInterval) clearInterval(window.pairingPollInterval);
+      window.pairingPollInterval = setInterval(async () => {
+        try {
+          const checkRes = await fetch(`/api/wallet/pair-check?device=${deviceId}`);
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            if (checkData.status === 'paired') {
+              clearInterval(window.pairingPollInterval);
+              window.pairingPollInterval = null;
+              window.activePairingCode = null;
+              
+              const profile = getProfile();
+              profile.walletConnected = true;
+              profile.walletAddress = checkData.wallet;
+              if (checkData.profile) {
+                profile.name = checkData.profile.name || profile.name;
+                profile.avatar = checkData.profile.avatar || profile.avatar;
+                profile.boosts = typeof checkData.profile.boosts === 'number' ? checkData.profile.boosts : profile.boosts;
+              }
+              saveProfile(profile);
+              
+              showWalletConnect();
+              
+              const activeGame = window.currentGame || window.game || window._game;
+              if (activeGame && activeGame.showBoostMessage) {
+                activeGame.showBoostMessage("⚡ SOLANA WALLET PAIRED!", "runner");
+              }
+            }
+          }
+        } catch(e) {
+          console.warn('Pairing check error:', e);
+        }
+      }, 3000);
     }
-  } catch (e) {
-    if (errorEl) errorEl.textContent = 'Failed to sync: ' + e.message;
+  } catch(e) {
+    console.error('Failed to generate pairing code:', e);
   }
 };
 
-window.cancelWalletOptions = function() {
-  window.showWalletConnectionOptions = false;
-  showWalletConnect();
+window.copyPairingLink = function() {
+  const code = window.activePairingCode || '';
+  const link = `https://sticklash.fun/pair?code=${code}`;
+  navigator.clipboard.writeText(link).then(() => {
+    alert('📋 Pairing link copied! Open this in Phantom Wallet Browser to link your device.');
+  }).catch(() => {
+    alert('📋 Link is: ' + link);
+  });
 };
 
 // Global hook: disconnect wallet
@@ -737,9 +737,36 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
       <span style="color:#888; font-size:8px;">Signature: ${signature.substring(0, 10)}... (Confirmed on Solana Mainnet)</span>
     `;
     
-    // Update local storage
+    // Update local storage and backend sync
     profile.smfBalance = Math.max(0, profile.smfBalance - smfCost);
-    profile.boosts += boostsCount;
+    
+    try {
+      txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Burn Confirmed!</span><br><span style="color:#00c2ff;">4. Synchronising with Server...</span>`;
+      const verifyRes = await fetch('/api/wallet/verify-burn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signature: signature,
+          wallet: profile.walletAddress,
+          packId: packId,
+          boostsCount: boostsCount
+        })
+      });
+      if (verifyRes.ok) {
+        const freshProfile = await verifyRes.json();
+        if (freshProfile && typeof freshProfile.boosts === 'number') {
+          profile.boosts = freshProfile.boosts;
+        } else {
+          profile.boosts += boostsCount;
+        }
+      } else {
+        profile.boosts += boostsCount;
+      }
+    } catch(e) {
+      console.warn('[Wallet] Backend sync failed, using optimistic credit:', e);
+      profile.boosts += boostsCount;
+    }
+    
     saveProfile(profile);
 
     // Update UI elements
