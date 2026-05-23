@@ -5,6 +5,11 @@
 
 ---
 
+### 🎬 Official Promo Video
+![STICKLASH Trailer](assets/STICKLASH-Promo.mp4)
+
+---
+
 ## 📱 Mobile App Downloads (Android)
 
 Get straight into the arena with our pre-built packages:
