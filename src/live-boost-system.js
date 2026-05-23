@@ -84,11 +84,16 @@ export class LiveBoostSystem {
     this._interval = null;
     this._ttsReady = false;
     this._announcerVoice = null;
+    
+    // Web Audio PCM Player for Deepgram Zeus TTS
+    this.playbackCtx = null;
+    this._nextPlayTime = 0;
+    
     this._initTTS();
   }
 
   // ─────────────────────────────────────────
-  // TTS — pick the best available English voice
+  // TTS — pick the best available English voice for local fallback
   // Priority: Natural/Online/Neural/Enhanced > Google > Siri > English > default
   // ─────────────────────────────────────────
   _initTTS() {
@@ -119,7 +124,7 @@ export class LiveBoostSystem {
       }
       this._announcerVoice = chosen || null;
       this._ttsReady = true;
-      console.log('[Announcer] TTS ready. Voice:', this._announcerVoice?.name || 'browser default');
+      console.log('[Announcer] Browser fallback voice ready:', this._announcerVoice?.name || 'browser default');
       return true;
     };
 
@@ -130,7 +135,84 @@ export class LiveBoostSystem {
     }
   }
 
-  _announce(text) {
+  /** Fetch Linear16 PCM audio from Deepgram TTS and play it */
+  async _speakTTS(text) {
+    if (!text || !text.trim()) return;
+    console.log(`[Announcer Zeus] TTS → "${text}"`);
+    
+    const resp = await fetch('/api/voice/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, model: 'aura-2-zeus-en' }),
+    });
+
+    if (!resp.ok) {
+      throw new Error(`TTS server returned status ${resp.status}`);
+    }
+
+    const arrayBuffer = await resp.arrayBuffer();
+    if (arrayBuffer.byteLength > 0) {
+      this._playAudio(arrayBuffer);
+    } else {
+      console.warn(`[Announcer Zeus] TTS returned empty audio`);
+    }
+  }
+
+  /** Decode and play raw linear16 PCM bytes at 24kHz back-to-back */
+  _playAudio(arrayBuffer) {
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) return;
+
+    if (!this.playbackCtx) {
+      this.playbackCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 24000 });
+    }
+
+    const resume = () => {
+      if (this.playbackCtx && this.playbackCtx.state === 'suspended') {
+        this.playbackCtx.resume().catch(e => console.warn('[Announcer Zeus] Failed to resume playback context:', e));
+      }
+    };
+    resume();
+
+    const int16 = new Int16Array(arrayBuffer);
+    if (int16.length === 0) return;
+
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) {
+      float32[i] = int16[i] / 32768;
+    }
+
+    try {
+      const buffer = this.playbackCtx.createBuffer(1, float32.length, 24000);
+      buffer.getChannelData(0).set(float32);
+
+      const now = this.playbackCtx.currentTime;
+      if (this._nextPlayTime < now) {
+        this._nextPlayTime = now;
+      }
+
+      const source = this.playbackCtx.createBufferSource();
+      source.buffer = buffer;
+      source.connect(this.playbackCtx.destination);
+      source.start(this._nextPlayTime);
+      this._nextPlayTime += buffer.duration;
+      console.log(`[Announcer Zeus] Playing ${(buffer.duration * 1000).toFixed(0)}ms of authoritative announcer audio`);
+    } catch (e) {
+      console.error('[Announcer Zeus] Audio playback error:', e);
+    }
+  }
+
+  /** Main entrypoint to announce text with a cinema-grade voice */
+  async _announce(text) {
+    try {
+      await this._speakTTS(text);
+    } catch (err) {
+      console.warn('[Announcer] Deepgram TTS failed, falling back to browser synthesis:', err);
+      this._announceBrowserFallback(text);
+    }
+  }
+
+  /** Fallback: speak via local browser SpeechSynthesis API */
+  _announceBrowserFallback(text) {
     if (!window.speechSynthesis) return;
     try {
       window.speechSynthesis.cancel();
@@ -141,7 +223,7 @@ export class LiveBoostSystem {
       msg.volume = 1.0;
       window.speechSynthesis.speak(msg);
     } catch(err) {
-      console.warn('[Announcer] Speech blocked by autoplay policy:', err);
+      console.warn('[Announcer Fallback] Speech blocked by autoplay policy:', err);
     }
   }
 

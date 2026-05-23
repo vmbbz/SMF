@@ -635,19 +635,29 @@ async def _call_llm_provider(
     temperature: float | None,
 ) -> str:
     """Call the appropriate LLM provider. Raises on failure."""
-    if provider == "openai":
+    if provider == "xai":
+        return await _llm_xai(messages, system_prompt, temperature=temperature)
+    elif provider == "openai":
         return await _llm_openai(messages, system_prompt, temperature=temperature)
     elif provider == "gemini":
         return await _llm_gemini(messages, system_prompt, temperature=temperature)
     
-    # Smart fallbacks to free Gemini API if preferred keys are missing
-    if provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY") and os.environ.get("GEMINI_API_KEY"):
-        print("[llm-fighter:fallback] ANTHROPIC_API_KEY not set, using GEMINI_API_KEY instead")
-        return await _llm_gemini(messages, system_prompt, temperature=temperature)
+    # Smart fallbacks to free Gemini API or Grok if preferred keys are missing
+    if provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
+        if os.environ.get("XAI_API_KEY") or os.environ.get("X_API_KEY"):
+            print("[llm-fighter:fallback] ANTHROPIC_API_KEY not set, using XAI_API_KEY instead")
+            return await _llm_xai(messages, system_prompt, temperature=temperature)
+        elif os.environ.get("GEMINI_API_KEY"):
+            print("[llm-fighter:fallback] ANTHROPIC_API_KEY not set, using GEMINI_API_KEY instead")
+            return await _llm_gemini(messages, system_prompt, temperature=temperature)
         
-    if provider == "openai" and not os.environ.get("OPENAI_API_KEY") and os.environ.get("GEMINI_API_KEY"):
-        print("[llm-fighter:fallback] OPENAI_API_KEY not set, using GEMINI_API_KEY instead")
-        return await _llm_gemini(messages, system_prompt, temperature=temperature)
+    if provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
+        if os.environ.get("XAI_API_KEY") or os.environ.get("X_API_KEY"):
+            print("[llm-fighter:fallback] OPENAI_API_KEY not set, using XAI_API_KEY instead")
+            return await _llm_xai(messages, system_prompt, temperature=temperature)
+        elif os.environ.get("GEMINI_API_KEY"):
+            print("[llm-fighter:fallback] OPENAI_API_KEY not set, using GEMINI_API_KEY instead")
+            return await _llm_gemini(messages, system_prompt, temperature=temperature)
         
     return await _llm_anthropic(messages, system_prompt, temperature=temperature)
 
@@ -821,6 +831,49 @@ async def _llm_openai(
     return ""
 
 
+async def _llm_xai(
+    messages: list[dict],
+    system_prompt: str = LLM_FIGHTER_SYSTEM,
+    temperature: float | None = None,
+) -> str:
+    """Call xAI Grok API (using OpenAI compatible endpoint)."""
+    api_key = os.environ.get("XAI_API_KEY") or os.environ.get("X_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=500, detail="XAI_API_KEY / X_API_KEY not set")
+
+    # OpenAI-compatible messages format
+    xai_messages = [{"role": "system", "content": system_prompt}] + messages
+
+    body: dict[str, Any] = {
+        "model": "grok-beta",
+        "max_tokens": 150,
+        "messages": xai_messages,
+    }
+    if temperature is not None:
+        body["temperature"] = temperature
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+        )
+        if resp.status_code != 200:
+            print(f"[llm-fighter:xai] ❌ ERROR {resp.status_code} ❌")
+            print(f"[llm-fighter:xai] {resp.text}")
+            raise HTTPException(status_code=502, detail="xAI request failed")
+
+        result = resp.json()
+        print("[llm-fighter:xai] ⚡ RESPONSE ⚡")
+        choices = result.get("choices", [])
+        if choices:
+            return choices[0].get("message", {}).get("content", "")
+        return ""
+
+
 async def _llm_gemini(
     messages: list[dict],
     system_prompt: str = LLM_FIGHTER_SYSTEM,
@@ -930,12 +983,23 @@ def _clean_tts_text(text: str, max_chars: int = 200) -> str:
 
 @post("/api/voice/llm")
 async def voice_llm(data: dict[str, Any]) -> dict:
-    """Send conversation to Anthropic or Gemini (as free fallback) and return response text."""
+    """Send conversation to xAI Grok, Anthropic, or Gemini and return response text."""
+    xai_key = os.environ.get("XAI_API_KEY") or os.environ.get("X_API_KEY")
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
     messages = data.get("messages", [])
     system = data.get("system", "")
 
+    # Prioritize xAI (Grok-Beta) if key is configured
+    if xai_key:
+        print("[llm:voice] xAI key set, routing to xAI Grok API")
+        try:
+            text = await _llm_xai(messages, system, temperature=0.7)
+            return {"text": _clean_tts_text(text)}
+        except Exception as e:
+            print(f"[llm:voice] xAI Grok failed with error: {e}. Falling back...")
+
+    # Fallback to Gemini if Anthropic is not configured
     if not api_key and gemini_key:
         print("[llm:voice] ANTHROPIC_API_KEY not set, routing to Gemini free tier")
         try:
@@ -1143,14 +1207,68 @@ async def proxy_image(url: str) -> Response:
 @get("/api/safety/tweets")
 async def safety_tweets(cashtag: str) -> dict:
     import random
-    safe_tweets = [
+    bearer_token = os.environ.get("X_BEARER_TOKEN") or os.environ.get("X_API_KEY")
+    
+    # Mock data as robust fallback
+    mock_tweets = [
         {"author": "@novasolana", "text": f"{cashtag} contract is clean. LP burned, mint revoked. Good to go. 🛡️"},
         {"author": "@rugmuncher", "text": f"Watching the top 10 wallets for {cashtag}. They hold 42%, be careful playing this one! ⚠️"},
         {"author": "@solana_scanner", "text": f"No honeypot detected on {cashtag}. Renounced ownership."},
         {"author": "@degen_whale", "text": f"I just ape'd into {cashtag}, looks absolutely safe!"}
     ]
-    random.shuffle(safe_tweets)
-    return {"tweets": safe_tweets[:2]}
+
+    if not bearer_token:
+        # Graceful fallback to mock data
+        random.shuffle(mock_tweets)
+        return {"tweets": mock_tweets[:2]}
+
+    try:
+        url = "https://api.twitter.com/2/tweets/search/recent"
+        # Search for the cashtag, e.g. "$XYO"
+        params = {
+            "query": cashtag,
+            "max_results": 10,
+            "tweet.fields": "author_id,created_at,text",
+            "expansions": "author_id",
+            "user.fields": "username,name"
+        }
+        headers = {
+            "Authorization": f"Bearer {bearer_token}",
+            "Content-Type": "application/json"
+        }
+        
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.get(url, headers=headers, params=params)
+            
+            if resp.status_code != 200:
+                print(f"[x-api] Search failed with status {resp.status_code}: {resp.text}")
+                random.shuffle(mock_tweets)
+                return {"tweets": mock_tweets[:2]}
+            
+            data = resp.json()
+            tweets_data = data.get("data", [])
+            users_data = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
+            
+            formatted_tweets = []
+            for t in tweets_data:
+                author_id = t.get("author_id")
+                author_info = users_data.get(author_id, {})
+                username = author_info.get("username", "anonymous")
+                formatted_tweets.append({
+                    "author": f"@{username}",
+                    "text": t.get("text", "")
+                })
+            
+            if not formatted_tweets:
+                random.shuffle(mock_tweets)
+                return {"tweets": mock_tweets[:2]}
+                
+            return {"tweets": formatted_tweets[:5]}  # Return up to 5 real tweets
+            
+    except Exception as e:
+        print(f"[x-api] Error fetching tweets: {e}")
+        random.shuffle(mock_tweets)
+        return {"tweets": mock_tweets[:2]}
 
 @get("/api/spotify/login")
 async def spotify_login(request: Request) -> Response[Any]:

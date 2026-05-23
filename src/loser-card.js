@@ -5,10 +5,18 @@ window.renderRichCard = function(token, isWinner) {
   window.currentRichToken = token;
   window.isRichWinner = isWinner;
 
-  // Use a 0ms timeout to allow the browser to finish parsing the parent container's innerHTML
-  setTimeout(() => {
+  let attempts = 0;
+  const tryRender = () => {
     const content = document.getElementById('rich-tab-content');
-    if (!content) return;
+    if (!content) {
+      attempts++;
+      if (attempts < 10) {
+        setTimeout(tryRender, 30);
+      } else {
+        console.warn("[renderRichCard] rich-tab-content element not found after 10 attempts.");
+      }
+      return;
+    }
 
     let catchphraseEl = document.getElementById('rich-catchphrase');
     if (!catchphraseEl) {
@@ -22,7 +30,9 @@ window.renderRichCard = function(token, isWinner) {
     catchphraseEl.innerHTML = `"${phrase}"`;
 
     window.switchRichTab(0);
-  }, 0);
+  };
+
+  setTimeout(tryRender, 0);
 };
 
 window.switchRichTab = function(tabIndex) {
@@ -64,23 +74,19 @@ window.switchRichTab = function(tabIndex) {
     // SOCIAL TAB
     content.innerHTML = `
       <div class="social-tab" style="animation: punchIn 0.3s ease; text-align: left;">
-        <h3 style="color:var(--neon-blue);font-size:14px;margin-bottom:15px;">Live $${(token.symbol || 'MEME').toUpperCase()} Feed</h3>
+        <h3 style="color:var(--neon-blue);font-size:14px;margin-bottom:15px;">Live $${(token.symbol || 'MEME').toUpperCase()} X Feed</h3>
         
-        <div style="background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;font-size:10px;margin-bottom:10px;border-left:3px solid var(--neon-blue);">
-          <strong style="color:#fff;">@MemeKing</strong><br>
-          <span style="color:#ccc;">"Just loaded my bags for $${token.symbol}! This is going to 100M mcap easily. 🚀"</span>
-        </div>
-        <div style="background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;font-size:10px;margin-bottom:15px;border-left:3px solid var(--neon-pink);">
-          <strong style="color:#fff;">@SolanaWhale</strong><br>
-          <span style="color:#ccc;">"If you aren't fighting with $${token.symbol} in SMF, what are you even doing? 🥊"</span>
+        <div id="social-tweets">
+          <div id="tweets-loading" style="color:#888;font-size:10px;text-align:center;">Loading live tweets...</div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <button style="background:#1DA1F2;color:#fff;border:none;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;">Twitter</button>
-          <button style="background:#0088cc;color:#fff;border:none;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;">Telegram</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px;">
+          <button onclick="window.open('https://twitter.com/search?q=%23${(token.symbol || 'MEME').toUpperCase()}', '_blank')" style="background:#1DA1F2;color:#fff;border:none;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;text-align:center;">Search X</button>
+          <button onclick="window.open('https://t.me/share/url?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent('Come fight $' + (token.symbol || 'MEME').toUpperCase() + ' in the Sticklash arena!')}', '_blank')" style="background:#0088cc;color:#fff;border:none;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;text-align:center;">Share TG</button>
         </div>
       </div>
     `;
+    loadTweetsIntoContainer(token.symbol, 'social-tweets');
   } else if (tabIndex === 2) {
     // SAFETY TAB
     content.innerHTML = `
@@ -100,13 +106,11 @@ window.switchRichTab = function(tabIndex) {
         </div>
       </div>
     `;
-    loadSafetyTweets(token.symbol);
+    loadTweetsIntoContainer(token.symbol, 'safety-tweets');
   }
 };
 
 function calculatePowerLevel(token) {
-  // Holders removed \u2014 returns "N/A" as a string which causes NaN via math.
-  // Power is now driven purely by volume, price change, and liquidity.
   const volume24h  = Number(token.volume24h)     || 0;
   const priceChg   = Number(token.priceChange24h) || 0;
   const liquidity  = Number(token.liquidity)      || 0;
@@ -142,21 +146,24 @@ function getCatchphrase(token, isWinner) {
   return phrases[Math.floor(Math.random() * phrases.length)];
 }
 
-async function loadSafetyTweets(symbol) {
+async function loadTweetsIntoContainer(symbol, containerId) {
   try {
     const cashtag = `$${(symbol || 'MEME').toUpperCase()}`;
     const res = await fetch(`/api/safety/tweets?cashtag=${encodeURIComponent(cashtag)}`);
     const data = await res.json();
     
-    const container = document.getElementById('safety-tweets');
+    const container = document.getElementById(containerId);
     if (!container) return;
 
     if (!data.tweets || data.tweets.length === 0) {
-      container.innerHTML = `<div style="color:#888;font-size:10px;">No recent safety alerts found for ${cashtag}.</div>`;
+      container.innerHTML = `<div style="color:#888;font-size:10px;text-align:center;">No recent X tweets found for ${cashtag}.</div>`;
       return;
     }
 
-    let html = `<h4 style="color:var(--neon-blue);font-size:12px;margin-bottom:10px;">Live X $Cashtag Intel</h4>`;
+    let html = '';
+    if (containerId === 'safety-tweets') {
+      html += `<h4 style="color:var(--neon-blue);font-size:12px;margin-bottom:10px;">Live X $Cashtag Intel</h4>`;
+    }
     data.tweets.forEach((t, i) => {
       const color = i % 2 === 0 ? 'var(--neon-green)' : 'var(--neon-pink)';
       html += `
@@ -168,7 +175,7 @@ async function loadSafetyTweets(symbol) {
     });
     container.innerHTML = html;
   } catch (err) {
-    const container = document.getElementById('safety-tweets');
-    if (container) container.innerHTML = `<div style="color:#888;font-size:10px;">Failed to load signals.</div>`;
+    const container = document.getElementById(containerId);
+    if (container) container.innerHTML = `<div style="color:#888;font-size:10px;text-align:center;">Failed to load live tweets.</div>`;
   }
 }
