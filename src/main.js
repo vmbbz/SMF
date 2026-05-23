@@ -286,6 +286,13 @@ let peerConnection = null;
 
 /** Show a screen by name, hiding all others */
 function showScreen(name) {
+  // Play heavy whip impact on arrival or back from multiplayer
+  if (name === 'multiplayer' || (name === 'landing' && state === 'multiplayer')) {
+    if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') {
+      window.sfx.playHeavyWhipImpact();
+    }
+  }
+
   hideAllScreens();
   if (canvas && canvas.classList) canvas.classList.remove('active');
   
@@ -584,6 +591,7 @@ window.resetAndFight = async function(token) {
 // Landing page click handlers
 // ─────────────────────────────────────────────
 safeListener('btn-multiplayer', 'click', async () => {
+  sfx.playHeavyWhipImpact();
   // Multiplayer requires authentication
   if (!isLoggedIn()) {
     const configured = await isAuthConfigured();
@@ -596,7 +604,10 @@ safeListener('btn-multiplayer', 'click', async () => {
   }
   showScreen('multiplayer');
 });
-safeListener('btn-singleplayer', 'click', () => showCharacterSelect());
+safeListener('btn-singleplayer', 'click', () => {
+  sfx.playHeavyWhipImpact();
+  showCharacterSelect();
+});
 
 // Multiplayer menu
 safeListener('btn-create-room', 'click', async () => {
@@ -1929,6 +1940,7 @@ function escapeHtml(str) {
 
 // Leaderboard button on landing page
 safeListener('btn-leaderboard', 'click', () => {
+  sfx.playHeavyWhipImpact();
   showScreen('leaderboard');
   loadLeaderboard(lbCategory);
 });

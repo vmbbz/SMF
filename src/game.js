@@ -542,7 +542,13 @@ export class Game {
         color = "#ff6600";
         text = `${totalDmg} HEAD!`;
         logText = `${totalDmg} HEAD`;
-        if (this.sfx) this.sfx.headshot();
+        if (this.sfx) {
+          if (Math.random() < 0.5 && typeof this.sfx.playHeavyWhipImpact === 'function') {
+            this.sfx.playHeavyWhipImpact();
+          } else {
+            this.sfx.headshot();
+          }
+        }
         if (window.haptic) window.haptic.headshot();
         hitDesc = `HEADSHOT! You took ${totalDmg} damage to the head!`;
         atkDesc = `HEADSHOT! You nailed them in the head for ${totalDmg}!`;
