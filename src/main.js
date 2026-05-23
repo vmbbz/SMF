@@ -12,6 +12,7 @@ import { isAuthConfigured, login, logout, handleCallback, checkAuth, isLoggedIn,
 import { PeerConnection, RemoteInputAdapter } from './webrtc.js';
 import { PredictionManager } from './prediction.js';
 import { generatePersonality } from './token-utils.js';
+import { StageMusicManager } from './stage-music.js';
 
 window.generatePersonality = generatePersonality;
 
@@ -242,44 +243,161 @@ let game = null;
 let p1Input = null;
 let p2Input = null;
 const sfx = new SFX();
+const stageMusic = new StageMusicManager();
+let shouldResumeLandingAmbient = false;
 window.sfx = sfx;
+window.stageMusic = stageMusic;
 sfx.preload().catch(e => console.warn('[SFX] Background preload failed:', e));
 
-window.toggleBGM = function() {
+function syncLandingBgmButton() {
   const btn = document.getElementById('btn-bgm');
-  if (!window.sfx) return;
-  if (window.sfx._bgmActive) {
-    window.sfx.stopBGM();
-    if (btn) {
-      const desktopEl = btn.querySelector('.desktop-text');
-      if (desktopEl) desktopEl.textContent = '⛩️ AMBIENT BGM: OFF';
-      btn.style.borderColor = '#555';
-      btn.style.boxShadow = 'none';
-    }
-  } else {
-    window.sfx.startBGM();
-    if (btn) {
-      const desktopEl = btn.querySelector('.desktop-text');
-      if (desktopEl) desktopEl.textContent = '⛩️ AMBIENT BGM: ON';
-      btn.style.borderColor = '#ff5500';
-      btn.style.boxShadow = '0 0 15px rgba(255, 85, 0, 0.4)';
-    }
+  if (!btn || !window.sfx) return;
+
+  const desktopEl = btn.querySelector('.desktop-text');
+  if (desktopEl) desktopEl.textContent = window.sfx._bgmActive ? '⛩️ LANDING BGM: ON' : '⛩️ LANDING BGM: OFF';
+  btn.style.borderColor = window.sfx._bgmActive ? '#ff5500' : '#555';
+  btn.style.boxShadow = window.sfx._bgmActive ? '0 0 15px rgba(255, 85, 0, 0.4)' : 'none';
+}
+
+function syncFightMusicControls(uiState = stageMusic.getState()) {
+  const label = document.getElementById('fight-track-label');
+  const toggleBtn = document.getElementById('btn-stage-music-toggle');
+
+  if (label) {
+    const track = uiState.trackName || 'No Track';
+    const index = Number.isFinite(uiState.trackIndex) ? uiState.trackIndex + 1 : 0;
+    const total = Number.isFinite(uiState.totalTracks) ? uiState.totalTracks : 0;
+    label.textContent = total > 0 ? `${index}/${total} ${track}` : track;
   }
+
+  if (toggleBtn) {
+    toggleBtn.textContent = uiState.isPlaying ? '⏸' : '▶';
+    toggleBtn.setAttribute('aria-label', uiState.isPlaying ? 'Pause stage music' : 'Play stage music');
+  }
+}
+
+stageMusic.subscribe(syncFightMusicControls);
+
+function setFightDockVisible(isVisible) {
+  const dock = document.getElementById('fight-top-dock');
+  if (dock) dock.style.display = isVisible ? 'flex' : 'none';
+  if (!isVisible) {
+    const panel = document.getElementById('fight-menu-panel');
+    if (panel) panel.classList.remove('open');
+  }
+}
+
+function setLandingAudioButtonVisible(isVisible) {
+  const btn = document.getElementById('btn-bgm');
+  if (btn) btn.style.display = isVisible ? 'flex' : 'none';
+}
+
+function hideFightSceneUi() {
+  setFightDockVisible(false);
+  const fightStripEl = document.getElementById('fight-trending-strip');
+  if (fightStripEl) fightStripEl.style.display = 'none';
+  const mobileControls = document.getElementById('mobile-controls');
+  if (mobileControls) mobileControls.style.display = 'none';
+}
+
+function prepareFightAudio() {
+  shouldResumeLandingAmbient = !!window.sfx?._bgmActive;
+  if (window.sfx?._bgmActive) {
+    window.sfx.stopBGM();
+  }
+  syncLandingBgmButton();
+}
+
+function teardownFightAudio() {
+  stageMusic.stopForMenu();
+  if (shouldResumeLandingAmbient && window.sfx && !window.sfx._bgmActive) {
+    window.sfx.startBGM();
+  }
+  shouldResumeLandingAmbient = false;
+  syncLandingBgmButton();
+}
+
+window.toggleBGM = function() {
+  if (!window.sfx) return;
+  if (window.sfx._bgmActive) window.sfx.stopBGM();
+  else window.sfx.startBGM();
+  syncLandingBgmButton();
 };
 
+window.toggleFightMenu = function(forceOpen = null) {
+  const panel = document.getElementById('fight-menu-panel');
+  if (!panel || state !== 'fighting') return false;
+
+  const nextOpen = forceOpen === null ? !panel.classList.contains('open') : !!forceOpen;
+  panel.classList.toggle('open', nextOpen);
+  return nextOpen;
+};
+
+window.closeFightMenu = function() {
+  const panel = document.getElementById('fight-menu-panel');
+  if (panel) panel.classList.remove('open');
+};
+
+safeListener('btn-fight-menu', 'click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  window.toggleFightMenu();
+});
+
+safeListener('btn-fight-menu-resume', 'click', (e) => {
+  e.preventDefault();
+  window.closeFightMenu();
+});
+
+safeListener('btn-fight-menu-rematch', 'click', async (e) => {
+  e.preventDefault();
+  window.closeFightMenu();
+  if (typeof window.rematchFight === 'function') {
+    await window.rematchFight();
+  }
+});
+
+safeListener('btn-fight-menu-home', 'click', (e) => {
+  e.preventDefault();
+  window.closeFightMenu();
+  const overlay = document.getElementById('victory-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  showLanding();
+});
+
+safeListener('btn-stage-music-prev', 'click', (e) => {
+  e.preventDefault();
+  stageMusic.prevTrack({ autoplay: true, forcePlay: true, persist: true });
+});
+
+safeListener('btn-stage-music-toggle', 'click', (e) => {
+  e.preventDefault();
+  stageMusic.togglePlayPause();
+});
+
+safeListener('btn-stage-music-next', 'click', (e) => {
+  e.preventDefault();
+  stageMusic.nextTrack({ autoplay: true, forcePlay: true, persist: true });
+});
+
+document.addEventListener('click', (e) => {
+  const menuWrap = document.querySelector('#fight-top-dock .fight-menu-wrap');
+  if (!menuWrap || !menuWrap.contains(e.target)) {
+    window.closeFightMenu();
+  }
+});
+
 window.addEventListener('click', () => {
-  if (window.sfx && !window.sfx._bgmActive && !window.sfx._bgmStartedOnce) {
+  if (state === 'landing' && window.sfx && !window.sfx._bgmActive && !window.sfx._bgmStartedOnce) {
     window.sfx._bgmStartedOnce = true;
     window.sfx.startBGM();
-    const btn = document.getElementById('btn-bgm');
-    if (btn) {
-      const desktopEl = btn.querySelector('.desktop-text');
-      if (desktopEl) desktopEl.textContent = '⛩️ AMBIENT BGM: ON';
-      btn.style.borderColor = '#ff5500';
-      btn.style.boxShadow = '0 0 15px rgba(255, 85, 0, 0.4)';
-    }
+    syncLandingBgmButton();
   }
 }, { once: true });
+
+syncLandingBgmButton();
+syncFightMusicControls();
+hideFightSceneUi();
 // Track active adapters for cleanup
 let activeAdapters = [];
 // Track active peer connection for multiplayer cleanup
@@ -302,6 +420,12 @@ function showScreen(name) {
     targetScreen.classList.remove('hidden');
   }
   state = name;
+
+  if (name !== 'fighting') {
+    hideFightSceneUi();
+    stageMusic.stopForMenu();
+  }
+  setLandingAudioButtonVisible(name === 'landing');
 
   // Clear keyboard focus indicators from previous screen
   document.querySelectorAll('.kb-focus').forEach(el => el.classList.remove('kb-focus'));
@@ -380,6 +504,11 @@ function showOnboarding() {
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
   p1Input = null;
   p2Input = null;
+  stageMusic.stopForMenu();
+  shouldResumeLandingAmbient = false;
+  syncLandingBgmButton();
+  setLandingAudioButtonVisible(false);
+  hideFightSceneUi();
   showScreen('onboarding');
 }
 
@@ -389,6 +518,9 @@ function showLanding() {
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
   p1Input = null;
   p2Input = null;
+  teardownFightAudio();
+  setLandingAudioButtonVisible(true);
+  hideFightSceneUi();
   showScreen('landing');
 }
 
@@ -400,6 +532,9 @@ async function startFight() {
   }
   if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
+  setLandingAudioButtonVisible(false);
+  setFightDockVisible(true);
+  prepareFightAudio();
 
   // Show Fight Trending Strip
   const fightStripEl = document.getElementById('fight-trending-strip');
@@ -424,7 +559,7 @@ async function startFight() {
   // Start the game loop (renders stage + fighters while waiting)
   const p1Label = getPlayerLabel(p1ModeIdx, p1ProviderIdx);
   const p2Label = getPlayerLabel(p2ModeIdx, p2ProviderIdx);
-  game = new Game(canvas, p1Input, p2Input, sfx, { p1Label, p2Label });
+  game = new Game(canvas, p1Input, p2Input, sfx, { p1Label, p2Label, stageMusic });
   game.start();
 
   // Expose game globally immediately (fixes race condition)
@@ -1116,6 +1251,12 @@ function startMultiplayerFight(_roomData) {
   hideAllScreens();
   if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
+  setLandingAudioButtonVisible(false);
+  setFightDockVisible(true);
+  prepareFightAudio();
+
+  const fightStripEl = document.getElementById('fight-trending-strip');
+  if (fightStripEl) fightStripEl.style.display = 'block';
 
   // Create input for local player based on room controller selection
   const localInput = createInput(myNum, roomModeIdx, roomProviderIdx);
@@ -1141,7 +1282,7 @@ function startMultiplayerFight(_roomData) {
     if (adapter.waitUntilReady) readyPromises.push(adapter.waitUntilReady());
   }
 
-  game = new Game(canvas, myInput, opInput, sfx, { p1Label, p2Label });
+  game = new Game(canvas, myInput, opInput, sfx, { p1Label, p2Label, stageMusic });
   game.start();
 
   for (const adapter of activeAdapters) {
@@ -1716,11 +1857,16 @@ safeListener('btn-mm-play-wait', 'click', () => {
   hideAllScreens();
   if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
+  setLandingAudioButtonVisible(false);
+  setFightDockVisible(true);
+  prepareFightAudio();
+  const fightStripEl = document.getElementById('fight-trending-strip');
+  if (fightStripEl) fightStripEl.style.display = 'block';
 
   const simInput1 = createInput(1, 0, 0); // Keys
   const simInput2 = createInput(2, 3, 0); // SIM
 
-  game = new Game(canvas, simInput1, simInput2, sfx, { p1Label: 'You', p2Label: 'SIM Bot' });
+  game = new Game(canvas, simInput1, simInput2, sfx, { p1Label: 'You', p2Label: 'SIM Bot', stageMusic });
   game.start();
 
   for (const adapter of activeAdapters) {
@@ -1806,6 +1952,11 @@ async function startCharacterFight() {
   }
   if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
+  setLandingAudioButtonVisible(false);
+  setFightDockVisible(true);
+  prepareFightAudio();
+  const fightStripEl = document.getElementById('fight-trending-strip');
+  if (fightStripEl) fightStripEl.style.display = 'block';
 
   // P1 uses keyboard, P2 is the selected LLM character
   p1Input = createInput(1, 0, 0); // keyboard
@@ -1824,7 +1975,7 @@ async function startCharacterFight() {
   // Start game loop
   const p1Label = 'Keyboard';
   const p2Label = char.name;
-  game = new Game(canvas, p1Input, p2Input, sfx, { p1Label, p2Label });
+  game = new Game(canvas, p1Input, p2Input, sfx, { p1Label, p2Label, stageMusic });
   game.start();
 
   // Wire adapter game ref
@@ -2212,7 +2363,11 @@ window.addEventListener('keydown', e => {
 
   // Escape goes back from any sub-screen
   if (e.code === 'Escape') {
-    if (state === 'multiplayer') showScreen('landing');
+    if (state === 'fighting') {
+      e.preventDefault();
+      window.toggleFightMenu();
+    }
+    else if (state === 'multiplayer') showScreen('landing');
     else if (state === 'joinRoom') showScreen('multiplayer');
     else if (state === 'roomLobby') { stopRoomPolling(); showScreen('multiplayer'); }
     else if (state === 'roomController') { stopRoomPolling(); showScreen('multiplayer'); }

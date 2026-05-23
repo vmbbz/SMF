@@ -67,7 +67,7 @@ export class Game {
     p1Input,
     p2Input,
     sfx = null,
-    { p1Label = "P1", p2Label = "P2" } = {},
+    { p1Label = "P1", p2Label = "P2", stageMusic = null } = {},
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
@@ -75,6 +75,7 @@ export class Game {
     this.p1Input = p1Input;
     this.p2Input = p2Input;
     this.sfx = sfx;
+    this.stageMusic = stageMusic;
     this.p1Label = p1Label;
     this.p2Label = p2Label;
 
@@ -132,11 +133,6 @@ export class Game {
     this.waitingForIntro = true; // NEW: Walk-in intro sequence
     this.introTimer = 5.0; // Phase 3: 5 seconds of stats display
     this.bgImage = null; // Background image for the current token
-
-    // Background Music (High-energy chiptune loop)
-    this.bgm = new Audio("https://upload.wikimedia.org/wikipedia/commons/2/21/Game-menu_chiptune-music_loop.mp3");
-    this.bgm.loop = true;
-    this.bgm.volume = 0.22; // subtle background action theme level
 
     // Active projectiles (hadouken energy balls)
     this.projectiles = []; // {x, y, vx, owner, active, animTimer}
@@ -212,13 +208,11 @@ export class Game {
   start() {
     this.running = true;
     this.lastTime = performance.now();
-    
-    // Play Background Music on fresh start
-    if (this.bgm) {
-      this.bgm.currentTime = 0;
-      this.bgm.play().catch(e => console.log("[BGM] Autoplay blocked until gesture:", e));
+
+    if (this.stageMusic && this.stageMusic.startForFight) {
+      this.stageMusic.startForFight();
     }
-    
+
     this._loop(this.lastTime);
   }
 
@@ -240,9 +234,8 @@ export class Game {
 
   _loop(timestamp) {
     if (!this.running) {
-      // Clean up BGM if loop stops from outside teardown
-      if (this.bgm) {
-        try { this.bgm.pause(); } catch(e) {}
+      if (this.stageMusic && this.stageMusic.stopForMenu) {
+        this.stageMusic.stopForMenu();
       }
       return;
     }
@@ -1631,9 +1624,9 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       else if (this.p2.health > this.p1.health) text = "P2 WINS!";
       else text = "DRAW!";
 
-      // Pause fight background music immediately
-      if (this.bgm) {
-        try { this.bgm.pause(); } catch(e) {}
+      // Pause fight music immediately when the round ends
+      if (this.stageMusic && this.stageMusic.stopForMenu) {
+        this.stageMusic.stopForMenu();
       }
 
       // Premium Victory Overlay (Phase 3)

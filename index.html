@@ -386,7 +386,7 @@
       /* hidden by default on all screens */
       justify-content: space-between;
       align-items: flex-end;
-      padding: 0 16px 12px;
+      padding: 0 max(12px, env(safe-area-inset-right)) 12px max(12px, env(safe-area-inset-left));
       z-index: 600;
       pointer-events: none;
     }
@@ -735,6 +735,128 @@
       align-items: center;
     }
 
+    /* In-fight top dock: quick menu + stage music controls */
+    #fight-top-dock {
+      position: fixed;
+      top: 12px;
+      top: max(12px, env(safe-area-inset-top));
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(96vw, 1180px);
+      display: none;
+      justify-content: space-between;
+      align-items: flex-start;
+      z-index: 750;
+      pointer-events: none;
+    }
+
+    .fight-menu-wrap,
+    .stage-music-controls {
+      pointer-events: auto;
+    }
+
+    #btn-fight-menu {
+      border: 1px solid rgba(0, 255, 157, 0.6);
+      color: #d7ffe8;
+      background: rgba(6, 10, 14, 0.88);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.7px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35), 0 0 18px rgba(0, 255, 157, 0.16);
+      cursor: pointer;
+      backdrop-filter: blur(7px);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #fight-menu-panel {
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+      min-width: 168px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(7, 9, 14, 0.95);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(8px);
+    }
+
+    #fight-menu-panel.open {
+      display: flex;
+    }
+
+    .fight-menu-action {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(255, 255, 255, 0.06);
+      color: #fff;
+      border-radius: 10px;
+      font-size: 11px;
+      letter-spacing: 0.6px;
+      font-weight: 800;
+      padding: 9px 10px;
+      cursor: pointer;
+      text-align: left;
+      transition: transform 0.14s ease, border-color 0.14s ease;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .fight-menu-action:hover {
+      transform: translateY(-1px);
+      border-color: rgba(0, 255, 157, 0.6);
+    }
+
+    .stage-music-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      background: rgba(6, 10, 14, 0.86);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(8px);
+    }
+
+    .stage-music-controls button {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-size: 15px;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      transition: transform 0.12s ease;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .stage-music-controls button:hover {
+      transform: scale(1.05);
+    }
+
+    #fight-track-label {
+      display: inline-block;
+      min-width: 120px;
+      max-width: 220px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 11px;
+      color: rgba(229, 237, 255, 0.95);
+      letter-spacing: 0.4px;
+    }
+
     @media (max-width: 1024px) {
       .screen {
         position: fixed !important;
@@ -755,6 +877,39 @@
         gap: 8px;
       }
 
+      #fight-top-dock {
+        top: 8px;
+        top: max(8px, env(safe-area-inset-top));
+        width: calc(100vw - 12px);
+        align-items: flex-start;
+      }
+
+      #btn-fight-menu {
+        padding: 8px 11px;
+        font-size: 10px;
+      }
+
+      #fight-menu-panel {
+        min-width: 154px;
+      }
+
+      .stage-music-controls {
+        gap: 4px;
+        padding: 5px 6px;
+      }
+
+      .stage-music-controls button {
+        width: 28px;
+        height: 28px;
+        font-size: 13px;
+      }
+
+      #fight-track-label {
+        min-width: 64px;
+        max-width: 96px;
+        font-size: 10px;
+      }
+
       /* Weather and Boost buttons as ultra-compact circular glass icons */
       #hud-widgets button.hud-btn {
         width: 44px !important;
@@ -771,6 +926,92 @@
         font-size: 18px !important;
       }
 
+    }
+
+    /* Mobile landscape combat ergonomics */
+    @media (max-width: 1024px) and (orientation: landscape) {
+      #fight-top-dock {
+        top: max(6px, env(safe-area-inset-top));
+        width: calc(100vw - 10px);
+      }
+
+      #btn-fight-menu {
+        min-height: 36px;
+        padding: 7px 10px;
+      }
+
+      .stage-music-controls {
+        gap: 5px;
+        padding: 4px 5px;
+      }
+
+      .stage-music-controls button {
+        width: 32px;
+        height: 32px;
+      }
+
+      #fight-track-label {
+        min-width: 70px;
+        max-width: 110px;
+      }
+
+      /* Drop misc HUD controls lower so they do not collide with top dock */
+      #hud-widgets {
+        top: 72px;
+        transform: translateX(-50%);
+        gap: 6px;
+      }
+
+      #hud-widgets button.hud-btn {
+        width: 38px !important;
+        height: 38px !important;
+        min-width: 38px !important;
+        font-size: 15px !important;
+      }
+
+      #mobile-controls {
+        bottom: 52px;
+        padding-bottom: 8px;
+      }
+
+      .joystick-zone {
+        width: 126px;
+        height: 126px;
+      }
+
+      #joystick-base {
+        width: 116px;
+        height: 116px;
+      }
+
+      #joystick-knob {
+        width: 42px;
+        height: 42px;
+      }
+
+      .attack-zone {
+        width: 126px;
+        gap: 6px;
+      }
+
+      .atk-btn {
+        min-width: 56px;
+        min-height: 56px;
+      }
+
+      .atk-btn .icon {
+        font-size: 14px;
+      }
+
+      .atk-btn.btn-hadouken {
+        width: 56px;
+        height: 56px;
+        max-width: 56px;
+      }
+
+      #mic-toggle-btn {
+        bottom: 134px;
+      }
     }
 
     @media (min-width: 1025px) {
@@ -1883,6 +2124,24 @@
     style="display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-green); padding: 6px 15px; z-index: 100; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(0,255,157,0.15);">
   </div>
 
+  <!-- FIGHT TOP DOCK -->
+  <div id="fight-top-dock">
+    <div class="fight-menu-wrap">
+      <button id="btn-fight-menu" type="button">☰ MENU</button>
+      <div id="fight-menu-panel">
+        <button id="btn-fight-menu-resume" class="fight-menu-action" type="button">RESUME FIGHT</button>
+        <button id="btn-fight-menu-rematch" class="fight-menu-action" type="button">REMATCH</button>
+        <button id="btn-fight-menu-home" class="fight-menu-action" type="button">BACK TO HOME</button>
+      </div>
+    </div>
+    <div class="stage-music-controls">
+      <button id="btn-stage-music-prev" type="button" aria-label="Previous stage track">⏮</button>
+      <button id="btn-stage-music-toggle" type="button" aria-label="Pause stage music">⏸</button>
+      <button id="btn-stage-music-next" type="button" aria-label="Next stage track">⏭</button>
+      <span id="fight-track-label">1/6 Main Theme</span>
+    </div>
+  </div>
+
 
   <!-- HUD WIDGETS (Bottom Center on PC, vertically centred on mobile) -->
   <div id="hud-widgets">
@@ -1894,7 +2153,7 @@
 
     <!-- PROCEDURAL CHINESE BGM TOGGLE -->
     <button id="btn-bgm" class="hud-btn bgm-btn" onclick="if(window.toggleBGM) window.toggleBGM()">
-      <span class="desktop-text">⛩️ AMBIENT BGM: ON</span>
+      <span class="desktop-text">⛩️ LANDING BGM: ON</span>
       <span class="mobile-text">⛩️</span>
     </button>
 
