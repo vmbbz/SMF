@@ -2302,6 +2302,7 @@
 
     // ================== MAIN MEME FUNCTIONS ==================
     window.startTrendingMode = async () => {
+      if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
       const status = document.getElementById('status');
       if (status) status.innerHTML = 'Fetching trending tokens...';
 
@@ -2331,6 +2332,7 @@
     };
 
     window.startEndlessMode = async () => {
+      if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
       const status = document.getElementById('status');
       status.innerHTML = 'ENDLESS PUMP STREAM — loading...';
 
@@ -2355,6 +2357,7 @@
     };
 
     window.startCustomFight = async () => {
+      if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
       const mint = document.getElementById('mint-input').value.trim();
       if (!mint) return alert('Paste a mint address!');
       // Single-token paste = NOT endless mode
@@ -2574,6 +2577,7 @@
     };
 
     window.showMultiplayer = () => {
+      if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
       const landingPanel = document.getElementById('landing');
       if (landingPanel) landingPanel.classList.add('hidden');
       if (typeof window.showScreen === 'function') {

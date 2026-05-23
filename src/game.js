@@ -190,7 +190,7 @@ export class Game {
     const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
     if (isMobile) {
       const isLandscape = window.innerWidth > window.innerHeight;
-      return isLandscape ? (this.logicalH - 175) : (this.logicalH - 292); // 40% lower than portrait offset on landscape
+      return isLandscape ? (this.logicalH - 95) : (this.logicalH - 292); // Lowered floor Y by 80px in landscape (offset 95 instead of 175) to clear HUD
     }
     return this.logicalH - 230;
   }
@@ -565,7 +565,14 @@ export class Game {
           color = "#88aaaa";
           logText = `${totalDmg} ${zone}`;
         }
-        if (this.sfx) this.sfx.hit();
+        if (this.sfx) {
+          const isKick = attacker.currentAttack && attacker.currentAttack.toLowerCase().includes("kick");
+          if (isKick && typeof this.sfx.playHeavyWhipImpact === "function") {
+            this.sfx.playHeavyWhipImpact();
+          } else {
+            this.sfx.hit();
+          }
+        }
         if (window.haptic) window.haptic.lightHit();
       }
       this.hitSparks.push({ x: sparkX, y: sparkY, life: 0.4, color, text });

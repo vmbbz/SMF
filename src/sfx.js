@@ -321,36 +321,50 @@ export class SFX {
       
       const playPluck = (freq, time, volume = 0.03) => {
         const now = time;
+        
+        // Main string body
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
-        
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, now);
         
-        // Guzheng plucked characteristic: instant attack, rapid decay, long release
+        // Guzheng plucked characteristic: instant attack, rapid decay, moderate release
         gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(volume, now + 0.005);
-        gain.gain.exponentialRampToValueAtTime(volume * 0.3, now + 0.15);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
+        gain.gain.linearRampToValueAtTime(volume, now + 0.002);
+        gain.gain.exponentialRampToValueAtTime(volume * 0.1, now + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
         
-        // Ringing resonance
+        // Sharp pluck noise / pick strike (using a quick decaying high-frequency sawtooth)
+        const pick = ctx.createOscillator();
+        const pickGain = ctx.createGain();
+        pick.type = 'sawtooth';
+        pick.frequency.setValueAtTime(freq * 3, now); // sharp third harmonic
+        pickGain.gain.setValueAtTime(0, now);
+        pickGain.gain.linearRampToValueAtTime(volume * 0.45, now + 0.002);
+        pickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.015); // extremely fast decay for the pluck edge
+        pick.connect(pickGain);
+        pickGain.connect(ctx.destination);
+        pick.start(now);
+        pick.stop(now + 0.02);
+
+        // Ringing metallic string resonance
         const resonance = ctx.createOscillator();
         const resGain = ctx.createGain();
         resonance.type = 'sine';
         resonance.frequency.setValueAtTime(freq * 2, now);
         resGain.gain.setValueAtTime(0, now);
-        resGain.gain.linearRampToValueAtTime(volume * 0.1, now + 0.005);
-        resGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+        resGain.gain.linearRampToValueAtTime(volume * 0.25, now + 0.002);
+        resGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
         resonance.connect(resGain);
         resGain.connect(ctx.destination);
         resonance.start(now);
-        resonance.stop(now + 0.08);
+        resonance.stop(now + 0.15);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
         
         osc.start(now);
-        osc.stop(now + 1.5);
+        osc.stop(now + 0.5);
       };
 
       const playPad = (freq, time, duration, volume = 0.02) => {
@@ -373,12 +387,12 @@ export class SFX {
         osc.stop(now + duration + 0.1);
       };
 
-      const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25, 783.99, 880.00];
+      const pentatonicScale = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 1174.66, 1318.51, 1567.98, 1760.00];
       const padChords = [
-        [130.81, 196.00, 261.63], // C major
-        [146.83, 220.00, 293.66], // D major
-        [164.81, 261.63, 329.63], // E minor
-        [196.00, 293.66, 392.00]  // G major
+        [261.63, 392.00, 523.25], // C major (octave higher)
+        [293.66, 440.00, 587.33], // D major (octave higher)
+        [329.63, 523.25, 659.25], // E minor (octave higher)
+        [392.00, 587.33, 783.99]  // G major (octave higher)
       ];
 
       let step = 0;
