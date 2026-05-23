@@ -7,17 +7,36 @@
 // Sound file manifest — grouped by category
 const SOUNDS = {
   // Attack swing whoosh (plays on startup)
-  whoosh:     ['/assets/dash.mp3', '/assets/dash_2.mp3'],
-  // Impact sounds (play on hit only)
-  hit:        ['/assets/slap.mp3', '/assets/slap_2.mp3', '/assets/punch.mp3', '/assets/punch_2.mp3', '/assets/punch_3.mp3', '/assets/punch_4.mp3'],
-  block:      ['/assets/punch_3.mp3', '/assets/punch_4.mp3'],
-  headshot:   ['/assets/headshot.mp3', '/assets/headshot_2.mp3'],
-  crotchshot: ['/assets/crotchshot.mp3', '/assets/crotchshot_2.mp3'],
-  clash:      ['/assets/punch_4.mp3', '/assets/punch_3.mp3'],
-  somersault: ['/assets/somersault.mp3'],
+  whoosh:     ['/assets/kungfu_effort.wav', '/assets/kungfu_effort.wav', '/assets/dash.mp3', '/assets/dash_2.mp3'],
+  // Impact sounds (play on hit only) - highly bias cartoon_punch, karate_hit, kick_hit, slide_hit
+  hit:        [
+    '/assets/cartoon_punch.wav', '/assets/cartoon_punch.wav', '/assets/cartoon_punch.wav',
+    '/assets/karate_hit.wav', '/assets/karate_hit.wav',
+    '/assets/kick_hit.wav', '/assets/kick_hit.wav',
+    '/assets/slide_hit.wav', '/assets/slide_hit.wav',
+    '/assets/slap.mp3', '/assets/punch.mp3'
+  ],
+  block:      ['/assets/punch_3.mp3', '/assets/punch_4.mp3', '/assets/kick_hit.wav'],
+  headshot:   [
+    '/assets/whip_impact.wav', '/assets/whip_impact.wav', 
+    '/assets/cartoon_punch.wav', 
+    '/assets/headshot.mp3', '/assets/headshot_2.mp3'
+  ],
+  crotchshot: [
+    '/assets/pain_female.wav', '/assets/pain_female.wav',
+    '/assets/crotchshot.mp3', '/assets/crotchshot_2.mp3'
+  ],
+  clash:      ['/assets/whip_impact.wav', '/assets/punch_4.mp3', '/assets/punch_3.mp3'],
+  somersault: ['/assets/somersault.mp3', '/assets/kungfu_effort.wav'],
   dash:       ['/assets/dash.mp3', '/assets/dash_2.mp3'],
   hadouken_charge: ['/assets/somersault.mp3'],
-  hadouken_fire:   ['/assets/dash.mp3', '/assets/dash_2.mp3'],
+  hadouken_fire:   ['/assets/whip_explosion.wav', '/assets/whip_explosion.wav', '/assets/dash.mp3'],
+
+  // Custom categories for dedicated programmatic triggers
+  male_scream:     ['/assets/male_scream.wav'],
+  whip_explosion:  ['/assets/whip_explosion.wav'],
+  whip_impact:     ['/assets/whip_impact.wav'],
+  pain_female:     ['/assets/pain_female.wav']
 };
 
 export class SFX {
@@ -104,6 +123,12 @@ export class SFX {
   dash()           { this._play('dash', 0.4); }
   hadoukenCharge() { this._play('hadouken_charge', 0.4); }
   hadoukenFire()   { this._play('hadouken_fire', 0.5); }
+  hadouken()       { this._play('hadouken_fire', 0.5); }
+  playKoScream()   { this._play('male_scream', 0.8); }
+  playOverdriveExplosion() { this._play('whip_explosion', 0.7); }
+  playHeavyWhipImpact()   { this._play('whip_impact', 0.7); }
+  playPainScream()   { this._play('pain_female', 0.7); }
+
 
   /** Play a custom high-fidelity retro synth chime on mic toggles */
   playMicChime(active = true) {

@@ -1501,6 +1501,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
         
         // Play victory chime arpeggio or sad defeat minor chime
         if (this.sfx) {
+          this.sfx.playKoScream();
           if (winnerNum === 1) {
             this.sfx.playVictorySound();
           } else {

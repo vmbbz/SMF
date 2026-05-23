@@ -371,10 +371,16 @@ export class LiveBoostSystem {
     const p1Name = (this.game.p1Label || 'Guest Fighter').toUpperCase();
     const phrase = CATCHPHRASES[tierId]?.(sym, isHuman, p1Name) || `$${sym} PUMPED!`;
 
-    // Play high-energy synthesized boost sweep sound
-    if (this.game.sfx && this.game.sfx.playBoostSound) {
-      this.game.sfx.playBoostSound();
+    // Play high-energy synthesized boost sweep sound & premium cinematic sound effects
+    if (this.game.sfx) {
+      if (this.game.sfx.playBoostSound) this.game.sfx.playBoostSound();
+      if (tierId === 'overdrive' && this.game.sfx.playOverdriveExplosion) {
+        this.game.sfx.playOverdriveExplosion();
+      } else if (tierId === 'spike' && this.game.sfx.playHeavyWhipImpact) {
+        this.game.sfx.playHeavyWhipImpact();
+      }
     }
+
 
     // Announce + show cinematic message
     this._announce(phrase);
