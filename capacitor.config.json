@@ -1,0 +1,18 @@
+{
+  "appId": "com.solanamemefighter.app",
+  "appName": "SMF Karate",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": true,
+      "backgroundColor": "#13ef95",
+      "showSpinner": false,
+      "spinnerStyle": "large",
+      "spinnerColor": "#ffffff"
+    }
+  }
+}
