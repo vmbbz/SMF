@@ -154,4 +154,135 @@ export class SFX {
       console.warn('[SFX] Synth chime failed:', e);
     }
   }
+
+  /** Boom a boxing ring bell and deep gong at fight start */
+  playFightStartSound() {
+    try {
+      const ctx = this._ctx();
+      const now = ctx.currentTime;
+      
+      // 1. Boxing Bell (high metallic ping)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(880, now); // A5
+      osc1.frequency.exponentialRampToValueAtTime(100, now + 0.5);
+      gain1.gain.setValueAtTime(0, now);
+      gain1.gain.linearRampToValueAtTime(0.2, now + 0.01);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.5);
+
+      // 2. Booming Gong (deep low metallic sweep)
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sawtooth';
+      osc2.frequency.setValueAtTime(110, now); // A2
+      osc2.frequency.linearRampToValueAtTime(55, now + 1.2);
+      gain2.gain.setValueAtTime(0, now);
+      gain2.gain.linearRampToValueAtTime(0.3, now + 0.05);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now);
+      osc2.stop(now + 1.5);
+      
+      console.log("[SFX] Fight Start gong synthesized.");
+    } catch (e) {
+      console.warn('[SFX] Fight Start sound failed:', e);
+    }
+  }
+
+  /** Play a triumphant major-chord retro arpeggio on victory */
+  playVictorySound() {
+    try {
+      const ctx = this._ctx();
+      const now = ctx.currentTime;
+      const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50]; // C4, E4, G4, C5, E5, G5, C6 (C Major Arpeggio)
+      
+      notes.forEach((freq, idx) => {
+        const time = now + idx * 0.08;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+        
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.15, time + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.35);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(time);
+        osc.stop(time + 0.35);
+      });
+      console.log("[SFX] Victory Fanfare synthesized.");
+    } catch (e) {
+      console.warn('[SFX] Victory Fanfare failed:', e);
+    }
+  }
+
+  /** Play a sad descending minor-chord chime on defeat */
+  playDefeatSound() {
+    try {
+      const ctx = this._ctx();
+      const now = ctx.currentTime;
+      const notes = [392.00, 349.23, 311.13, 261.63, 196.00]; // G4, F4, Eb4, C4, G3 (Sad minor chord)
+      
+      notes.forEach((freq, idx) => {
+        const time = now + idx * 0.15;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, time);
+        osc.frequency.linearRampToValueAtTime(freq - 15, time + 0.45);
+        
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.12, time + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.55);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(time);
+        osc.stop(time + 0.55);
+      });
+      console.log("[SFX] Defeat Chime synthesized.");
+    } catch (e) {
+      console.warn('[SFX] Defeat Chime failed:', e);
+    }
+  }
+
+  /** Play a rising high-energy laser pitch sweep on boosts */
+  playBoostSound() {
+    try {
+      const ctx = this._ctx();
+      const now = ctx.currentTime;
+      
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(200, now);
+      osc.frequency.exponentialRampToValueAtTime(1800, now + 0.6); // Sci-fi pitch sweep!
+      
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.18, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(now);
+      osc.stop(now + 0.6);
+      console.log("[SFX] Boost sound synthesized.");
+    } catch (e) {
+      console.warn('[SFX] Boost sound failed:', e);
+    }
+  }
 }

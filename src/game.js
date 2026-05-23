@@ -133,6 +133,11 @@ export class Game {
     this.introTimer = 5.0; // Phase 3: 5 seconds of stats display
     this.bgImage = null; // Background image for the current token
 
+    // Background Music (High-energy chiptune loop)
+    this.bgm = new Audio("https://upload.wikimedia.org/wikipedia/commons/2/21/Game-menu_chiptune-music_loop.mp3");
+    this.bgm.loop = true;
+    this.bgm.volume = 0.22; // subtle background action theme level
+
     // Active projectiles (hadouken energy balls)
     this.projectiles = []; // {x, y, vx, owner, active, animTimer}
 
@@ -189,6 +194,13 @@ export class Game {
   start() {
     this.running = true;
     this.lastTime = performance.now();
+    
+    // Play Background Music on fresh start
+    if (this.bgm) {
+      this.bgm.currentTime = 0;
+      this.bgm.play().catch(e => console.log("[BGM] Autoplay blocked until gesture:", e));
+    }
+    
     this._loop(this.lastTime);
   }
 
@@ -197,6 +209,11 @@ export class Game {
     this.waitingForProviders = false;
     this.fightAlert = this.fightAlertDuration;
     
+    // Play boxing bell & low gong SFX
+    if (this.sfx && this.sfx.playFightStartSound) {
+      this.sfx.playFightStartSound();
+    }
+    
     if (this.p2.tokenData) {
       window.liveBoostSystem = new LiveBoostSystem(this);
       window.liveBoostSystem.start(this.p2, this.p2.tokenData);
@@ -204,7 +221,13 @@ export class Game {
   }
 
   _loop(timestamp) {
-    if (!this.running) return;
+    if (!this.running) {
+      // Clean up BGM if loop stops from outside teardown
+      if (this.bgm) {
+        try { this.bgm.pause(); } catch(e) {}
+      }
+      return;
+    }
 
     const dt = Math.min((timestamp - this.lastTime) / 1000, 0.05);
     this.lastTime = timestamp;
@@ -1464,12 +1487,40 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       else if (this.p2.health > this.p1.health) text = "P2 WINS!";
       else text = "DRAW!";
 
+      // Pause fight background music immediately
+      if (this.bgm) {
+        try { this.bgm.pause(); } catch(e) {}
+      }
+
       // Premium Victory Overlay (Phase 3)
       if (!this.victoryOverlayTriggered) {
         this.victoryOverlayTriggered = true;
         const winnerNum = (this.p1.health > this.p2.health) ? 1 : 2;
         const winner = winnerNum === 1 ? this.p1 : this.p2;
         const loser = winnerNum === 1 ? this.p2 : this.p1;
+        
+        // Play victory chime arpeggio or sad defeat minor chime
+        if (this.sfx) {
+          if (winnerNum === 1) {
+            this.sfx.playVictorySound();
+          } else {
+            this.sfx.playDefeatSound();
+          }
+        }
+
+        // Deepgram Zeus winner announcer!
+        if (window.liveBoostSystem) {
+          const sym = (loser.tokenData?.symbol || winner.tokenData?.symbol || 'MEME').toUpperCase();
+          const p1Label = (this.p1Label || 'GUEST FIGHTER').toUpperCase();
+          let msg = "";
+          if (winnerNum === 1) {
+            msg = `VICTORY! ${p1Label} DEFEATS $${sym}! GET REKT!`;
+          } else {
+            msg = `K.O.! $${sym} WHOOPED YOU! DOMINATION!`;
+          }
+          window.liveBoostSystem._announce(msg);
+        }
+
         if (window.showVictoryOverlay) {
           window.showVictoryOverlay(winnerNum, winner.tokenData, loser.tokenData);
         }

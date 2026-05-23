@@ -29,6 +29,11 @@ window.renderRichCard = function(token, isWinner) {
     const phrase = getCatchphrase(token, isWinner);
     catchphraseEl.innerHTML = `"${phrase}"`;
 
+    // Booming announcer reads out the victory card catchphrase!
+    if (window.liveBoostSystem && window.liveBoostSystem._announce) {
+      window.liveBoostSystem._announce(phrase);
+    }
+
     window.switchRichTab(0);
   };
 

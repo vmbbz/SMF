@@ -394,29 +394,34 @@ window.loadOpponent = async function(token, forceRestart = false) {
   await opponent.loadTokenHead(token);
 
   // 5. Announce opponent taunt via TTS
-  // Use the best available English voice (same priority as announcer)
-  if (opponent.personality?.taunts?.length > 0 && window.speechSynthesis) {
-    const utterance = new SpeechSynthesisUtterance(opponent.personality.taunts[0]);
-    utterance.pitch  = opponent.personality.pitch || 1.0;
-    utterance.rate   = opponent.personality.rate  || 1.0;
-    utterance.volume = 1.0;
-    // Pick best voice: reuse announcer voice if available, else pick fresh
+  if (opponent.personality?.taunts?.length > 0) {
+    const taunts = opponent.personality.taunts;
+    const randomTaunt = taunts[Math.floor(Math.random() * taunts.length)];
+    console.log(`[Intro Taunt] Speaking: "${randomTaunt}"`);
+
     const lbs = window.liveBoostSystem;
-    if (lbs?._announcerVoice) {
-      utterance.voice = lbs._announcerVoice;
-    } else {
-      const voices = speechSynthesis.getVoices();
-      const best = voices.find(v => v.name === 'Google US English')
-                || voices.find(v => v.name.startsWith('Microsoft') && v.lang.startsWith('en') && v.name.includes('Neural'))
-                || voices.find(v => v.lang === 'en-US')
-                || voices.find(v => v.lang.startsWith('en'));
-      if (best) utterance.voice = best;
-    }
-    try {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
-    } catch(err) {
-      console.warn('[TTS] Speech synthesis autoplay blocked:', err);
+    if (lbs && lbs._announce) {
+      lbs._announce(randomTaunt);
+    } else if (window.speechSynthesis) {
+      // Local browser fallback
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(randomTaunt);
+        utterance.pitch  = opponent.personality.pitch || 1.0;
+        utterance.rate   = opponent.personality.rate  || 1.0;
+        utterance.volume = 1.0;
+        
+        const voices = speechSynthesis.getVoices();
+        const best = voices.find(v => v.name === 'Google US English')
+                  || voices.find(v => v.name.startsWith('Microsoft') && v.lang.startsWith('en') && v.name.includes('Neural'))
+                  || voices.find(v => v.lang === 'en-US')
+                  || voices.find(v => v.lang.startsWith('en'));
+        if (best) utterance.voice = best;
+        
+        window.speechSynthesis.speak(utterance);
+      } catch(err) {
+        console.warn('[TTS] Speech synthesis autoplay blocked:', err);
+      }
     }
   }
 

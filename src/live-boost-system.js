@@ -88,6 +88,8 @@ export class LiveBoostSystem {
     // Web Audio PCM Player for Deepgram Zeus TTS
     this.playbackCtx = null;
     this._nextPlayTime = 0;
+    this.activeSources = [];
+    this.currentAbortController = null;
     
     this._initTTS();
   }
@@ -135,8 +137,22 @@ export class LiveBoostSystem {
     }
   }
 
+  /** Cancel any active or scheduled audio sources to prevent lag */
+  cancelSpeech() {
+    console.log("[Announcer Zeus] Canceling all queued and playing audio...");
+    for (const source of this.activeSources) {
+      try {
+        source.stop();
+      } catch (e) {
+        // Already stopped or not started yet
+      }
+    }
+    this.activeSources = [];
+    this._nextPlayTime = 0;
+  }
+
   /** Fetch Linear16 PCM audio from Deepgram TTS and play it */
-  async _speakTTS(text) {
+  async _speakTTS(text, signal) {
     if (!text || !text.trim()) return;
     console.log(`[Announcer Zeus] TTS → "${text}"`);
     
@@ -144,6 +160,7 @@ export class LiveBoostSystem {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, model: 'aura-2-zeus-en' }),
+      signal: signal
     });
 
     if (!resp.ok) {
@@ -193,6 +210,14 @@ export class LiveBoostSystem {
       const source = this.playbackCtx.createBufferSource();
       source.buffer = buffer;
       source.connect(this.playbackCtx.destination);
+      
+      // Track source node to cancel it if a new voice line interrupts
+      this.activeSources.push(source);
+      source.onended = () => {
+        const idx = this.activeSources.indexOf(source);
+        if (idx > -1) this.activeSources.splice(idx, 1);
+      };
+
       source.start(this._nextPlayTime);
       this._nextPlayTime += buffer.duration;
       console.log(`[Announcer Zeus] Playing ${(buffer.duration * 1000).toFixed(0)}ms of authoritative announcer audio`);
@@ -203,9 +228,23 @@ export class LiveBoostSystem {
 
   /** Main entrypoint to announce text with a cinema-grade voice */
   async _announce(text) {
+    // 1. Immediately cut off any running and scheduled audio sources
+    this.cancelSpeech();
+
+    // 2. Abort any active TTS fetch requests to prevent them from landing late
+    if (this.currentAbortController) {
+      this.currentAbortController.abort();
+    }
+    this.currentAbortController = new AbortController();
+    const signal = this.currentAbortController.signal;
+
     try {
-      await this._speakTTS(text);
+      await this._speakTTS(text, signal);
     } catch (err) {
+      if (err.name === 'AbortError') {
+        console.log('[Announcer Zeus] TTS request aborted due to a newer announcement.');
+        return;
+      }
       console.warn('[Announcer] Deepgram TTS failed, falling back to browser synthesis:', err);
       this._announceBrowserFallback(text);
     }
@@ -331,6 +370,11 @@ export class LiveBoostSystem {
     const isHuman = (booster === this.game.p1);
     const p1Name = (this.game.p1Label || 'Guest Fighter').toUpperCase();
     const phrase = CATCHPHRASES[tierId]?.(sym, isHuman, p1Name) || `$${sym} PUMPED!`;
+
+    // Play high-energy synthesized boost sweep sound
+    if (this.game.sfx && this.game.sfx.playBoostSound) {
+      this.game.sfx.playBoostSound();
+    }
 
     // Announce + show cinematic message
     this._announce(phrase);
