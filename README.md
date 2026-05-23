@@ -53,7 +53,6 @@ The STICKLASH backend and infrastructure are powered by standard-setting Web3 an
 | **Deepgram** | Aura 2 Zeus & Flux v2 | Dynamic 24kHz Zeus voice lines, WebSocket speech capture, & AI-fighter command pipeline | `![Deepgram](https://img.shields.io/badge/Deepgram-Aura--Zeus-13EF95?style=flat-square&logo=deepgram&logoColor=black)` |
 | **Solana Web3** | On-Chain SPL Program | Phantom/Backpack/Solflare wallet pairing, decimal lookups, & SPL token burn transactions | `![Solana](https://img.shields.io/badge/Solana-SPL--Token-9945FF?style=flat-square&logo=solana&logoColor=white)` |
 | **Twitter / X** | Web Intent API | Zero-auth viral gameplay sharing, automated screenshot capture matching, & ELO brag links | `![Twitter](https://img.shields.io/badge/Twitter/X-Viral--Share-000000?style=flat-square&logo=x&logoColor=white)` |
-| **Spotify** | Web Playback SDK | Remote play/pause/skip and music pairing inside mobile WebView wrappers | `![Spotify](https://img.shields.io/badge/Spotify-Web--Playback-1DB954?style=flat-square&logo=spotify&logoColor=white)` |
 | **Birdeye** | DeFi Market API | Live on-chain price data, market cap scaling, & pump.fun graduated feeds | `![Birdeye](https://img.shields.io/badge/Birdeye-DeFi--Data-00C2FF?style=flat-square&logo=coinmarketcap&logoColor=white)` |
 | **Supabase** | PostgreSQL | Persistent multi-player ELO rating records, match stats, & active leaderboard graphs | `![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase&logoColor=white)` |
 | **DexScreener** | Search & Pairs API | Real-time fallback pair valuations, 24h volume tracking, & token icon metadata augmentation | `![DexScreener](https://img.shields.io/badge/DexScreener-Pairs--API-333333?style=flat-square&logo=dexscreener&logoColor=white)` |
@@ -90,9 +89,9 @@ Multiplayer rooms, WebRTC SDP exchange, and matchmaking queues are managed on th
 
 ### 3. Dynamic SPL Token Burn Store: Hadouken Ammunition
 To keep the token economy highly active, firing **Hadouken projectiles** in P1 player mode requires **Premium Boosts**:
-* **The Hadouken Intercept**: When P1 presses the Special attack button (`Actions.HADOUKEN`), `src/game.js` checks the player's profile (`localStorage`). Each user begins with **15 free starter boosts**. Every Hadouken fired deducts **1 boost**.
+* **The Hadouken Intercept**: When P1 presses the Special attack button (`Actions.HADOUKEN`), wallet-linked players trigger a server-authoritative consume flow (`POST /api/boost/consume`) before the projectile fires. Each user begins with **15 free starter boosts**, and every Hadouken spends **1 boost**.
 * **Zero Boost Lockout**: If boosts reach 0, firing Hadouken is blocked, a warning `⚠️ Out of premium boosts!` displays, and the player is prompted to buy more.
-* **SPL On-Chain Burn (`wallet-connect.js`)**: To replenish ammo, the player opens the user profile modal, connects Phantom/Backpack/Solflare, and purchases a boost package. When a package is bought, the dApp compiles a standard `TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA` **SPL Token Burn instruction (Index 8)** and broadcasts it. Spent `$SMF` is burned forever on-chain (Mainnet-Beta), verifying the transaction signature via RPC before locally crediting the new boosts!
+* **SPL On-Chain Burn + Server Ledger (`wallet-connect.js` + `server.py`)**: To replenish ammo, the player opens the profile modal, signs a burn transaction in wallet, and submits the signature to backend verification. Boosts are credited only after the server verifies the on-chain burn instruction and records it in the purchase ledger.
 
 ---
 
@@ -180,34 +179,6 @@ When the currently-fought token's price pumps **during your fight**, timed boost
 - **Live weather overlay on the game stage canvas**
 - **Controlled by the "WEATHER" toggle in the HUD**
 
-### 🎵 Spotify Widget
-
-- **Connect via Spotify Web Playback SDK**
-- **Shows currently playing track name, play/pause, next track controls**
-- **Appears in the HUD widget bar (responsive: bottom of screen on PC, top 10% on mobile)**
-
----
-
-## 🛠️ Step-by-Step Spotify Integration & Pairing Setup
-
-To connect Spotify inside your mobile APK WebView and resolve authentication redirect errors:
-
-### 1. Configure the `.env` File
-In order for server-side code token exchanging to function, copy your client secret from the Spotify dashboard and append it to `stick-fighter/.env`:
-```env
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-```
-
-### 2. Configure Authorized Redirect URIs
-Spotify's security policies require you to explicitly whitelist your exact callback URLs. 
-1. Go to the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Select your App, click **Edit Settings**.
-3. Under the **Redirect URIs** section, you **must add both of the following URLs**:
-   * `https://sticklash.fun/auth/spotify/callback` *(Production server)*
-   * `http://localhost:8000/auth/spotify/callback` *(Local testing)*
-4. Click **Save** to apply the changes. 
-
 ---
 
 ## 🏗️ Architecture
@@ -230,7 +201,6 @@ stick-fighter/
 │   ├── voice.js            # Voice input adapter — STT WebSocket + LLM command pipeline
 │   ├── llm.js              # LLM adapter — queues 5-action battle plans via /api/llm/command
 │   ├── webrtc.js           # WebRTC peer-to-peer multiplayer
-│   ├── spotify-widget.js   # Spotify Web Playback SDK integration
 │   ├── effects.js          # Visual effects — coin rain, particle systems
 │   ├── player-effects.js   # Per-fighter aura/glow effects for boost tiers
 │   ├── sfx.js              # Sound effects manager

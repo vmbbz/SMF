@@ -1,30 +1,18 @@
 # STICKLASH Launch & Packaging Guide 🚀📦
 
-This document outlines the detailed processes for building production-ready mobile binaries, registering with the Solana Mobile Seeker Store, executing a viral Product Hunt launch, and resolving Spotify integration redirect errors.
+This document outlines the detailed processes for building production-ready mobile binaries, registering with the Solana Mobile Seeker Store, and executing a strong launch campaign.
 
 ---
 
-## 🔑 1. Spotify Integration & Redirect Setup
+## 🔑 1. Solana Wallet Pre-Release Checklist
 
-If you receive a `redirect_uri not matching configuration` error during Spotify connection (either via Email or SMS verification):
+Before publishing, validate wallet UX and transaction trust signals:
 
-### Step A: Configure the Server `.env` File
-In order for the server-side token exchange to function, you must copy your **Client Secret** from the Spotify developer dashboard and append it to your environment:
-```env
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-```
-
-### Step B: Configure Authorized Redirect URIs in Spotify Dashboard
-Spotify requires that the redirect URI requested by the app matches the whitelisted list in your dashboard character-for-character.
-1. Visit the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Select your App and click on **Settings** (or **Edit Settings**).
-3. Under the **Redirect URIs** section, you **must add both of the following URIs**:
-   * `https://sticklash.fun/auth/spotify/callback` *(Your production web domain)*
-   * `http://localhost:8000/auth/spotify/callback` *(Your local server domain)*
-4. Click **Save** to apply the changes.
-
-*This guarantees 100% reliable Spotify authentication pairing across both mobile APK WebViews and desktop browsers!*
+1. Test wallet connect, disconnect, and reconnect flows in Phantom and Backpack.
+2. Confirm burn transaction prompts clearly show token mint and amount before signing.
+3. Verify final signatures on Solscan from the in-app confirmation state.
+4. Run network failure tests and ensure users get actionable retry messaging.
+5. Validate mobile landscape and portrait modal behavior for wallet and boost purchase panels.
 
 ---
 

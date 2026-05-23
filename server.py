@@ -3,29 +3,23 @@ from __future__ import annotations
 from dotenv import load_dotenv
 load_dotenv()
 
-from urllib.parse import quote
-
-# In-memory dictionary to store paired Spotify tokens for the APK Device Flow
-SPOTIFY_DEVICE_SESSIONS: dict[str, str] = {}
-
 import asyncio
 import base64
 import hashlib
 import json
 import os
 import random
+import re
 import secrets
 import time
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from pathlib import Path
 from typing import Any, List, Dict, Optional
 from birdeye_service import birdeye_service
-
-SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
-SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
 
 import asyncpg  # type: ignore[import-untyped]
 import httpx
@@ -35,7 +29,7 @@ from deepgram.core.events import EventType
 from deepgram.listen.v2.types import ListenV2TurnInfo, ListenV2Connected, ListenV2FatalError
 from litestar import Litestar, Request, get, post, websocket
 from litestar.connection import WebSocket
-from litestar.response import ServerSentEvent, Redirect
+from litestar.response import ServerSentEvent
 from litestar.response.base import Response
 from litestar.static_files import create_static_files_router
 from litestar.exceptions import HTTPException
@@ -83,8 +77,100 @@ game_loop_manager: GameLoopManager | None = None
 signaling_manager: SignalingManager | None = None
 oidc_config: OIDCConfig | None = None
 elo_manager: EloManager | None = None
+boost_pg_pool: asyncpg.Pool | None = None
 cleanup_task: RoomCleanupTask | None = None
 matchmaking_task: MatchmakingTask | None = None
+
+# ─────────────────────────────────────────────
+# Solana Boost Purchase / Ledger
+# ─────────────────────────────────────────────
+
+DEFAULT_SMF_MINT = "EPjFWdd5AufqSSjvtq8aLv9hqpstb218c3sL955m1od1"
+DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
+DEFAULT_SMF_PRICE_FALLBACK = Decimal("0.00762")
+BOOST_INTENT_TTL_SECONDS = int(os.environ.get("BOOST_INTENT_TTL_SECONDS", "600"))
+STARTER_BOOSTS = int(os.environ.get("STARTER_BOOSTS", "15"))
+
+TOKEN_PROGRAM_IDS = {
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # SPL Token
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022
+}
+
+WALLET_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+
+BOOST_PACKS: dict[str, dict[str, int | str]] = {
+    "micro": {"boosts": 5, "usd_cents": 100},
+    "degen": {"boosts": 20, "usd_cents": 300},
+    "chaos": {"boosts": 45, "usd_cents": 500},
+}
+
+BOOST_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS player_boost_balances (
+    wallet_address TEXT PRIMARY KEY,
+    boosts INTEGER NOT NULL DEFAULT 15,
+    total_purchased_boosts INTEGER NOT NULL DEFAULT 0,
+    total_spent_boosts INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS boost_purchase_intents (
+    intent_id TEXT PRIMARY KEY,
+    wallet_address TEXT NOT NULL,
+    pack_id TEXT NOT NULL,
+    boosts_count INTEGER NOT NULL,
+    mint_address TEXT NOT NULL,
+    expected_smf_amount BIGINT NOT NULL,
+    token_decimals INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'created',
+    signature TEXT,
+    last_error TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    confirmed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_boost_intents_wallet_created
+    ON boost_purchase_intents (wallet_address, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_boost_intents_signature
+    ON boost_purchase_intents (signature)
+    WHERE signature IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS boost_purchase_ledger (
+    id BIGSERIAL PRIMARY KEY,
+    intent_id TEXT NOT NULL UNIQUE REFERENCES boost_purchase_intents(intent_id) ON DELETE RESTRICT,
+    signature TEXT NOT NULL UNIQUE,
+    wallet_address TEXT NOT NULL,
+    pack_id TEXT NOT NULL,
+    boosts_credited INTEGER NOT NULL,
+    mint_address TEXT NOT NULL,
+    burn_amount BIGINT NOT NULL,
+    slot BIGINT,
+    raw_tx JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_boost_ledger_wallet_created
+    ON boost_purchase_ledger (wallet_address, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS boost_consumption_ledger (
+    id BIGSERIAL PRIMARY KEY,
+    consume_id TEXT,
+    wallet_address TEXT NOT NULL,
+    units INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'hadouken',
+    balance_after INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_boost_consumption_wallet_created
+    ON boost_consumption_ledger (wallet_address, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_boost_consumption_consume_id
+    ON boost_consumption_ledger (consume_id)
+    WHERE consume_id IS NOT NULL;
+"""
 
 # ─────────────────────────────────────────────
 # Controller wait / forfeit timer
@@ -155,7 +241,7 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
     """Safe lifespan for $SMF Stick Lash - no required Redis or Postgres"""
     print("[lifespan] Starting safe mode for $SMF Stick Lash")
 
-    global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, cleanup_task, matchmaking_task
+    global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, boost_pg_pool, cleanup_task, matchmaking_task
 
     # Declare variables BEFORE try so finally block never fails
     redis_pool = None
@@ -195,9 +281,12 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                 timeout=8.0 # Prevent 60s hangs from database startup/networking issues
             )
             await ensure_schema(pg_pool)
+            await ensure_boost_schema(pg_pool)
+            boost_pg_pool = pg_pool
             print("[postgres] Connected")
         except Exception:
             print("[postgres] Skipped - running without database")
+            boost_pg_pool = None
 
         # Only create background tasks if we have a working RoomManager
         if redis_pool:
@@ -243,11 +332,212 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
             await game_loop_manager.stop_all()
         if pg_pool is not None:
             await pg_pool.close()
+            boost_pg_pool = None
             print("[postgres] Connection closed")
         if redis_pool is not None:
             await redis_pool.aclose()
             print("[redis] Connection closed")
         print("[lifespan] Shutdown complete")
+
+
+async def ensure_boost_schema(pool: asyncpg.Pool) -> None:  # type: ignore[type-arg]
+    """Create boost ledger tables if they don't exist."""
+    async with pool.acquire() as conn:
+        await conn.execute(BOOST_SCHEMA_SQL)
+
+
+def _get_smf_mint() -> str:
+    return os.environ.get("SMF_MINT", DEFAULT_SMF_MINT)
+
+
+def _get_solana_rpc() -> str:
+    return os.environ.get("SOLANA_RPC", DEFAULT_SOLANA_RPC)
+
+
+def _as_decimal(value: Any, fallback: Decimal) -> Decimal:
+    try:
+        parsed = Decimal(str(value))
+        if parsed > 0:
+            return parsed
+    except (InvalidOperation, ValueError, TypeError):
+        pass
+    return fallback
+
+
+async def _fetch_mint_decimals(rpc_url: str, mint: str) -> int:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTokenSupply",
+        "params": [mint, {"commitment": "confirmed"}],
+    }
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        resp = await client.post(rpc_url, json=payload)
+        resp.raise_for_status()
+        body = resp.json()
+    value = (body.get("result") or {}).get("value") or {}
+    decimals = value.get("decimals")
+    if not isinstance(decimals, int) or decimals < 0 or decimals > 18:
+        raise ValueError("Could not determine token decimals from RPC")
+    return decimals
+
+
+async def _compute_pack_quote(pack_id: str) -> dict[str, Any]:
+    pack = BOOST_PACKS.get(pack_id)
+    if not pack:
+        raise ValueError("Unknown pack id")
+
+    mint = _get_smf_mint()
+    rpc = _get_solana_rpc()
+
+    token = await birdeye_service.get_cached_token(mint, mark_hot=False)
+    smf_price = _as_decimal((token or {}).get("price"), DEFAULT_SMF_PRICE_FALLBACK)
+
+    usd_cents = int(pack["usd_cents"])
+    usd = Decimal(usd_cents) / Decimal(100)
+    required_smf_ui = (usd / smf_price).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    required_smf_ui_int = max(int(required_smf_ui), 1)
+
+    decimals = await _fetch_mint_decimals(rpc, mint)
+    required_smf_raw = required_smf_ui_int * (10 ** decimals)
+
+    return {
+        "pack_id": pack_id,
+        "boosts_count": int(pack["boosts"]),
+        "usd_cents": usd_cents,
+        "smf_price": str(smf_price),
+        "mint": mint,
+        "rpc": rpc,
+        "token_decimals": decimals,
+        "required_smf_ui": required_smf_ui_int,
+        "required_smf_raw": required_smf_raw,
+    }
+
+
+def _is_valid_wallet_address(address: str) -> bool:
+    return bool(WALLET_ADDRESS_RE.fullmatch(address))
+
+
+def _normalize_wallet_address(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _extract_burn_entries(tx: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract spl-token burn / burnChecked instructions from parsed transaction JSON."""
+    result: list[dict[str, Any]] = []
+    tx_obj = tx.get("transaction") or {}
+    meta = tx.get("meta") or {}
+    message = tx_obj.get("message") or {}
+
+    instructions = message.get("instructions") or []
+    inner_groups = meta.get("innerInstructions") or []
+    for group in inner_groups:
+        instructions.extend((group or {}).get("instructions") or [])
+
+    for instr in instructions:
+        if not isinstance(instr, dict):
+            continue
+        program_id = instr.get("programId")
+        if program_id not in TOKEN_PROGRAM_IDS:
+            continue
+        parsed = instr.get("parsed")
+        if not isinstance(parsed, dict):
+            continue
+        if str(parsed.get("type", "")).lower() not in {"burn", "burnchecked"}:
+            continue
+        info = parsed.get("info") or {}
+        if not isinstance(info, dict):
+            continue
+        amount_raw = info.get("amount")
+        if amount_raw is None:
+            token_amount = info.get("tokenAmount")
+            if isinstance(token_amount, dict):
+                amount_raw = token_amount.get("amount")
+        try:
+            amount = int(str(amount_raw))
+        except (ValueError, TypeError):
+            continue
+        result.append({
+            "mint": str(info.get("mint", "")),
+            "authority": str(info.get("authority", "")),
+            "account": str(info.get("account", "")),
+            "amount": amount,
+            "type": str(parsed.get("type", "")),
+        })
+    return result
+
+
+def _extract_signers(tx: dict[str, Any]) -> set[str]:
+    signers: set[str] = set()
+    tx_obj = tx.get("transaction") or {}
+    message = tx_obj.get("message") or {}
+    account_keys = message.get("accountKeys") or []
+    for key in account_keys:
+        if isinstance(key, dict):
+            pubkey = str(key.get("pubkey", ""))
+            if key.get("signer") and pubkey:
+                signers.add(pubkey)
+    return signers
+
+
+async def _fetch_transaction(signature: str, rpc_url: str) -> dict[str, Any] | None:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "getTransaction",
+        "params": [
+            signature,
+            {
+                "encoding": "jsonParsed",
+                "commitment": "confirmed",
+                "maxSupportedTransactionVersion": 0,
+            },
+        ],
+    }
+    async with httpx.AsyncClient(timeout=18.0) as client:
+        resp = await client.post(rpc_url, json=payload)
+        resp.raise_for_status()
+        body = resp.json()
+    return body.get("result")
+
+
+async def _verify_burn_transaction(
+    signature: str,
+    wallet: str,
+    mint: str,
+    min_burn_amount: int,
+    rpc_url: str,
+) -> tuple[bool, str, int, dict[str, Any] | None]:
+    tx = await _fetch_transaction(signature, rpc_url)
+    if tx is None:
+        return False, "Transaction not found on RPC", 0, None
+
+    meta = tx.get("meta") or {}
+    if meta.get("err") is not None:
+        return False, "Transaction execution failed on-chain", 0, tx
+
+    signers = _extract_signers(tx)
+    if wallet not in signers:
+        return False, "Wallet address did not sign this transaction", 0, tx
+
+    burns = _extract_burn_entries(tx)
+    if not burns:
+        return False, "No SPL burn instruction found in transaction", 0, tx
+
+    matching = [
+        b for b in burns
+        if b["mint"] == mint and b["authority"] == wallet
+    ]
+    if not matching:
+        return False, "Burn instructions did not match expected mint/authority", 0, tx
+
+    burned_amount = sum(int(b["amount"]) for b in matching)
+    if burned_amount < min_burn_amount:
+        return False, (
+            f"Burn amount too low. Required {min_burn_amount}, observed {burned_amount}"
+        ), burned_amount, tx
+
+    return True, "", burned_amount, tx
 
 DG_TTS_URL = "https://api.deepgram.com/v1/speak"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
@@ -1164,15 +1454,349 @@ async def favicon() -> Response:
     return Response(content="", status_code=204)
 
 # ─────────────────────────────────────────────
-# Solscan & Spotify Discovery Engine Endpoints
+# Solscan Discovery Engine Endpoints
 # ─────────────────────────────────────────────
 
 @get("/api/smf-config")
 async def api_smf_config() -> dict[str, str]:
     """Retrieve SMF mint address and Solana RPC URL from environment variables."""
     return {
-        "smfMint": os.environ.get("SMF_MINT", "EPjFWdd5AufqSSjvtq8aLv9hqpstb218c3sL955m1od1"),
-        "solanaRpc": os.environ.get("SOLANA_RPC", "https://api.mainnet-beta.solana.com")
+        "smfMint": _get_smf_mint(),
+        "solanaRpc": _get_solana_rpc(),
+    }
+
+
+@get("/api/boost/packs")
+async def api_boost_packs() -> dict[str, Any]:
+    """Return canonical boost pack catalog."""
+    return {
+        "packs": [
+            {"packId": "micro", "boosts": 5, "usdCents": 100},
+            {"packId": "degen", "boosts": 20, "usdCents": 300},
+            {"packId": "chaos", "boosts": 45, "usdCents": 500},
+        ],
+        "starterBoosts": STARTER_BOOSTS,
+    }
+
+
+async def _get_or_create_boost_balance(conn: asyncpg.Connection, wallet: str) -> int:  # type: ignore[type-arg]
+    await conn.execute(
+        "INSERT INTO player_boost_balances (wallet_address, boosts) VALUES ($1, $2) "
+        "ON CONFLICT (wallet_address) DO NOTHING",
+        wallet,
+        STARTER_BOOSTS,
+    )
+    row = await conn.fetchrow(
+        "SELECT boosts FROM player_boost_balances WHERE wallet_address = $1",
+        wallet,
+    )
+    if row is None:
+        return STARTER_BOOSTS
+    return int(row["boosts"])
+
+
+@get("/api/boost/balance")
+async def api_boost_balance(wallet: str) -> dict[str, Any]:
+    """Return server-authoritative boost balance for a wallet."""
+    if boost_pg_pool is None:
+        raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    normalized_wallet = _normalize_wallet_address(wallet)
+    if not _is_valid_wallet_address(normalized_wallet):
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+
+    async with boost_pg_pool.acquire() as conn:
+        boosts = await _get_or_create_boost_balance(conn, normalized_wallet)
+    return {"wallet": normalized_wallet, "boosts": boosts}
+
+
+@post("/api/boost/create-intent")
+async def api_boost_create_intent(data: dict[str, Any]) -> dict[str, Any]:
+    """Create a purchase intent for a boost pack."""
+    if boost_pg_pool is None:
+        raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    wallet = _normalize_wallet_address(data.get("wallet"))
+    pack_id = str(data.get("packId") or data.get("pack_id") or "").strip().lower()
+
+    if not _is_valid_wallet_address(wallet):
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+    if pack_id not in BOOST_PACKS:
+        raise HTTPException(status_code=400, detail="Invalid pack id")
+
+    try:
+        quote = await _compute_pack_quote(pack_id)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Failed to compute pack quote: {exc}")
+
+    intent_id = str(uuid.uuid4())
+    expires_at_unix = int(time.time()) + BOOST_INTENT_TTL_SECONDS
+
+    async with boost_pg_pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO boost_purchase_intents (
+                intent_id, wallet_address, pack_id, boosts_count, mint_address,
+                expected_smf_amount, token_decimals, status, expires_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'created', to_timestamp($8))
+            """,
+            intent_id,
+            wallet,
+            quote["pack_id"],
+            quote["boosts_count"],
+            quote["mint"],
+            quote["required_smf_raw"],
+            quote["token_decimals"],
+            expires_at_unix,
+        )
+        boosts = await _get_or_create_boost_balance(conn, wallet)
+
+    return {
+        "intentId": intent_id,
+        "wallet": wallet,
+        "packId": quote["pack_id"],
+        "boostsToCredit": quote["boosts_count"],
+        "requiredSmfUiAmount": quote["required_smf_ui"],
+        "requiredSmfRawAmount": str(quote["required_smf_raw"]),
+        "tokenDecimals": quote["token_decimals"],
+        "mint": quote["mint"],
+        "solanaRpc": quote["rpc"],
+        "smfPriceUsd": quote["smf_price"],
+        "expiresAtUnix": expires_at_unix,
+        "currentBoostBalance": boosts,
+    }
+
+
+@post("/api/boost/confirm")
+async def api_boost_confirm(data: dict[str, Any]) -> dict[str, Any]:
+    """Confirm a signed burn transaction and credit boosts exactly once."""
+    if boost_pg_pool is None:
+        raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    wallet = _normalize_wallet_address(data.get("wallet"))
+    intent_id = str(data.get("intentId") or data.get("intent_id") or "").strip()
+    signature = str(data.get("signature") or "").strip()
+
+    if not _is_valid_wallet_address(wallet):
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+    if not intent_id:
+        raise HTTPException(status_code=400, detail="intentId is required")
+    if not signature:
+        raise HTTPException(status_code=400, detail="signature is required")
+
+    async with boost_pg_pool.acquire() as conn:
+        async with conn.transaction():
+            intent = await conn.fetchrow(
+                """
+                SELECT intent_id, wallet_address, pack_id, boosts_count, mint_address,
+                       expected_smf_amount, token_decimals, status, signature, expires_at
+                FROM boost_purchase_intents
+                WHERE intent_id = $1
+                FOR UPDATE
+                """,
+                intent_id,
+            )
+
+            if intent is None:
+                raise HTTPException(status_code=404, detail="Intent not found")
+            if str(intent["wallet_address"]) != wallet:
+                raise HTTPException(status_code=403, detail="Intent does not belong to this wallet")
+
+            status = str(intent["status"])
+            existing_signature = str(intent["signature"] or "")
+
+            if status == "confirmed":
+                boosts = await _get_or_create_boost_balance(conn, wallet)
+                return {
+                    "status": "confirmed",
+                    "intentId": intent_id,
+                    "signature": existing_signature,
+                    "boosts": boosts,
+                    "idempotent": True,
+                }
+
+            expires_at = intent["expires_at"]
+            if expires_at is not None and expires_at.timestamp() < time.time():
+                raise HTTPException(status_code=409, detail="Intent expired. Create a new intent.")
+
+            existing = await conn.fetchrow(
+                "SELECT intent_id FROM boost_purchase_ledger WHERE signature = $1",
+                signature,
+            )
+            if existing is not None and str(existing["intent_id"]) != intent_id:
+                raise HTTPException(status_code=409, detail="Signature already used for another intent")
+
+            ok, reason, burned_amount, tx = await _verify_burn_transaction(
+                signature=signature,
+                wallet=wallet,
+                mint=str(intent["mint_address"]),
+                min_burn_amount=int(intent["expected_smf_amount"]),
+                rpc_url=_get_solana_rpc(),
+            )
+            if not ok:
+                raise HTTPException(status_code=400, detail=reason)
+
+            await conn.execute(
+                """
+                INSERT INTO boost_purchase_ledger (
+                    intent_id, signature, wallet_address, pack_id, boosts_credited,
+                    mint_address, burn_amount, slot, raw_tx
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+                ON CONFLICT (intent_id) DO NOTHING
+                """,
+                intent_id,
+                signature,
+                wallet,
+                str(intent["pack_id"]),
+                int(intent["boosts_count"]),
+                str(intent["mint_address"]),
+                burned_amount,
+                (tx or {}).get("slot"),
+                json.dumps(tx or {}),
+            )
+
+            await conn.execute(
+                """
+                INSERT INTO player_boost_balances (wallet_address, boosts, total_purchased_boosts, total_spent_boosts)
+                VALUES ($1, $2, $3, 0)
+                ON CONFLICT (wallet_address)
+                DO UPDATE SET
+                    boosts = player_boost_balances.boosts + EXCLUDED.total_purchased_boosts,
+                    total_purchased_boosts = player_boost_balances.total_purchased_boosts + EXCLUDED.total_purchased_boosts,
+                    updated_at = NOW()
+                """,
+                wallet,
+                STARTER_BOOSTS + int(intent["boosts_count"]),
+                int(intent["boosts_count"]),
+            )
+
+            await conn.execute(
+                """
+                UPDATE boost_purchase_intents
+                SET status = 'confirmed',
+                    signature = $2,
+                    confirmed_at = NOW(),
+                    last_error = ''
+                WHERE intent_id = $1
+                """,
+                intent_id,
+                signature,
+            )
+
+            balance_row = await conn.fetchrow(
+                "SELECT boosts FROM player_boost_balances WHERE wallet_address = $1",
+                wallet,
+            )
+            boosts = int(balance_row["boosts"]) if balance_row else STARTER_BOOSTS
+
+    return {
+        "status": "confirmed",
+        "intentId": intent_id,
+        "signature": signature,
+        "burnedAmountRaw": str(burned_amount),
+        "boosts": boosts,
+        "idempotent": False,
+    }
+
+
+@post("/api/boost/consume")
+async def api_boost_consume(data: dict[str, Any]) -> dict[str, Any]:
+    """Atomically consume boost units for gameplay actions (e.g., hadouken)."""
+    if boost_pg_pool is None:
+        raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    wallet = _normalize_wallet_address(data.get("wallet"))
+    if not _is_valid_wallet_address(wallet):
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+
+    try:
+        units = int(data.get("units", 1))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="units must be an integer")
+    if units < 1 or units > 5:
+        raise HTTPException(status_code=400, detail="units must be between 1 and 5")
+
+    consume_id_raw = str(data.get("consumeId") or data.get("consume_id") or "").strip()
+    consume_id = consume_id_raw if consume_id_raw else None
+    if consume_id is not None and len(consume_id) > 128:
+        raise HTTPException(status_code=400, detail="consumeId too long")
+
+    reason = str(data.get("reason") or "hadouken").strip()[:64]
+    if not reason:
+        reason = "hadouken"
+
+    async with boost_pg_pool.acquire() as conn:
+        async with conn.transaction():
+            await _get_or_create_boost_balance(conn, wallet)
+
+            if consume_id is not None:
+                existing = await conn.fetchrow(
+                    """
+                    SELECT units, balance_after
+                    FROM boost_consumption_ledger
+                    WHERE consume_id = $1 AND wallet_address = $2
+                    """,
+                    consume_id,
+                    wallet,
+                )
+                if existing is not None:
+                    return {
+                        "status": "ok",
+                        "wallet": wallet,
+                        "consumed": True,
+                        "units": int(existing["units"]),
+                        "boosts": int(existing["balance_after"]),
+                        "idempotent": True,
+                    }
+
+            updated = await conn.fetchrow(
+                """
+                UPDATE player_boost_balances
+                SET boosts = boosts - $2,
+                    total_spent_boosts = total_spent_boosts + $2,
+                    updated_at = NOW()
+                WHERE wallet_address = $1 AND boosts >= $2
+                RETURNING boosts
+                """,
+                wallet,
+                units,
+            )
+
+            if updated is None:
+                current = await conn.fetchrow(
+                    "SELECT boosts FROM player_boost_balances WHERE wallet_address = $1",
+                    wallet,
+                )
+                boosts_left = int(current["boosts"]) if current else 0
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Insufficient boosts. Current balance: {boosts_left}",
+                )
+
+            boosts_left = int(updated["boosts"])
+            await conn.execute(
+                """
+                INSERT INTO boost_consumption_ledger (
+                    consume_id, wallet_address, units, reason, balance_after
+                )
+                VALUES ($1, $2, $3, $4, $5)
+                """,
+                consume_id,
+                wallet,
+                units,
+                reason,
+                boosts_left,
+            )
+
+    return {
+        "status": "ok",
+        "wallet": wallet,
+        "consumed": True,
+        "units": units,
+        "boosts": boosts_left,
+        "idempotent": False,
     }
 
 @get("/api/trending")
@@ -1280,113 +1904,6 @@ async def safety_tweets(cashtag: str) -> dict:
         print(f"[x-api] Error fetching tweets: {e}")
         random.shuffle(mock_tweets)
         return {"tweets": mock_tweets[:2]}
-
-@get("/api/spotify/login")
-async def spotify_login(request: Request, device: Optional[str] = None) -> Response[Any]:
-    if not SPOTIFY_CLIENT_ID:
-        return Response(content="Spotify integration not configured.", status_code=500, media_type="text/plain")
-    scopes = 'streaming user-read-email user-read-private user-modify-playback-state user-read-playback-state'
-    base = os.environ.get("BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
-    redirect_uri = f"{base}/auth/spotify/callback"
-    url = (
-        f"https://accounts.spotify.com/authorize"
-        f"?client_id={SPOTIFY_CLIENT_ID}"
-        f"&response_type=code"
-        f"&redirect_uri={quote(redirect_uri)}"
-        f"&scope={scopes.replace(' ', '%20')}"
-    )
-    if device:
-        url += f"&state={quote(device)}"
-    return Redirect(url)
-
-@post("/api/spotify/save-token")
-async def spotify_save_token(data: dict[str, str]) -> dict[str, str]:
-    device = data.get("device")
-    token = data.get("token")
-    if not device or not token:
-        raise HTTPException(status_code=400, detail="Missing device or token")
-    SPOTIFY_DEVICE_SESSIONS[device] = token
-    return {"status": "success"}
-
-@get("/api/spotify/check")
-async def spotify_check(device: str) -> dict[str, str]:
-    token = SPOTIFY_DEVICE_SESSIONS.get(device)
-    if token:
-        SPOTIFY_DEVICE_SESSIONS.pop(device, None)
-        return {"status": "success", "token": token}
-    return {"status": "pending"}
-
-@get("/auth/spotify/callback")
-async def spotify_callback(request: Request) -> Response[str]:
-    import base64
-    code = request.query_params.get("code")
-    state = request.query_params.get("state") or ""
-    
-    if not code:
-        error_msg = request.query_params.get("error", "Unknown error")
-        return Response(
-            content=f"Spotify connection failed: {error_msg}. <br><a href='/'>Return to Game</a>",
-            media_type="text/html"
-        )
-    
-    base = os.environ.get("BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
-    redirect_uri = f"{base}/auth/spotify/callback"
-    
-    # base64 encode client_id:client_secret
-    auth_str = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
-    auth_b64 = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
-    
-    headers = {
-        "Authorization": f"Basic {auth_b64}",
-        "Content-Type": "application/x-www-form-urlencoded"
-    }
-    
-    data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": redirect_uri
-    }
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post("https://accounts.spotify.com/api/token", data=data, headers=headers)
-            token_data = resp.json()
-            
-            if resp.status_code != 200 or "access_token" not in token_data:
-                err_detail = token_data.get("error_description", token_data.get("error", "Unknown error"))
-                return Response(
-                    content=f"Spotify token exchange failed: {err_detail}. <br>Please verify your SPOTIFY_CLIENT_SECRET in the .env file.<br><a href='/'>Return to Game</a>",
-                    media_type="text/html"
-                )
-            
-            token = token_data["access_token"]
-            
-            if state and state != 'null' and state != 'undefined' and state != '':
-                SPOTIFY_DEVICE_SESSIONS[state] = token
-                html_content = """
-                    <html><body>
-                        <div style="background: #0a0a0f; color: white; font-family: monospace; text-align: center; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;">
-                            <div style="font-size: 50px; margin-bottom: 20px;">🎵</div>
-                            <h2 style="color: #14f195; letter-spacing: 2px;">SPOTIFY CONNECTED</h2>
-                            <p style="color: #ccc; font-size: 14px; margin-top: 10px;">Your device has been paired successfully!</p>
-                            <p style="color: #666; font-size: 11px; margin-top: 20px;">You can now close this tab and return to the game.</p>
-                        </div>
-                    </body></html>
-                """
-            else:
-                html_content = f"""
-                    <html><body><script>
-                        localStorage.setItem('spotify_access_token', '{token}');
-                        window.location.href = '/';
-                    </script></body></html>
-                """
-            return Response(content=html_content, media_type="text/html")
-    except Exception as e:
-        return Response(
-            content=f"Error exchanging token: {str(e)}. <br>Please verify your SPOTIFY_CLIENT_SECRET is configured.<br><a href='/'>Return to Game</a>",
-            media_type="text/html"
-        )
-
 
 @get("/")
 async def index_route() -> Response:
@@ -2688,14 +3205,15 @@ app = Litestar(
         leaderboard,
         get_elo,
         api_smf_config,
+        api_boost_packs,
+        api_boost_balance,
+        api_boost_create_intent,
+        api_boost_confirm,
+        api_boost_consume,
         api_trending,
         api_graduates,
         api_token_details,
         proxy_image,
-        spotify_login,
-        spotify_callback,
-        spotify_save_token,
-        spotify_check,
         create_static_files_router(path="/src", directories=[ROOT / "src"]),
         create_static_files_router(path="/assets", directories=[ROOT / "assets"]),
         create_static_files_router(path="/", directories=[ROOT / ""]),

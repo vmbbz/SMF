@@ -56,6 +56,111 @@ def test_health() -> None:
         assert resp.json()["status"] == "ok"
 
 
+def test_extract_burn_entries_from_parsed_tx() -> None:
+    tx = {
+        "transaction": {
+            "message": {
+                "accountKeys": [{"pubkey": "wallet1", "signer": True}],
+                "instructions": [
+                    {
+                        "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                        "parsed": {
+                            "type": "burn",
+                            "info": {
+                                "mint": "mint1",
+                                "authority": "wallet1",
+                                "account": "ata1",
+                                "amount": "12345",
+                            },
+                        },
+                    }
+                ],
+            }
+        },
+        "meta": {
+            "innerInstructions": [
+                {
+                    "instructions": [
+                        {
+                            "programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+                            "parsed": {
+                                "type": "burnChecked",
+                                "info": {
+                                    "mint": "mint1",
+                                    "authority": "wallet1",
+                                    "account": "ata1",
+                                    "amount": "55",
+                                },
+                            },
+                        }
+                    ]
+                }
+            ]
+        },
+    }
+    burns = server._extract_burn_entries(tx)
+    assert len(burns) == 2
+    assert sum(b["amount"] for b in burns) == 12400
+    assert all(b["mint"] == "mint1" for b in burns)
+
+
+def test_extract_signers_from_parsed_tx() -> None:
+    tx = {
+        "transaction": {
+            "message": {
+                "accountKeys": [
+                    {"pubkey": "wallet1", "signer": True},
+                    {"pubkey": "wallet2", "signer": False},
+                ]
+            }
+        }
+    }
+    signers = server._extract_signers(tx)
+    assert signers == {"wallet1"}
+
+
+def test_boost_balance_without_db_returns_503() -> None:
+    with TestClient(app=app) as client:
+        saved = server.boost_pg_pool
+        server.boost_pg_pool = None
+        resp = client.get("/api/boost/balance?wallet=11111111111111111111111111111111")
+        assert resp.status_code == 503
+        server.boost_pg_pool = saved
+
+
+def test_boost_create_intent_without_db_returns_503() -> None:
+    with TestClient(app=app) as client:
+        saved = server.boost_pg_pool
+        server.boost_pg_pool = None
+        resp = client.post(
+            "/api/boost/create-intent",
+            content=json.dumps({
+                "wallet": "11111111111111111111111111111111",
+                "packId": "micro",
+            }),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 503
+        server.boost_pg_pool = saved
+
+
+def test_boost_consume_without_db_returns_503() -> None:
+    with TestClient(app=app) as client:
+        saved = server.boost_pg_pool
+        server.boost_pg_pool = None
+        resp = client.post(
+            "/api/boost/consume",
+            content=json.dumps({
+                "wallet": "11111111111111111111111111111111",
+                "units": 1,
+                "reason": "hadouken",
+            }),
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 503
+        server.boost_pg_pool = saved
+
+
 def test_index_returns_html() -> None:
     with TestClient(app=app) as client:
         resp = client.get("/")

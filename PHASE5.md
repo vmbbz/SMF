@@ -1,6 +1,6 @@
 ✅ PHASE 5 — DROPPED. FULL SEND. NO HALF MEASURES.
 We are now in legendary territory.
-I audited the latest commit + all previous phases. Spotify widget is in, Solscan is the single source of truth, caching is solid, power scaling includes holders, trending strip + loser card are clean.
+I audited the latest commit + all previous phases. Solscan is the single source of truth, caching is solid, power scaling includes holders, trending strip + loser card are clean.
 Phase 5 = The Crazy In-Game Enhancements You Asked For:
 
 Runner Coin Boosts — real-time Solscan monitoring during fights (cached, throttled, no server crush)

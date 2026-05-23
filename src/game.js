@@ -171,6 +171,12 @@ export class Game {
     // LLM thinking — set by LLMAdapter while requesting a plan
     this.p1LlmThinking = false;
     this.p2LlmThinking = false;
+
+    // Server-authoritative hadouken boost spend pipeline.
+    // pending: async consume in-flight
+    // queued: consume approved; inject hadouken on next frame
+    this._hadoukenConsumePending = false;
+    this._hadoukenConsumeQueued = false;
   }
 
   /** Logical (CSS pixel) dimensions */
@@ -255,6 +261,29 @@ export class Game {
     requestAnimationFrame((t) => this._loop(t));
   }
 
+  _isP1ReadyForHadouken() {
+    return (
+      this.p1.state !== "attack" &&
+      !this.p1.isStunned &&
+      !this.p1.isLevitated &&
+      this.p1.hadoukenCooldown <= 0 &&
+      this.p1.grounded
+    );
+  }
+
+  _showOutOfPremiumBoosts() {
+    this.showBoostMessage("⚠️ Out of premium boosts!", "spike");
+    this.floatingMessages.push({
+      text: "Click Solana profile button to buy more!",
+      color: "#ff00ff",
+      x: this.logicalW / 2,
+      y: this.logicalH * 0.3 + 45,
+      life: 1,
+      maxLife: 2.0,
+      fontSize: 24
+    });
+  }
+
   _update(dt) {
     // Waiting for providers or showing fight alert — no game logic
     // Intro sequence — walk in and show stats
@@ -304,14 +333,26 @@ export class Game {
     const p2Actions = this.p2Input.getActions();
     const p2Pressed = this.p2Input.getJustPressed();
 
-    // Intercept Hadouken attack for P1 (the human player) to validate premium boosts
+    let skipHadoukenConsumeCheck = false;
+    if (this._hadoukenConsumeQueued && this._isP1ReadyForHadouken()) {
+      // Server approved one boost spend; inject the hadouken press now.
+      p1Pressed.add(Actions.HADOUKEN);
+      p1Actions.add(Actions.HADOUKEN);
+      this._hadoukenConsumeQueued = false;
+      skipHadoukenConsumeCheck = true;
+    }
+
+    if (this._hadoukenConsumePending && p1Pressed.has(Actions.HADOUKEN)) {
+      // Prevent duplicate consume requests while one is already in-flight.
+      p1Pressed.delete(Actions.HADOUKEN);
+      p1Actions.delete(Actions.HADOUKEN);
+    }
+
+    // Intercept Hadouken attack for P1 (the human player) to validate premium boosts.
     if (
       p1Pressed.has(Actions.HADOUKEN) &&
-      this.p1.state !== "attack" &&
-      !this.p1.isStunned &&
-      !this.p1.isLevitated &&
-      this.p1.hadoukenCooldown <= 0 &&
-      this.p1.grounded
+      this._isP1ReadyForHadouken() &&
+      !skipHadoukenConsumeCheck
     ) {
       try {
         const profileStr = localStorage.getItem('smf_user_profile');
@@ -327,36 +368,57 @@ export class Game {
           profile.boosts = 15;
         }
 
-        if (profile.boosts > 0) {
-          profile.boosts -= 1;
-          localStorage.setItem('smf_user_profile', JSON.stringify(profile));
-          
-          // Update UI counts if elements exist
-          const boostEl1 = document.getElementById('boost-balance-count');
-          const boostEl2 = document.getElementById('profile-boosts-count');
-          if (boostEl1) boostEl1.textContent = profile.boosts;
-          if (boostEl2) boostEl2.textContent = profile.boosts;
-          
-          // Dispatch custom event to notify other widgets (e.g. user panel) of the change
-          window.dispatchEvent(new CustomEvent('smf_profile_updated', { detail: profile }));
-        } else {
-          // INTERCEPT: Out of premium boosts! Cancel hadouken by removing it from the pressed actions set
+        if (
+          profile.walletConnected &&
+          profile.walletAddress &&
+          typeof window.consumeBoostForHadouken === 'function'
+        ) {
+          // Wallet-linked profile: require authoritative server consume before firing hadouken.
           p1Pressed.delete(Actions.HADOUKEN);
           p1Actions.delete(Actions.HADOUKEN);
-          
-          // Display a warning message on screen
-          this.showBoostMessage("⚠️ Out of premium boosts!", "spike");
-          
-          // Also show a temporary subtitle or secondary text
-          this.floatingMessages.push({
-            text: "Click Solana profile button to buy more!",
-            color: "#ff00ff",
-            x: this.logicalW / 2,
-            y: this.logicalH * 0.3 + 45,
-            life: 1,
-            maxLife: 2.0,
-            fontSize: 24
-          });
+
+          if (!this._hadoukenConsumePending) {
+            this._hadoukenConsumePending = true;
+            window.consumeBoostForHadouken(profile.walletAddress)
+              .then((consumeResult) => {
+                if (consumeResult && consumeResult.ok) {
+                  this._hadoukenConsumeQueued = true;
+                  return;
+                }
+                if (consumeResult && consumeResult.status === 409) {
+                  this._showOutOfPremiumBoosts();
+                  return;
+                }
+                this.showBoostMessage("⚠️ Boost verification failed.", "spike");
+              })
+              .catch((err) => {
+                console.error('Failed to consume boost on server:', err);
+                this.showBoostMessage("⚠️ Boost verification failed.", "spike");
+              })
+              .finally(() => {
+                this._hadoukenConsumePending = false;
+              });
+          }
+        } else {
+          // Guest/offline fallback for non-wallet profiles.
+          if (profile.boosts > 0) {
+            profile.boosts -= 1;
+            localStorage.setItem('smf_user_profile', JSON.stringify(profile));
+
+            // Update UI counts if elements exist
+            const boostEl1 = document.getElementById('boost-balance-count');
+            const boostEl2 = document.getElementById('profile-boosts-count');
+            if (boostEl1) boostEl1.textContent = profile.boosts;
+            if (boostEl2) boostEl2.textContent = profile.boosts;
+
+            // Dispatch custom event to notify other widgets (e.g. user panel) of the change
+            window.dispatchEvent(new CustomEvent('smf_profile_updated', { detail: profile }));
+          } else {
+            // INTERCEPT: Out of premium boosts! Cancel hadouken by removing it from the pressed actions set
+            p1Pressed.delete(Actions.HADOUKEN);
+            p1Actions.delete(Actions.HADOUKEN);
+            this._showOutOfPremiumBoosts();
+          }
         }
       } catch (e) {
         console.error('Failed to validate or deduct premium boosts:', e);

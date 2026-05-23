@@ -771,55 +771,6 @@
         font-size: 18px !important;
       }
 
-      /* Spotify widget as compact pill or circle */
-      #hud-widgets .spotify-widget {
-        background: rgba(10, 10, 15, 0.85) !important;
-        border: 1px solid rgba(0, 255, 157, 0.35) !important;
-        border-radius: 22px !important;
-        padding: 0 8px !important;
-        height: 44px !important;
-        min-height: 44px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5) !important;
-      }
-
-      #hud-widgets .spotify-user-pic {
-        display: inline-block !important; /* keep visible as user panel toggler */
-        cursor: pointer;
-      }
-
-      #hud-widgets .connect-btn.hidden {
-        display: none !important;
-      }
-
-      #hud-widgets .connect-btn:not(.hidden) {
-        width: 44px !important;
-        height: 44px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        font-size: 18px !important;
-      }
-
-      /* When player controls are active (Spotify connected) */
-      #hud-widgets #player-controls.hidden {
-        display: none !important;
-      }
-
-      #hud-widgets #player-controls:not(.hidden) {
-        padding: 0 12px !important;
-        gap: 8px !important;
-        height: 100% !important;
-        display: flex !important;
-        align-items: center !important;
-      }
-      
-      #hud-widgets #track-name {
-        font-size: 10px !important;
-        max-width: 100px !important;
-      }
     }
 
     @media (min-width: 1025px) {
@@ -1914,11 +1865,8 @@
         <li><strong>🌀 JOYSTICK: Left side analog controls all movement (Jump/Crouch)</strong></li>
       </ul>
 
-      <h3 class="shojumaru-title" style="color: var(--neon-green); font-size: 16px;"><strong>⚡ DUAL SPOTIFY PLAYBACK CONTROLLER</strong></h3>
-      <p><strong>Connect Spotify natively from the game pill! Allows remote control of play/pause/next for active local Spotify players via our new Authorization Code flow.</strong></p>
-
       <h3 class="shojumaru-title" style="color: var(--neon-pink); font-size: 16px;"><strong>🌐 ON-CHAIN WALLET CONNECTION</strong></h3>
-      <p><strong>Securely connect your Solana Wallet to display live token balances and register your player credentials.</strong></p>
+      <p><strong>Securely connect your Solana wallet to read live balances, buy boost packs, and burn $SMF on-chain for premium in-game utility.</strong></p>
     </div>
 
     <!-- Close Button -->
@@ -1938,9 +1886,6 @@
 
   <!-- HUD WIDGETS (Bottom Center on PC, vertically centred on mobile) -->
   <div id="hud-widgets">
-    <!-- SPOTIFY WIDGET -->
-    <div id="spotify-widget" class="bottom-panel"></div>
-
     <!-- WEATHER TOGGLE -->
     <button id="btn-weather" class="hud-btn weather-btn" onclick="if(window.toggleWeather) window.toggleWeather()">
       <span class="desktop-text">🌧️ WEATHER</span>
@@ -2529,9 +2474,6 @@
         window.trendingStrip = new window.TrendingStrip('trending-strip');
         window.trendingStrip.init();
       }
-      if (window.spotifyWidget) {
-        window.spotifyWidget.init();
-      }
       console.log('%c✅ $SMF STICK LASH FULLY LOADED — READY TO FIGHT', 'color:#ff00ff;font-size:18px');
     });
   </script>
@@ -2667,14 +2609,7 @@
     };
   </script>
 
-  <script>
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      console.log("Spotify Web Playback SDK is ready");
-    };
-  </script>
   <script src="https://unpkg.com/@solana/web3.js@1.95.3/lib/index.iife.min.js"></script>
-  <script src="https://sdk.scdn.co/spotify-player.js"></script>
-  <script type="module" src="./src/spotify-widget.js"></script>
 </body>
 
 </html>

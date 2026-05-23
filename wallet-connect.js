@@ -114,6 +114,92 @@ let fetchedSMFPrice = null;
 let activeMint = null;
 let activeRpc = null;
 
+async function syncServerBoostBalance(profile) {
+  if (!profile.walletConnected || !profile.walletAddress) return profile.boosts || 0;
+  try {
+    const resp = await fetch(`/api/boost/balance?wallet=${encodeURIComponent(profile.walletAddress)}`);
+    if (!resp.ok) {
+      const detail = await resp.text();
+      throw new Error(`Boost balance sync failed (${resp.status}): ${detail}`);
+    }
+    const data = await resp.json();
+    if (typeof data.boosts === 'number') {
+      profile.boosts = data.boosts;
+      saveProfile(profile);
+    }
+    return profile.boosts || 0;
+  } catch (e) {
+    console.warn('[Wallet] Failed to sync authoritative boost balance:', e);
+    return profile.boosts || 0;
+  }
+}
+
+function updateBoostIndicators(boosts) {
+  const boostBalCountEl = document.getElementById('boost-balance-count');
+  if (boostBalCountEl) {
+    boostBalCountEl.textContent = boosts;
+  }
+
+  const profileBoostsEl = document.getElementById('profile-boosts-count');
+  if (profileBoostsEl) {
+    profileBoostsEl.textContent = boosts;
+  }
+}
+
+async function consumeServerBoost(walletAddress, units = 1, reason = 'hadouken') {
+  const consumeId = (window.crypto && typeof window.crypto.randomUUID === 'function')
+    ? window.crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const resp = await fetch('/api/boost/consume', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      wallet: walletAddress,
+      units,
+      reason,
+      consumeId
+    })
+  });
+  if (!resp.ok) {
+    let detail = '';
+    try {
+      const body = await resp.json();
+      detail = body?.detail || '';
+    } catch {
+      try {
+        detail = await resp.text();
+      } catch {
+        detail = '';
+      }
+    }
+    return {
+      ok: false,
+      status: resp.status,
+      error: detail || `Boost consume failed (${resp.status})`
+    };
+  }
+  const data = await resp.json();
+  return {
+    ok: true,
+    boosts: typeof data.boosts === 'number' ? data.boosts : null,
+    idempotent: !!data.idempotent
+  };
+}
+
+window.consumeBoostForHadouken = async function(walletAddress) {
+  const profile = getProfile();
+  if (!walletAddress) {
+    return { ok: false, error: 'Wallet address missing for boost consume.' };
+  }
+  const consume = await consumeServerBoost(walletAddress, 1, 'hadouken');
+  if (consume.ok && typeof consume.boosts === 'number') {
+    profile.boosts = consume.boosts;
+    saveProfile(profile);
+    updateBoostIndicators(profile.boosts);
+  }
+  return consume;
+};
+
 export async function showWalletConnect() {
   let modal = document.getElementById('wallet-connect-panel');
   if (!modal) {
@@ -179,6 +265,7 @@ export async function showWalletConnect() {
       const profile = getProfile();
       if (profile.walletConnected && profile.walletAddress) {
         await updateOnChainBalance(profile);
+        await syncServerBoostBalance(profile);
         saveProfile(profile);
       }
       
@@ -302,8 +389,6 @@ export async function showWalletConnect() {
 
   // Generate profile avatar HTML
   const avatarSrc = profile.avatar || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="%2314f195" fill-opacity="0.1" stroke="%2314f195" stroke-width="2"/><path d="M50 30a12 12 0 1 0 0 24 12 12 0 1 0 0-24zm0 28c-18 0-30 10-30 20v4h60v-4c0-10-12-20-30-20z" fill="%2314f195"/></svg>';
-  const spotifyToken = localStorage.getItem('spotify_access_token');
-
   modal.innerHTML = `
     <div style="color: white; font-family: 'Shojumaru', 'Press Start 2P', sans-serif; text-align: center; max-height: 80vh; overflow-y: auto; padding-right: 5px;">
       
@@ -404,7 +489,7 @@ export async function showWalletConnect() {
               <div style="font-weight:bold; color:#fff;">🔵 Micro Pack (5 Premium Boosts)</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro', 5, ${pack1SMF})">
+            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
               BUY & BURN
             </button>
           </div>
@@ -414,7 +499,7 @@ export async function showWalletConnect() {
               <div style="font-weight:bold; color:var(--neon-green);">🔥 Degen Pack (20 Boosts) - BEST VALUE</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen', 20, ${pack2SMF})">
+            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
               BUY & BURN
             </button>
           </div>
@@ -424,7 +509,7 @@ export async function showWalletConnect() {
               <div style="font-weight:bold; color:#fff;">⚡ Chaos Pack (45 Premium Boosts)</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos', 45, ${pack3SMF})">
+            <button class="buy-smf-btn" ${!profile.walletConnected ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
               BUY & BURN
             </button>
           </div>
@@ -435,13 +520,6 @@ export async function showWalletConnect() {
         ` : ''}
       </div>
 
-      <!-- SPOTIFY DISCONNECT SECTION -->
-      ${spotifyToken ? `
-        <button onclick="window.disconnectSpotifyInModal()" style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #bbb; font-family: inherit; font-size: 9px; padding: 6px 12px; border-radius: 8px; width: 100%; cursor: pointer; margin-bottom: 12px; transition: all 0.2s;">
-          🎵 DISCONNECT SPOTIFY MUSIC
-        </button>
-      ` : ''}
-      
       <!-- ACTION BUTTONS -->
       <button class="premium-btn" onclick="window.hideWalletConnect()" style="font-size: 10px; padding: 12px 20px; width: 100%; border-color: rgba(255,255,255,0.2);">
         CLOSE WIDGET
@@ -463,12 +541,6 @@ export async function showWalletConnect() {
           const modalPic = document.getElementById('profile-modal-pic');
           if (modalPic) modalPic.src = compressedBase64;
           
-          // Update Spotify widget user pic
-          const spotifyPic = document.getElementById('user-pic');
-          if (spotifyPic) {
-            spotifyPic.innerHTML = `<img src="${compressedBase64}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
-          }
-
           // Notify active game P1
           const activeGame = window.currentGame || window.game || window._game;
           if (activeGame && activeGame.p1) {
@@ -490,12 +562,6 @@ export async function showWalletConnect() {
       prof.name = newName;
       saveProfile(prof);
       
-      // Update Spotify Widget name
-      const spotifyName = document.getElementById('username');
-      if (spotifyName) {
-        spotifyName.textContent = newName;
-      }
-
       // Update active game P1 label
       const activeGame = window.currentGame || window.game || window._game;
       if (activeGame) {
@@ -534,6 +600,7 @@ window.connectSolanaWallet = async function() {
     
     // Fetch live on-chain balance
     await updateOnChainBalance(profile);
+    await syncServerBoostBalance(profile);
     
     saveProfile(profile);
     
@@ -588,6 +655,7 @@ window.syncManualSolanaAddress = async function() {
     
     // Fetch live on-chain balance via RPC
     await updateOnChainBalance(profile);
+    await syncServerBoostBalance(profile);
     
     saveProfile(profile);
     showWalletConnect();
@@ -618,15 +686,10 @@ window.disconnectSolanaWallet = function() {
   showWalletConnect();
 };
 
-// Global hook: purchase boost pack with real SPL token burn
-window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
+// Global hook: purchase boost pack with server-authoritative crediting
+window.purchaseBoostPack = async function(packId) {
   const profile = getProfile();
   if (!profile.walletConnected) return alert('⚠️ Wallet is not connected.');
-
-  if (profile.smfBalance < smfCost) {
-    return alert(`⚠️ Insufficient $SMF balance! You have ${profile.smfBalance} $SMF but need ${smfCost} $SMF.`);
-  }
-
   if (!window.solana) {
     return alert('⚠️ No Solana wallet adapter detected!');
   }
@@ -642,14 +705,44 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
   txSpinner.className = '';
   txSpinner.innerHTML = '⚙️';
   txSpinner.style.animation = 'spin 1.5s linear infinite';
-  txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${smfCost} $SMF to dead address</span>`;
+  txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Creating Secure Purchase Intent...</span><br><span style="color:#888;">Locking canonical pack quote on backend</span>`;
 
   try {
     const { Connection, PublicKey, Transaction, TransactionInstruction } = window.solanaWeb3;
-    const connection = new Connection(activeRpc || 'https://api.mainnet-beta.solana.com', 'confirmed');
+
+    const intentResp = await fetch('/api/boost/create-intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wallet: profile.walletAddress,
+        packId
+      })
+    });
+    if (!intentResp.ok) {
+      const err = await intentResp.text();
+      throw new Error(`Intent creation failed (${intentResp.status}): ${err}`);
+    }
+    const intent = await intentResp.json();
+    const requiredSmfUi = Number(intent.requiredSmfUiAmount || 0);
+    const requiredSmfRaw = BigInt(String(intent.requiredSmfRawAmount || '0'));
+    const boostsToCredit = Number(intent.boostsToCredit || 0);
+    const mintAddress = String(intent.mint || activeMint || '');
+    const rpcUrl = String(intent.solanaRpc || activeRpc || 'https://api.mainnet-beta.solana.com');
+
+    if (!mintAddress) {
+      throw new Error('Backend did not return token mint address.');
+    }
+    if (requiredSmfRaw <= 0n || requiredSmfUi <= 0 || boostsToCredit <= 0) {
+      throw new Error('Backend returned invalid quote values.');
+    }
+    if (profile.smfBalance < requiredSmfUi) {
+      throw new Error(`Insufficient $SMF balance. Need ${requiredSmfUi}, have ${profile.smfBalance}.`);
+    }
+
+    const connection = new Connection(rpcUrl, 'confirmed');
     const walletPub = new PublicKey(profile.walletAddress);
-    const mintPub = new PublicKey(activeMint);
-    
+    const mintPub = new PublicKey(mintAddress);
+
     // Derive ATA
     const tokenProgramId = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
     const associatedTokenProgramId = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
@@ -663,15 +756,7 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
       associatedTokenProgramId
     );
     
-    // Fetch mint decimals dynamically
-    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Querying Token Metadata...</span><br><span style="color:#888;">Fetching decimals for token mint</span>`;
-    const mintInfo = await connection.getParsedAccountInfo(mintPub);
-    let decimals = 9; // standard SPL default
-    if (mintInfo && mintInfo.value && mintInfo.value.data && mintInfo.value.data.parsed) {
-      decimals = mintInfo.value.data.parsed.info.decimals || 9;
-    }
-    
-    const amountToBurn = BigInt(Math.round(smfCost * Math.pow(10, decimals)));
+    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${requiredSmfUi} $SMF</span>`;
     
     // Compile SPL Token Burn Instruction
     // Keys needed:
@@ -688,7 +773,7 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
     // Index 8 is Burn. Data structure: u8 index (8), u64 amount
     const data = new Uint8Array(9);
     data[0] = 8; // Burn index
-    let temp = amountToBurn;
+    let temp = requiredSmfRaw;
     for (let i = 0; i < 8; i++) {
       data[1 + i] = Number(temp & 0xffn);
       temp >>= 8n;
@@ -700,7 +785,7 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
       data
     });
     
-    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${smfCost} $SMF tokens in Phantom...</span>`;
+    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${requiredSmfUi} $SMF tokens in wallet...</span>`;
     
     // Fetch recent blockhash
     const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -717,10 +802,10 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
     txSpinner.style.animation = 'none';
     txStatusStep.innerHTML = `
       <span style="color:var(--neon-green);">✓ Burn Signed!</span><br>
-      <span style="color:#ff5500; font-weight:bold;">3. Confirming On Solana Blockchain...</span><br>
+      <span style="color:#ff5500; font-weight:bold;">3. Verifying With Backend Ledger...</span><br>
       <span style="color:#ff8800; font-size:10px;">Transaction Broadcasted. Signature:<br>
       <span style="font-size:8px; color:#aaa;">${signature}</span></span><br>
-      <span style="color:#ff3300; font-size:9px; font-weight:bold;">THEY ARE GONE FOREVER! 🔥☄️</span>
+      <span style="color:#ff3300; font-size:9px; font-weight:bold;">Awaiting server-side burn verification... 🔥</span>
     `;
     
     // Poll for confirmation
@@ -728,30 +813,39 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
     if (confirmation.value.err) {
       throw new Error('Transaction failed on-chain: ' + JSON.stringify(confirmation.value.err));
     }
+
+    const confirmResp = await fetch('/api/boost/confirm', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wallet: profile.walletAddress,
+        intentId: intent.intentId,
+        signature
+      })
+    });
+    if (!confirmResp.ok) {
+      const err = await confirmResp.text();
+      throw new Error(`Backend confirmation failed (${confirmResp.status}): ${err}`);
+    }
+    const confirmationData = await confirmResp.json();
     
     txSpinner.className = '';
     txSpinner.innerHTML = '🎉';
     txStatusStep.innerHTML = `
       <span style="color:var(--neon-green); font-weight:bold; font-size:14px; text-shadow:0 0 10px var(--neon-green);">✓ TRANSACTION CONFIRMED!</span><br>
-      <span style="color:#ccc; font-size:11px; margin-top:10px; display:inline-block;">Successfully Credited <span style="color:var(--neon-pink); font-weight:bold;">${boostsCount} Premium Boosts</span>!</span><br>
+      <span style="color:#ccc; font-size:11px; margin-top:10px; display:inline-block;">Successfully Credited <span style="color:var(--neon-pink); font-weight:bold;">${boostsToCredit} Premium Boosts</span>!</span><br>
       <span style="color:#888; font-size:8px;">Signature: ${signature.substring(0, 10)}... (Confirmed on Solana Mainnet)</span>
     `;
     
-    // Update local storage
-    profile.smfBalance = Math.max(0, profile.smfBalance - smfCost);
-    profile.boosts += boostsCount;
+    // Update local cache from authoritative backend response
+    profile.smfBalance = Math.max(0, profile.smfBalance - requiredSmfUi);
+    profile.boosts = typeof confirmationData.boosts === 'number'
+      ? confirmationData.boosts
+      : profile.boosts;
     saveProfile(profile);
 
     // Update UI elements
-    const boostBalCountEl = document.getElementById('boost-balance-count');
-    if (boostBalCountEl) {
-      boostBalCountEl.textContent = profile.boosts;
-    }
-    
-    const profileBoostsEl = document.getElementById('profile-boosts-count');
-    if (profileBoostsEl) {
-      profileBoostsEl.textContent = profile.boosts;
-    }
+    updateBoostIndicators(profile.boosts);
     
     // Play SFX
     const activeGame = window.currentGame || window.game || window._game;
@@ -774,19 +868,6 @@ window.purchaseBoostPack = async function(packId, boostsCount, smfCost) {
       txOverlay.style.display = 'none';
     }, 5000);
   }
-};
-
-// Global hook: disconnect Spotify directly from modal
-window.disconnectSpotifyInModal = function() {
-  if (window.spotifyWidget) {
-    window.spotifyWidget.disconnect();
-  } else {
-    localStorage.removeItem('spotify_access_token');
-  }
-  
-  // Redraw modal
-  showWalletConnect();
-  console.log('[Spotify] Logged out successfully from profile panel.');
 };
 
 // Automatically bind to window on import
