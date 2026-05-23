@@ -2412,11 +2412,32 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
       // SIMPLE HUMAN CARD
       const name = isPlayer === isWinner ? 'CHAD' : 'MEME';
       const color = isWinner ? 'var(--neon-green)' : 'var(--neon-pink)';
+      
+      const humanWinnerQuotes = [
+        "K.O.! Easy bags!",
+        "Stay clean, strike hard!",
+        "Karate master in the house!",
+        "Bag secured, opponent crushed!",
+        "Next challenger, please!",
+        "Flawless victory! LFG!"
+      ];
+      const humanLoserQuotes = [
+        "I'll be back!",
+        "Ouch! Watch the face!",
+        "A minor setback for my bags...",
+        "Rematch? I wasn't ready!",
+        "Lashed into oblivion...",
+        "Paper hands got folded!"
+      ];
+      const quote = isWinner 
+        ? humanWinnerQuotes[Math.floor(Math.random() * humanWinnerQuotes.length)]
+        : humanLoserQuotes[Math.floor(Math.random() * humanLoserQuotes.length)];
+
       container.innerHTML = `
-        <div class="card-header" style="color:${color};font-size:14px;font-weight:bold;margin-bottom:15px;letter-spacing:3px;">${isWinner ? 'WINNER' : 'LOSER'}</div>
+        <div class="card-header" style="color:${color};font-size:14px;font-weight:bold;margin-bottom:15px;letter-spacing:3px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">${isWinner ? 'WINNER' : 'LOSER'}</div>
         <img src="assets/smf-logo.png" style="width:100px;height:100px;border-radius:50%;border:4px solid ${color};">
-        <div style="font-size:32px;font-weight:900;color:#fff;margin-top:15px;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;">${name}</div>
-        <div style="font-style:italic;color:var(--neon-blue);font-size:16px;line-height:1.2;text-shadow:0 0 10px var(--neon-blue);">"I'll be back!"</div>
+        <div style="font-size:24px;font-weight:900;color:#fff;margin-top:15px;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">${name}</div>
+        <div style="font-style:italic;color:var(--neon-blue);font-size:14px;line-height:1.2;text-shadow:0 0 10px var(--neon-blue);">"${quote}"</div>
       `;
     }
   };

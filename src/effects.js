@@ -160,8 +160,7 @@ export class Effects {
     // White + light-blue dual-tone streaks — clearly visible on dark bg
     if (mode === 'rain') {
       ctx.lineCap = 'round';
-      ctx.shadowBlur = 3;
-      ctx.shadowColor = 'rgba(180, 220, 255, 0.6)';
+      // High-performance light-weight rain drawing (no shadowBlur, no dynamic gradients per particle!)
       for (const p of this.weatherParticles) {
         p.y += 18 * p.speed;
         p.x -= 6 * p.speed + p.drift;
@@ -174,24 +173,26 @@ export class Effects {
         const tx  = p.x + 6 * p.speed;  // tail end
         const ty  = p.y - len;
 
+        // Double-pass glowing effect without slow shadowBlur:
+        // Pass 1: Semi-transparent thicker blue glow
+        ctx.globalAlpha = p.alpha * 0.4;
+        ctx.lineWidth = p.size * 2;
+        ctx.strokeStyle = '#00d4ff';
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+
+        // Pass 2: Bright white core drop
         ctx.globalAlpha = p.alpha;
         ctx.lineWidth = p.size;
-
-        // White head → light-blue body → slightly deeper blue tail
-        // All stops fully opaque so the drop is solid & visible
-        const grd = ctx.createLinearGradient(tx, ty, p.x, p.y);
-        grd.addColorStop(0,    'rgba(150, 200, 255, 0.85)');
-        grd.addColorStop(0.45, 'rgba(210, 235, 255, 0.95)');
-        grd.addColorStop(1,    'rgba(255, 255, 255, 1.0)');
-
-        ctx.strokeStyle = grd;
+        ctx.strokeStyle = '#ffffff';
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
         ctx.lineTo(tx, ty);
         ctx.stroke();
       }
       ctx.globalAlpha = 1;
-      ctx.shadowBlur = 0;
       ctx.lineCap = 'butt';
 
     // ── WIND ─────────────────────────────────────────────────────────────

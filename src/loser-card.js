@@ -1,6 +1,14 @@
 window.currentRichToken = null;
 window.isRichWinner = false;
 
+function formatCompact(val) {
+  const num = Number(val) || 0;
+  if (num >= 1e9) return (num / 1e9).toFixed(1) + 'B';
+  if (num >= 1e6) return (num / 1e6).toFixed(1) + 'M';
+  if (num >= 1e3) return (num / 1e3).toFixed(1) + 'K';
+  return num.toFixed(1);
+}
+
 window.renderRichCard = function(token, isWinner) {
   window.currentRichToken = token;
   window.isRichWinner = isWinner;
@@ -60,17 +68,17 @@ window.switchRichTab = function(tabIndex) {
     content.innerHTML = `
       <div class="about-tab" style="animation: punchIn 0.3s ease;">
         <img src="${token.logoURI || 'assets/smf-logo.png'}" class="banner" style="width:80px;height:80px;border-radius:50%;border:2px solid ${mainColor};margin-bottom:10px;object-fit:cover;">
-        <h2 style="font-size:20px;font-weight:900;color:#fff;margin-bottom:10px;">$${(token.symbol || 'MEME').toUpperCase()} <span class="loser-badge" style="background:${mainColor};color:#000;font-size:10px;padding:2px 6px;border-radius:4px;vertical-align:middle;">${badgeText}</span></h2>
+        <h2 style="font-size:18px;font-weight:900;color:#fff;margin-bottom:10px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">$${(token.symbol || 'MEME').toUpperCase()} <span class="loser-badge" style="background:${mainColor};color:#000;font-size:9px;padding:2px 6px;border-radius:4px;vertical-align:middle;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">${badgeText}</span></h2>
         
-        <div class="power-rating" style="font-size:12px;color:var(--neon-blue);margin-bottom:15px;background:rgba(0,212,255,0.1);padding:5px;border-radius:6px;border:1px dashed var(--neon-blue);">
-          <strong>IN-GAME POWER:</strong> 
-          <span class="power-value" style="color:#fff;font-weight:bold;font-size:14px;">${calculatePowerLevel(token)}</span>
+        <div class="power-rating" style="font-size:11px;color:var(--neon-blue);margin-bottom:15px;background:rgba(0,212,255,0.1);padding:6px;border-radius:6px;border:1px dashed var(--neon-blue);font-family:'Shojumaru', 'Press Start 2P', sans-serif;">
+          <strong>POWER:</strong> 
+          <span class="power-value" style="color:#fff;font-weight:bold;font-size:13px;">${calculatePowerLevel(token)}</span>
         </div>
 
         <div class="market-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:9px;background:rgba(255,255,255,0.05);padding:10px 8px;border-radius:8px;margin-bottom:15px;text-align:left;">
-          <div style="padding-bottom:5px;"><span style="color:${mainColor};">MCAP</span><br><strong style="font-size:10px;color:#fff;">$${(token.marketCap || 0).toLocaleString()}</strong></div>
-          <div style="padding-bottom:5px;"><span style="color:${mainColor};">24h VOL</span><br><strong style="font-size:10px;color:#fff;">$${(token.volume24h || 0).toLocaleString()}</strong></div>
-          <div style="padding-top:5px;border-top:1px solid rgba(255,255,255,0.05);"><span style="color:${mainColor};">LIQUIDITY</span><br><strong style="font-size:10px;color:#fff;">$${(token.liquidity || 0).toLocaleString()}</strong></div>
+          <div style="padding-bottom:5px;"><span style="color:${mainColor};">MCAP</span><br><strong style="font-size:10px;color:#fff;">$${formatCompact(token.marketCap)}</strong></div>
+          <div style="padding-bottom:5px;"><span style="color:${mainColor};">24h VOL</span><br><strong style="font-size:10px;color:#fff;">$${formatCompact(token.volume24h)}</strong></div>
+          <div style="padding-top:5px;border-top:1px solid rgba(255,255,255,0.05);"><span style="color:${mainColor};">LIQUIDITY</span><br><strong style="font-size:10px;color:#fff;">$${formatCompact(token.liquidity)}</strong></div>
           <div style="padding-top:5px;border-top:1px solid rgba(255,255,255,0.05);"><span style="color:${mainColor};">24H CHANGE</span><br><strong style="font-size:10px;color:${(token.priceChange24h || 0) > 0 ? 'var(--neon-green)' : 'var(--neon-pink)'};">${(token.priceChange24h || 0).toFixed(2)}%</strong></div>
         </div>
       </div>
@@ -79,7 +87,7 @@ window.switchRichTab = function(tabIndex) {
     // SOCIAL TAB
     content.innerHTML = `
       <div class="social-tab" style="animation: punchIn 0.3s ease; text-align: left;">
-        <h3 style="color:var(--neon-blue);font-size:14px;margin-bottom:15px;">Live $${(token.symbol || 'MEME').toUpperCase()} X Feed</h3>
+        <h3 style="color:var(--neon-blue);font-size:11px;margin-bottom:15px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">Live $${(token.symbol || 'MEME').toUpperCase()} X Feed</h3>
         
         <div id="social-tweets">
           <div id="tweets-loading" style="color:#888;font-size:10px;text-align:center;">Loading live tweets...</div>
@@ -96,17 +104,15 @@ window.switchRichTab = function(tabIndex) {
     // SAFETY TAB
     content.innerHTML = `
       <div class="safety-tab" style="animation: punchIn 0.3s ease; text-align: left;">
-        <h3 style="color:var(--neon-green);font-size:14px;margin-bottom:15px;">SAFETY CHECK</h3>
-        <div class="rug-score" style="font-size:11px; margin-bottom: 15px; color: #ccc; background:rgba(0,0,0,0.3); padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,0.1);">
-          <div style="margin-top:10px;text-align:center;font-size:10px;color:#aaa;">
-          <span style="color:var(--neon-green)">Holders:</span> ${token.holders || 'N/A'} 
-          | <span style="color:var(--neon-blue)">Liquidity:</span> $${(token.liquidity || 0).toLocaleString()}
-          </div>
-          <div style="margin-top:5px;">Top Holder %: <strong>${Math.max(5, Math.floor(Math.random() * 30))}%</strong></div>
-          <div style="margin-top:5px;">LP Status: <strong>${token.liquidity > 10000 ? '<span style="color:var(--neon-green)">BURNED ✅</span>' : '<span style="color:var(--neon-pink)">CHECKED ⚠️</span>'}</strong></div>
+        <h3 style="color:var(--neon-green);font-size:12px;margin-bottom:15px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">SAFETY CHECK</h3>
+        <div class="rug-score" style="font-size:11px; margin-bottom: 15px; color: #ccc; background:rgba(0,0,0,0.3); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); line-height:1.6;">
+          <div style="margin-bottom:5px;"><span style="color:var(--neon-green);font-weight:bold;">Holders:</span> <strong style="color:#fff;">${token.holders || 'N/A'}</strong></div>
+          <div style="margin-bottom:5px;"><span style="color:var(--neon-blue);font-weight:bold;">Liquidity:</span> <strong style="color:#fff;">$${formatCompact(token.liquidity)}</strong></div>
+          <div style="margin-bottom:5px;">Top Holder %: <strong style="color:#fff;">${Math.max(5, Math.floor(Math.random() * 30))}%</strong></div>
+          <div>LP Status: <strong>${token.liquidity > 10000 ? '<span style="color:var(--neon-green)">BURNED ✅</span>' : '<span style="color:var(--neon-pink)">CHECKED ⚠️</span>'}</strong></div>
         </div>
         <div id="safety-tweets">
-          <h4 style="color:var(--neon-blue);font-size:12px;margin-bottom:10px;">Live X $Cashtag Intel</h4>
+          <h4 style="color:var(--neon-blue);font-size:10px;margin-bottom:10px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">Live X $Cashtag Intel</h4>
           <div id="tweets-loading" style="color:#888;font-size:10px;text-align:center;">Loading signals...</div>
         </div>
       </div>
