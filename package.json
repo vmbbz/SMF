@@ -11,7 +11,6 @@
     "@capacitor/cli": "^6.0.0",
     "@capacitor/haptics": "^6.0.3",
     "@capacitor/ios": "^6.2.1",
-    "@capacitor/screen-orientation": "^6.0.4",
     "@capacitor/status-bar": "^6.0.3",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",

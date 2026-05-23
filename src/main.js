@@ -24,10 +24,6 @@ if (window.Capacitor) {
       if (plugins.StatusBar && typeof plugins.StatusBar.hide === 'function') {
         plugins.StatusBar.hide().catch(err => console.warn('[Native] StatusBar hide failed:', err));
       }
-      // Lock orientation to landscape-primary programmatically
-      if (plugins.ScreenOrientation && typeof plugins.ScreenOrientation.lock === 'function') {
-        plugins.ScreenOrientation.lock({ orientation: 'landscape' }).catch(err => console.warn('[Native] ScreenOrientation lock failed:', err));
-      }
     }
   } catch (e) {
     console.warn('[Native] Failed to initialize mobile premium views:', e);
