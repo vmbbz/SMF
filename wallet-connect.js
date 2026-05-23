@@ -373,7 +373,7 @@ export async function showWalletConnect() {
               </button>
             `}
           </div>
-        `)}
+        `}
       </div>
       
       <!-- PREMIUM BOOST STORE SECTION -->

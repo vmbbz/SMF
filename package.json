@@ -4,7 +4,7 @@
   "description": "Solana Meme Fighter - Beat trending tokens with karate moves",
   "main": "index.html",
   "scripts": {
-    "build": "node build.js",
+    "build": "npm run build",
     "test": "npm run test"
   },
   "dependencies": {
