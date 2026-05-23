@@ -33,6 +33,7 @@ from litestar.response import ServerSentEvent, Redirect
 from litestar.response.base import Response
 from litestar.static_files import create_static_files_router
 from litestar.exceptions import HTTPException
+from litestar.config.cors import CORSConfig
 
 from room_manager import RoomManager
 from game_loop import GameLoopManager
@@ -2554,8 +2555,16 @@ async def get_elo(user_id: str, request: Request) -> dict[str, Any]:
 # App
 # ─────────────────────────────────────────────
 
+cors_config = CORSConfig(
+    allow_origins=["https://localhost", "http://localhost", "capacitor://localhost", "https://sticklash.fun"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app = Litestar(
     lifespan=[lifespan],
+    cors_config=cors_config,
     route_handlers=[
         health,
         index_route,
