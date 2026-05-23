@@ -15,7 +15,7 @@ import { generatePersonality } from './token-utils.js';
 
 window.generatePersonality = generatePersonality;
 
-// Native Capacitor Initialization (Locked Landscape & Full-screen Status Bar)
+// Native Capacitor Initialization (Display Configs & API Interceptor Proxies)
 if (window.Capacitor) {
   try {
     const plugins = window.Capacitor.Plugins;
@@ -27,6 +27,47 @@ if (window.Capacitor) {
     }
   } catch (e) {
     console.warn('[Native] Failed to initialize mobile premium views:', e);
+  }
+
+  try {
+    // Intercept relative fetch requests and proxy them to the production remote server (https://sticklash.fun)
+    const originalFetch = window.fetch;
+    window.fetch = function(input, init) {
+      let url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+      
+      if (typeof url === 'string') {
+        if (url.startsWith('/api/')) {
+          url = 'https://sticklash.fun' + url;
+        } else if (url.startsWith('https://localhost/api/')) {
+          url = url.replace('https://localhost', 'https://sticklash.fun');
+        } else if (url.startsWith('http://localhost/api/')) {
+          url = url.replace('http://localhost', 'https://sticklash.fun');
+        }
+      }
+
+      if (typeof input === 'object' && input !== null && !(input instanceof URL)) {
+        input = new Request(url, input);
+      } else {
+        input = url;
+      }
+      return originalFetch(input, init);
+    };
+
+    // Intercept EventSource connections (real-time signaling / SSE)
+    const OriginalEventSource = window.EventSource;
+    window.EventSource = function(url, configuration) {
+      if (typeof url === 'string') {
+        if (url.startsWith('/api/')) {
+          url = 'https://sticklash.fun' + url;
+        } else if (url.startsWith('https://localhost/api/')) {
+          url = url.replace('https://localhost', 'https://sticklash.fun');
+        }
+      }
+      return new OriginalEventSource(url, configuration);
+    };
+    console.log('[Native] Global Fetch & EventSource proxies established to https://sticklash.fun.');
+  } catch (e) {
+    console.warn('[Native] Failed to establish API interceptor proxies:', e);
   }
 }
 
