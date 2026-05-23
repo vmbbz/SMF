@@ -4,21 +4,25 @@ window.isRichWinner = false;
 window.renderRichCard = function(token, isWinner) {
   window.currentRichToken = token;
   window.isRichWinner = isWinner;
-  const content = document.getElementById('rich-tab-content');
-  if (!content) return;
 
-  let catchphraseEl = document.getElementById('rich-catchphrase');
-  if (!catchphraseEl) {
-    catchphraseEl = document.createElement('div');
-    catchphraseEl.id = 'rich-catchphrase';
-    catchphraseEl.style.cssText = `font-style:italic;color:${isWinner?'var(--neon-green)':'var(--neon-pink)'};font-size:12px;margin-top:15px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.2);`;
-    content.parentElement.appendChild(catchphraseEl);
-  }
-  
-  const phrase = getCatchphrase(token, isWinner);
-  catchphraseEl.innerHTML = `"${phrase}"`;
+  // Use a 0ms timeout to allow the browser to finish parsing the parent container's innerHTML
+  setTimeout(() => {
+    const content = document.getElementById('rich-tab-content');
+    if (!content) return;
 
-  window.switchRichTab(0);
+    let catchphraseEl = document.getElementById('rich-catchphrase');
+    if (!catchphraseEl) {
+      catchphraseEl = document.createElement('div');
+      catchphraseEl.id = 'rich-catchphrase';
+      catchphraseEl.style.cssText = `font-style:italic;color:${isWinner?'var(--neon-green)':'var(--neon-pink)'};font-size:12px;margin-top:15px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.2);`;
+      content.parentElement.appendChild(catchphraseEl);
+    }
+    
+    const phrase = getCatchphrase(token, isWinner);
+    catchphraseEl.innerHTML = `"${phrase}"`;
+
+    window.switchRichTab(0);
+  }, 0);
 };
 
 window.switchRichTab = function(tabIndex) {
