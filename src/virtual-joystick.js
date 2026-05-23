@@ -192,19 +192,97 @@ export class VirtualJoystickAdapter {
 
 // ─────────────────────────────────────────────
 // HapticEngine — lightweight haptic feedback
+// Dynamically bridges native Capacitor & standard Web APIs
 // ─────────────────────────────────────────────
 export class HapticEngine {
-  static vibrate(pattern) {
-    if (!navigator.vibrate) return;
-    navigator.vibrate(pattern);
+  static async vibrate(pattern) {
+    try {
+      // 1. Check if running inside Capacitor native app with the Haptics plugin registered
+      const Haptics = window.Capacitor?.Plugins?.Haptics;
+      if (Haptics) {
+        if (Array.isArray(pattern)) {
+          // Capacitor vibrate takes a single duration in ms.
+          // Sum the pattern for a single consistent native pulse.
+          const duration = pattern.reduce((a, b) => a + b, 0);
+          await Haptics.vibrate({ duration });
+        } else {
+          await Haptics.vibrate({ duration: pattern });
+        }
+        return;
+      }
+    } catch (e) {
+      console.warn('[HapticEngine] Capacitor native haptic failed:', e);
+    }
+
+    // 2. Fall back to standard web API (Android Chrome, desktop testing, etc.)
+    try {
+      if (navigator.vibrate) {
+        navigator.vibrate(pattern);
+      }
+    } catch (e) {
+      console.warn('[HapticEngine] Web navigator.vibrate failed:', e);
+    }
   }
-  static lightHit()      { this.vibrate(30); }
-  static heavyHit()      { this.vibrate(90); }
-  static headshot()      { this.vibrate([60, 25, 60]); }
-  static comboHit()      { this.vibrate([25, 15, 25, 15, 45]); }
-  static boostActivate() { this.vibrate([50, 30, 100, 30, 150]); }
-  static block()         { this.vibrate([20, 10, 20]); }
-  static clash()         { this.vibrate([40, 20, 40]); }
+
+  static async lightHit() {
+    const Haptics = window.Capacitor?.Plugins?.Haptics;
+    if (Haptics?.impact) {
+      Haptics.impact({ style: 'LIGHT' }).catch(() => {});
+    } else {
+      this.vibrate(30);
+    }
+  }
+
+  static async heavyHit() {
+    const Haptics = window.Capacitor?.Plugins?.Haptics;
+    if (Haptics?.impact) {
+      Haptics.impact({ style: 'HEAVY' }).catch(() => {});
+    } else {
+      this.vibrate(90);
+    }
+  }
+
+  static async headshot() {
+    const Haptics = window.Capacitor?.Plugins?.Haptics;
+    if (Haptics?.notification) {
+      // Notification type 'WARNING' produces a clean double pulse on native devices
+      Haptics.notification({ type: 'WARNING' }).catch(() => {});
+    } else {
+      this.vibrate([60, 25, 60]);
+    }
+  }
+
+  static async comboHit() {
+    this.vibrate([25, 15, 25, 15, 45]);
+  }
+
+  static async boostActivate() {
+    const Haptics = window.Capacitor?.Plugins?.Haptics;
+    if (Haptics?.notification) {
+      Haptics.notification({ type: 'SUCCESS' }).catch(() => {});
+    } else {
+      this.vibrate([50, 30, 100, 30, 150]);
+    }
+  }
+
+  static async block() {
+    const Haptics = window.Capacitor?.Plugins?.Haptics;
+    if (Haptics?.impact) {
+      Haptics.impact({ style: 'LIGHT' }).catch(() => {});
+    } else {
+      this.vibrate([20, 10, 20]);
+    }
+  }
+
+  static async clash() {
+    const Haptics = window.Capacitor?.Plugins?.Haptics;
+    if (Haptics?.impact) {
+      Haptics.impact({ style: 'MEDIUM' }).catch(() => {});
+    } else {
+      this.vibrate([40, 20, 40]);
+    }
+  }
 }
 
 window.haptic = HapticEngine;
+
