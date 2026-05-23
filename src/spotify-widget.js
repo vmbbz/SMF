@@ -227,7 +227,7 @@ export class SpotifyWidget {
           <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 12px;">
             <span style="font-size: 8px; font-weight:bold; color:var(--neon-blue); letter-spacing:0.5px; display:block; margin-bottom:6px;">🔎 SEARCH TRACKS ON SPOTIFY</span>
             <div style="display:flex; gap:6px;">
-              <input type="text" id="spotify-search-query" placeholder="Type Song or Artist..." style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:6px 12px; color:white; font-family:monospace; font-size:9px;" onkeydown="if(event.key === 'Enter') window.spotifyWidget.searchTracks(this.value)" />
+              <input type="text" id="spotify-search-query" value="${this.lastSearchQuery || ''}" placeholder="Type Song or Artist..." style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:6px 12px; color:white; font-family:monospace; font-size:9px;" onkeydown="if(event.key === 'Enter' || event.keyCode === 13) window.spotifyWidget.searchTracks(this.value)" />
               <button onclick="window.spotifyWidget.searchTracks(document.getElementById('spotify-search-query').value)" style="background:var(--neon-blue); border:none; color:black; font-family:inherit; font-size:9px; font-weight:bold; border-radius:8px; padding:6px 12px; cursor:pointer;">SEARCH</button>
             </div>
             
@@ -510,6 +510,8 @@ export class SpotifyWidget {
       });
       if (resp.status === 401) {
         this.disconnect();
+      } else if (resp.status === 404 || resp.status === 403) {
+        alert("⚠️ No active Spotify device found!\\n\\nPlease open the Spotify App on your phone/PC and play any song first to activate remote control.");
       } else {
         setTimeout(() => this.pollCurrentlyPlaying(), 600);
       }
@@ -581,6 +583,7 @@ export class SpotifyWidget {
 
   async searchTracks(query) {
     if (!query || !query.trim() || !this.accessToken) return;
+    this.lastSearchQuery = query;
     try {
       const resp = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=5`, {
         headers: { 'Authorization': `Bearer ${this.accessToken}` }
