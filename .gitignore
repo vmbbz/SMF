@@ -48,4 +48,5 @@ __pycache__
 # Scratch and Release Ignored Files
 scratch/
 android/app/release/
+android/keystore.properties
 *.log

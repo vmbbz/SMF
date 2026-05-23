@@ -1,6 +1,37 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file('keystore.properties')
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { stream ->
+        keystoreProps.load(stream)
+    }
+}
+
+def propOrEnv = { String key, String fallback = null ->
+    def fromProject = project.findProperty(key)
+    if (fromProject != null && fromProject.toString().trim()) {
+        return fromProject.toString().trim()
+    }
+    def fromFile = keystoreProps.getProperty(key)
+    if (fromFile != null && fromFile.toString().trim()) {
+        return fromFile.toString().trim()
+    }
+    def fromEnv = System.getenv(key)
+    if (fromEnv != null && fromEnv.toString().trim()) {
+        return fromEnv.toString().trim()
+    }
+    return fallback
+}
+
+def releaseStoreFilePath = propOrEnv('SMF_RELEASE_STORE_FILE', 'C:/Users/cosyc/sticklash-key.jks')
+def releaseStorePassword = propOrEnv('SMF_RELEASE_STORE_PASSWORD')
+def releaseKeyAlias = propOrEnv('SMF_RELEASE_KEY_ALIAS')
+def releaseKeyPassword = propOrEnv('SMF_RELEASE_KEY_PASSWORD')
+def releaseStoreFile = releaseStoreFilePath ? file(releaseStoreFilePath) : null
+def hasReleaseSigning = releaseStoreFile?.exists() && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
+
 android {
     namespace "com.solanamemefighter.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -17,10 +48,25 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile releaseStoreFile
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+                v1SigningEnabled true
+                v2SigningEnabled true
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {
@@ -30,6 +76,10 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
+}
+
+if (!hasReleaseSigning) {
+    logger.lifecycle('[signing] Release signing is not fully configured. `assembleRelease` will produce an unsigned APK.')
 }
 
 repositories {
