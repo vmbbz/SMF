@@ -242,6 +242,21 @@ export class SpotifyWidget {
             </div>
           </div>
 
+          <!-- User Playlists -->
+          ${this.userPlaylists && this.userPlaylists.length > 0 ? `
+          <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 12px; margin-bottom: 10px;">
+            <span style="font-size: 8px; font-weight:bold; color:var(--neon-green); letter-spacing:0.5px; display:block; margin-bottom:8px;">🎧 YOUR PLAYLISTS</span>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              ${this.userPlaylists.map(p => `
+                <div onclick="window.spotifyWidget.playPlaylist('${p.uri}')" class="radio-card" style="display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.06); padding:8px 12px; border-radius:10px; font-size:9px; cursor:pointer;">
+                  <span style="font-weight:bold; color:#fff; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:240px;">${p.name}</span>
+                  <span style="color:var(--neon-green)">▶️</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+
           <!-- Curated Meme Radio Playlists -->
           <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 12px;">
             <span style="font-size: 8px; font-weight:bold; color:var(--neon-pink); letter-spacing:0.5px; display:block; margin-bottom:8px;">⛩️ CURATED MEME BATTLE RADIO</span>
@@ -588,6 +603,10 @@ export class SpotifyWidget {
       const resp = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=5`, {
         headers: { 'Authorization': `Bearer ${this.accessToken}` }
       });
+      if (resp.status === 401) {
+        this.disconnect();
+        return;
+      }
       if (resp.ok) {
         const data = await resp.json();
         this.searchResults = data.tracks.items.map(t => ({
@@ -596,9 +615,14 @@ export class SpotifyWidget {
           uri: t.uri
         }));
         this.renderMusicCenterContent();
+      } else {
+        const err = await resp.text();
+        console.warn('Spotify search failed with status:', resp.status, err);
+        alert('Spotify Search Failed! Status: ' + resp.status);
       }
     } catch(e) {
       console.warn('Spotify search failed:', e);
+      alert('Spotify Search Error: ' + e.message);
     }
   }
 
@@ -608,12 +632,17 @@ export class SpotifyWidget {
       const resp = await fetch('https://api.spotify.com/v1/me/playlists?limit=5', {
         headers: { 'Authorization': `Bearer ${this.accessToken}` }
       });
+      if (resp.status === 401) {
+        this.disconnect();
+        return;
+      }
       if (resp.ok) {
         const data = await resp.json();
         this.userPlaylists = data.items.map(p => ({
           name: p.name,
           uri: p.uri
         }));
+        this.renderMusicCenterContent();
       }
     } catch(e) {
       console.warn('Spotify playlists fetch failed:', e);
