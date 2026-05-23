@@ -242,6 +242,43 @@ let game = null;
 let p1Input = null;
 let p2Input = null;
 const sfx = new SFX();
+window.sfx = sfx;
+
+window.toggleBGM = function() {
+  const btn = document.getElementById('btn-bgm');
+  if (!window.sfx) return;
+  if (window.sfx._bgmActive) {
+    window.sfx.stopBGM();
+    if (btn) {
+      const desktopEl = btn.querySelector('.desktop-text');
+      if (desktopEl) desktopEl.textContent = '⛩️ AMBIENT BGM: OFF';
+      btn.style.borderColor = '#555';
+      btn.style.boxShadow = 'none';
+    }
+  } else {
+    window.sfx.startBGM();
+    if (btn) {
+      const desktopEl = btn.querySelector('.desktop-text');
+      if (desktopEl) desktopEl.textContent = '⛩️ AMBIENT BGM: ON';
+      btn.style.borderColor = '#ff5500';
+      btn.style.boxShadow = '0 0 15px rgba(255, 85, 0, 0.4)';
+    }
+  }
+};
+
+window.addEventListener('click', () => {
+  if (window.sfx && !window.sfx._bgmActive && !window.sfx._bgmStartedOnce) {
+    window.sfx._bgmStartedOnce = true;
+    window.sfx.startBGM();
+    const btn = document.getElementById('btn-bgm');
+    if (btn) {
+      const desktopEl = btn.querySelector('.desktop-text');
+      if (desktopEl) desktopEl.textContent = '⛩️ AMBIENT BGM: ON';
+      btn.style.borderColor = '#ff5500';
+      btn.style.boxShadow = '0 0 15px rgba(255, 85, 0, 0.4)';
+    }
+  }
+}, { once: true });
 // Track active adapters for cleanup
 let activeAdapters = [];
 // Track active peer connection for multiplayer cleanup

@@ -310,4 +310,118 @@ export class SFX {
       console.warn('[SFX] Boost sound failed:', e);
     }
   }
+
+  /** Start procedurally synthesized traditional Chinese pentatonic folktale background loop */
+  startBGM() {
+    if (this._bgmInterval) return;
+    this._bgmActive = true;
+    
+    try {
+      const ctx = this._ctx();
+      
+      const playPluck = (freq, time, volume = 0.03) => {
+        const now = time;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+        
+        // Guzheng plucked characteristic: instant attack, rapid decay, long release
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(volume, now + 0.005);
+        gain.gain.exponentialRampToValueAtTime(volume * 0.3, now + 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
+        
+        // Ringing resonance
+        const resonance = ctx.createOscillator();
+        const resGain = ctx.createGain();
+        resonance.type = 'sine';
+        resonance.frequency.setValueAtTime(freq * 2, now);
+        resGain.gain.setValueAtTime(0, now);
+        resGain.gain.linearRampToValueAtTime(volume * 0.1, now + 0.005);
+        resGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.08);
+        resonance.connect(resGain);
+        resGain.connect(ctx.destination);
+        resonance.start(now);
+        resonance.stop(now + 0.08);
+
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(now);
+        osc.stop(now + 1.5);
+      };
+
+      const playPad = (freq, time, duration, volume = 0.02) => {
+        const now = time;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+        
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(volume, now + duration * 0.3);
+        gain.gain.setValueAtTime(volume, now + duration * 0.7);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(now);
+        osc.stop(now + duration + 0.1);
+      };
+
+      const pentatonicScale = [261.63, 293.66, 329.63, 392.00, 440.00, 523.25, 587.33, 659.25, 783.99, 880.00];
+      const padChords = [
+        [130.81, 196.00, 261.63], // C major
+        [146.83, 220.00, 293.66], // D major
+        [164.81, 261.63, 329.63], // E minor
+        [196.00, 293.66, 392.00]  // G major
+      ];
+
+      let step = 0;
+      const tickTime = 0.4; // seconds per tick
+      
+      const scheduleNextBeats = () => {
+        if (!this._bgmActive) return;
+        const now = ctx.currentTime;
+        
+        // Pad every 16 steps (6.4 seconds)
+        if (step % 16 === 0) {
+          const chord = padChords[Math.floor(Math.random() * padChords.length)];
+          chord.forEach(freq => playPad(freq, now, 6.0, 0.015));
+        }
+
+        // Procedural Guzheng plucks
+        if (step % 2 === 0 && Math.random() < 0.65) {
+          const idx = Math.floor(Math.random() * pentatonicScale.length);
+          playPluck(pentatonicScale[idx], now, 0.035);
+          
+          if (Math.random() < 0.25) {
+            const orn = pentatonicScale[Math.min(idx + 2, pentatonicScale.length - 1)];
+            playPluck(orn, now + 0.15, 0.018);
+          }
+        }
+        
+        step++;
+      };
+
+      scheduleNextBeats();
+      this._bgmInterval = setInterval(scheduleNextBeats, tickTime * 1000);
+      console.log("[SFX] Procedural Chinese ambient BGM started successfully.");
+    } catch(e) {
+      console.warn("[SFX] Failed to initialize BGM synthesizer:", e);
+    }
+  }
+
+  stopBGM() {
+    if (this._bgmInterval) {
+      clearInterval(this._bgmInterval);
+      this._bgmInterval = null;
+    }
+    this._bgmActive = false;
+    console.log("[SFX] Procedural BGM stopped.");
+  }
 }

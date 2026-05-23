@@ -305,7 +305,7 @@ export async function showWalletConnect() {
   const spotifyToken = localStorage.getItem('spotify_access_token');
 
   modal.innerHTML = `
-    <div style="color: white; font-family: inherit; text-align: center; max-height: 80vh; overflow-y: auto; padding-right: 5px;">
+    <div style="color: white; font-family: 'Shojumaru', 'Press Start 2P', sans-serif; text-align: center; max-height: 80vh; overflow-y: auto; padding-right: 5px;">
       
       <!-- HEADER -->
       <h3 style="color: var(--neon-green); margin-bottom: 15px; font-size: 14px; letter-spacing: 2px; text-shadow: 0 0 8px rgba(20,241,149,0.3);">👤 USER FIGHTER PROFILE</h3>

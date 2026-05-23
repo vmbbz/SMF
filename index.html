@@ -692,6 +692,11 @@
       box-shadow: 0 0 10px rgba(255,0,255,0.3);
     }
     
+    .bgm-btn {
+      border: 2px solid #ff5500;
+      box-shadow: 0 0 10px rgba(255,85,0,0.3);
+    }
+    
     .hud-btn:hover {
       transform: translateY(-2px);
       box-shadow: 0 0 15px rgba(255,255,255,0.2);
@@ -1879,6 +1884,12 @@
     <button id="btn-weather" class="hud-btn weather-btn" onclick="if(window.toggleWeather) window.toggleWeather()">
       <span class="desktop-text">🌧️ WEATHER</span>
       <span class="mobile-text">🌧️</span>
+    </button>
+
+    <!-- PROCEDURAL CHINESE BGM TOGGLE -->
+    <button id="btn-bgm" class="hud-btn bgm-btn" onclick="if(window.toggleBGM) window.toggleBGM()">
+      <span class="desktop-text">⛩️ AMBIENT BGM: ON</span>
+      <span class="mobile-text">⛩️</span>
     </button>
 
     <!-- BOOST HACK TOGGLE -->
