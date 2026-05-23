@@ -201,6 +201,9 @@ class BirdeyeService:
     async def _refresh_trending(self, limit: int = 12) -> list:
         try:
             resp = await self.client.get("/defi/token_trending", params={"limit": limit})
+            if resp.status_code == 400 and "limit exceeded" in resp.text.lower():
+                print("[Birdeye] Trending API compute limit exceeded. Falling back to graduated listings...")
+                return await self.fetch_graduated_tokens(limit)
             resp.raise_for_status()
             data = resp.json().get("data") or {}
             tokens = data.get("tokens") or []
@@ -209,7 +212,13 @@ class BirdeyeService:
             await self._handle_list_churn(res, "trending")
             return res
         except Exception as e:
-            print(f"[Birdeye] Trending fetch error: {e}")
+            print(f"[Birdeye] Trending fetch error: {e}. Falling back to graduated listings...")
+            try:
+                fallback_tokens = await self.fetch_graduated_tokens(limit)
+                if fallback_tokens:
+                    return fallback_tokens
+            except Exception as fe:
+                print(f"[Birdeye] Trending fallback also failed: {fe}")
             cached = self.list_cache.get("trending")
             return cached[0][:limit] if cached else []
 

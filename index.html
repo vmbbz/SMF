@@ -132,6 +132,19 @@
       box-shadow: 0 10px 20px rgba(255, 0, 255, 0.3);
     }
 
+    /* Cartoon wiggle animations */
+    .cartoon-icon {
+      display: inline-block;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .premium-btn:hover .cartoon-icon {
+      animation: cartoonWiggle 0.6s ease-in-out infinite alternate;
+    }
+    @keyframes cartoonWiggle {
+      0% { transform: scale(1.1) rotate(-10deg); }
+      100% { transform: scale(1.5) rotate(15deg); }
+    }
+
     .victory-btn {
       min-height: 44px;
       padding: 8px 10px;
@@ -1864,6 +1877,59 @@
     <canvas id="game"></canvas>
   </div>
 
+  <!-- Glowing Info Icon -->
+  <div id="btn-info" style="position: fixed; bottom: 85px; right: 20px; z-index: 1000; cursor: pointer; background: rgba(0,0,0,0.8); border: 2px solid var(--neon-pink); width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Shojumaru', sans-serif; font-size: 20px; color: #fff; box-shadow: 0 0 10px var(--neon-pink); transition: all 0.3s; user-select: none;" onmouseover="this.style.transform='scale(1.15)';" onmouseout="this.style.transform='scale(1)';" onclick="openHelpModal()">
+    i
+  </div>
+
+  <!-- HELP MODAL -->
+  <div id="help-modal" class="screen hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1); width: 90%; max-width: 600px; height: 80vh; background: rgba(10, 10, 15, 0.96); border: 2px solid var(--neon-green); box-shadow: 0 0 30px var(--neon-green); border-radius: 24px; z-index: 2000; padding: 30px; display: flex; flex-direction: column; color: #fff; font-family: sans-serif; overflow: hidden; transition: all 0.3s ease; box-sizing: border-box;">
+    <!-- Header -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h2 class="shojumaru-title" style="margin: 0; color: #fff; font-size: 24px; text-shadow: 0 0 10px var(--neon-green);">STICKLASH GUIDE 🥋</h2>
+      <span onclick="closeHelpModal()" style="cursor: pointer; font-size: 28px; color: var(--neon-pink); font-weight: bold; text-shadow: 0 0 10px var(--neon-pink); line-height: 1;">&times;</span>
+    </div>
+
+    <!-- Scrollable content -->
+    <div style="flex: 1; overflow-y: auto; padding-right: 10px; line-height: 1.6; font-size: 14px; box-sizing: border-box;">
+      <!-- Video Trailer -->
+      <video src="assets/STICKLASH-Promo.mp4" controls autoplay muted loop style="width: 100%; border-radius: 12px; border: 2px solid var(--neon-green); box-shadow: 0 0 15px var(--neon-green); margin-bottom: 20px;"></video>
+      
+      <p style="font-size: 16px; font-weight: bold; text-align: center; color: var(--neon-blue); margin-bottom: 20px; text-shadow: 0 0 8px var(--neon-blue);">
+        <strong>THE WORLD'S FIRST SOLANA MEME-TOKEN FIGHTING GAME!</strong>
+      </p>
+
+      <div style="background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
+        <h3 class="shojumaru-title" style="color: var(--neon-pink); margin-top: 0; font-size: 16px;"><strong>🔥 REAL-TIME PRICE BOOSTS: "LMAO WHIPLASH!"</strong></h3>
+        <p><strong>Your opponent's strength, speed, and health are dictated by live Birdeye market metrics! When a token pumps in real-time, timed boosts fire:</strong></p>
+        <ul>
+          <li><strong>🟠 RUNNER (+20%): 3-hit dash combo + brief stun</strong></li>
+          <li><strong>🔴 SPIKE (+45%): 5-hit combo + P1 levitated 1.5s</strong></li>
+          <li><strong>🟣 OVERDRIVE (+100%): 10 Hadoukens + P1 levitated 3s</strong></li>
+        </ul>
+        <p style="color: #ffcc00; margin-bottom: 0;"><strong>⚠️ STRATEGY: You MUST use Live Boosts to survive against pumping high-volume opponent tokens. Otherwise, LMAO WHIPLASH!</strong></p>
+      </div>
+
+      <h3 class="shojumaru-title" style="color: var(--neon-blue); font-size: 16px;"><strong>🎮 MOVE LIST & CONTROLS</strong></h3>
+      <ul>
+        <li><strong>👊 PUNCHES: LP (Light Punch), HP (Heavy Punch)</strong></li>
+        <li><strong>🦵 KICKS: LK (Light Kick), HK (Heavy Kick)</strong></li>
+        <li><strong>⚡ SPECIAL: Pulse SP for Hadouken projectiles!</strong></li>
+        <li><strong>🛡️ BLOCK: Hold BACK (away from opponent) to block attacks</strong></li>
+        <li><strong>🌀 JOYSTICK: Left side analog controls all movement (Jump/Crouch)</strong></li>
+      </ul>
+
+      <h3 class="shojumaru-title" style="color: var(--neon-green); font-size: 16px;"><strong>⚡ DUAL SPOTIFY PLAYBACK CONTROLLER</strong></h3>
+      <p><strong>Connect Spotify natively from the game pill! Allows remote control of play/pause/next for active local Spotify players via our new Authorization Code flow.</strong></p>
+
+      <h3 class="shojumaru-title" style="color: var(--neon-pink); font-size: 16px;"><strong>🌐 ON-CHAIN WALLET CONNECTION</strong></h3>
+      <p><strong>Securely connect your Solana Wallet to display live token balances and register your player credentials.</strong></p>
+    </div>
+
+    <!-- Close Button -->
+    <button class="premium-btn pink" onclick="closeHelpModal()" style="margin-top: 20px; font-weight: bold; letter-spacing: 2px;">CLOSE</button>
+  </div>
+
   <!-- TRENDING STRIP (Floor level for main menu) -->
   <div id="trending-strip" class="trending-strip"
     style="position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-pink); padding: 6px 15px; z-index: 500; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(255,0,255,0.15);">
@@ -1956,14 +2022,14 @@
         })();
       </script>
     </div>
-    <button class="premium-btn" onclick="startTrendingMode()">TRENDING ARENA 🔥</button>
-    <button class="premium-btn" onclick="startEndlessMode()">ENDLESS PUMP STREAM</button>
+    <button class="premium-btn" onclick="startTrendingMode()">TRENDING ARENA <span class="cartoon-icon">🔥</span></button>
+    <button class="premium-btn" onclick="startEndlessMode()">ENDLESS STREAM <span class="cartoon-icon">🌀</span></button>
     <div style="display:flex;gap:10px;margin:10px 0;">
       <input id="mint-input" placeholder="TOKEN MINT..." style="margin:0;flex:1;">
       <button class="premium-btn" onclick="startCustomFight()"
-        style="width:auto;margin:0;padding:10px 20px;">FIGHT</button>
+        style="width:auto;margin:0;padding:10px 20px;">FIGHT <span class="cartoon-icon">👊</span></button>
     </div>
-    <button class="premium-btn pink" onclick="showMultiplayer()">MULTIPLAYER 🌐</button>
+    <button class="premium-btn pink" onclick="showMultiplayer()">MULTIPLAYER <span class="cartoon-icon">🌐</span></button>
     <div id="status"></div>
   </div>
 
@@ -2582,6 +2648,26 @@
       if (landingPanel) landingPanel.classList.add('hidden');
       if (typeof window.showScreen === 'function') {
         window.showScreen('multiplayer');
+      }
+    };
+
+    window.openHelpModal = () => {
+      if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
+      const modal = document.getElementById('help-modal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        const video = modal.querySelector('video');
+        if (video) video.play().catch(e => console.log(e));
+      }
+    };
+
+    window.closeHelpModal = () => {
+      if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
+      const modal = document.getElementById('help-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        const video = modal.querySelector('video');
+        if (video) video.pause();
       }
     };
   </script>

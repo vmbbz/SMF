@@ -94,7 +94,7 @@ export class TrendingStrip {
     if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS';
 
     if (this.tokens.length === 0) {
-      inner.innerHTML = `<span style="color:#888;">Loading trending tokens...</span>`;
+      inner.innerHTML = `<span style="color:#888; font-size: 10px; font-family: monospace; letter-spacing: 0.5px;">Loading trending tokens...</span>`;
       return;
     }
 
