@@ -21,24 +21,54 @@ const TIERS = [
 
 // Catchphrases per tier (micro removed — not triggered below 20%)
 const CATCHPHRASES = {
-  runner:    (sym) => [
-    `$${sym} JUST PUMPED! 🚀`,
-    `${sym} going VERTICAL!`,
-    `Paper hands REKT again! $${sym} flying 📈`,
-    `WAGMI $${sym} LFG!!!`,
-  ][Math.floor(Math.random() * 4)],
-  spike:     (sym) => [
-    `$${sym} ON FIRE! 🔥🔥🔥`,
-    `${sym} PRINTING! Stay poor, paper hands!`,
-    `BIG PUMP $${sym}! GET REKT! 💀`,
-    `$${sym} ABSOLUTE BEAST MODE!`,
-  ][Math.floor(Math.random() * 4)],
-  overdrive: (sym) => [
-    `$${sym} PUMPED 2X! CHAOS MODE! ⚡⚡⚡`,
-    `EVERYTHING IS PUMP! $${sym} UNSTOPPABLE!`,
-    `Paper handed Mofos couldn't hold — $${sym} WENT PARABOLIC! 🌙`,
-    `$${sym} IS THE RUNNER! 10X NEXT?! 🚀🌙`,
-  ][Math.floor(Math.random() * 4)],
+  runner:    (sym, isHuman, p1Name) => {
+    if (isHuman) {
+      return [
+        `UNLEASHING DEGEN RUNNER! 🚀`,
+        `${p1Name} going VERTICAL! 📈`,
+        `Liquidating $${sym}! No mercy! 🥊`,
+        `WAGMI! ${p1Name} is flying! 📈`,
+      ][Math.floor(Math.random() * 4)];
+    }
+    return [
+      `$${sym} JUST PUMPED! 🚀`,
+      `${sym} going VERTICAL!`,
+      `Paper hands REKT again! $${sym} flying 📈`,
+      `WAGMI $${sym} LFG!!!`,
+    ][Math.floor(Math.random() * 4)];
+  },
+  spike:     (sym, isHuman, p1Name) => {
+    if (isHuman) {
+      return [
+        `${p1Name} ON FIRE! 🔥🔥🔥`,
+        `Spiking your chart! $${sym} getting body slammed! 🥋`,
+        `BIG PUMP FOR ${p1Name}! GET REKT $${sym}! 💀`,
+        `${p1Name} IN ABSOLUTE BEAST MODE!`,
+      ][Math.floor(Math.random() * 4)];
+    }
+    return [
+      `$${sym} ON FIRE! 🔥🔥🔥`,
+      `${sym} PRINTING! Stay poor, paper hands!`,
+      `BIG PUMP $${sym}! GET REKT! 💀`,
+      `$${sym} ABSOLUTE BEAST MODE!`,
+    ][Math.floor(Math.random() * 4)];
+  },
+  overdrive: (sym, isHuman, p1Name) => {
+    if (isHuman) {
+      return [
+        `${p1Name} PUMPED 2X! CHAOS MODE! ⚡⚡⚡`,
+        `UNSTOPPABLE DEGEN OVERDRIVE! ☄️`,
+        `Bodying $${sym}! Sending them to the shadow realm! 🌙`,
+        `${p1Name} GOING PARABOLIC! 🌙`,
+      ][Math.floor(Math.random() * 4)];
+    }
+    return [
+      `$${sym} PUMPED 2X! CHAOS MODE! ⚡⚡⚡`,
+      `EVERYTHING IS PUMP! $${sym} UNSTOPPABLE!`,
+      `Paper handed Mofos couldn't hold — $${sym} WENT PARABOLIC! 🌙`,
+      `$${sym} IS THE RUNNER! 10X NEXT?! 🚀🌙`,
+    ][Math.floor(Math.random() * 4)];
+  },
 };
 
 const HADOUKEN_VARIANTS = ['fire', 'electric', 'void', 'plasma', 'default'];
@@ -216,7 +246,9 @@ export class LiveBoostSystem {
   // ─────────────────────────────────────────
   _triggerTier(tierId, token, ratio, booster = this.aiOpponent, target = this.humanPlayer) {
     const sym = (token.symbol || 'TOKEN').toUpperCase();
-    const phrase = CATCHPHRASES[tierId]?.(sym) || `$${sym} PUMPED!`;
+    const isHuman = (booster === this.game.p1);
+    const p1Name = (this.game.p1Label || 'Guest Fighter').toUpperCase();
+    const phrase = CATCHPHRASES[tierId]?.(sym, isHuman, p1Name) || `$${sym} PUMPED!`;
 
     // Announce + show cinematic message
     this._announce(phrase);
