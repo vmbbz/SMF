@@ -1801,6 +1801,34 @@
       }
     }
 
+    /* Responsive Menu Card Sizing & Scaling */
+    #landing {
+      top: 52% !important;
+      transform: translate(-50%, -50%);
+    }
+
+    @media (min-width: 1025px) {
+      #landing {
+        top: 48% !important; /* Slightly raised on PC to clear bottom widgets */
+        transform: translate(-50%, -50%) !important;
+      }
+    }
+    @media (min-width: 1025px) and (max-height: 850px) {
+      #landing {
+        transform: translate(-50%, -50%) scale(0.85) !important;
+      }
+    }
+    @media (min-width: 1025px) and (max-height: 720px) {
+      #landing {
+        transform: translate(-50%, -50%) scale(0.72) !important;
+      }
+    }
+    @media (min-width: 1025px) and (max-height: 600px) {
+      #landing {
+        transform: translate(-50%, -50%) scale(0.62) !important;
+      }
+    }
+
   </style>
 </head>
 
@@ -1867,7 +1895,7 @@
   </div>
 
   <!-- MEME PANEL (Main Menu) -->
-  <div id="landing" class="screen meme-panel" style="top: 52% !important;">
+  <div id="landing" class="screen meme-panel">
     <div style="text-align:center;margin-bottom:30px;">
       <img id="landing-logo" src="assets/smf-logo.png" alt="$SMF"
         style="height:140px;margin-bottom:20px;max-width:95%;filter: drop-shadow(0 0 15px var(--neon-green));transition: filter 0.3s ease, transform 0.2s ease;">
