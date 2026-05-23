@@ -188,7 +188,11 @@ export class Game {
   }
   get floorY() {
     const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
-    return isMobile ? (this.logicalH - 292) : (this.logicalH - 230);
+    if (isMobile) {
+      const isLandscape = window.innerWidth > window.innerHeight;
+      return isLandscape ? (this.logicalH - 234) : (this.logicalH - 292); // Lowered by 20% (from 292 to 234) on landscape rotation
+    }
+    return this.logicalH - 230;
   }
 
   start() {

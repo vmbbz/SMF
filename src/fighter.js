@@ -188,7 +188,8 @@ export class Fighter {
       if (url.startsWith('data:')) return url;
       if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) return url;
       if (url.startsWith('http://') || url.startsWith('https://')) {
-        return `/api/proxy/image?url=${encodeURIComponent(url)}&t=${Date.now()}`;
+        const base = window.Capacitor ? 'https://sticklash.fun' : '';
+        return `${base}/api/proxy/image?url=${encodeURIComponent(url)}&t=${Date.now()}`;
       }
       return url;
     };
