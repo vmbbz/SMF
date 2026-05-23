@@ -25,6 +25,7 @@ from typing import Any, List, Dict, Optional
 from birdeye_service import birdeye_service
 
 SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
 
 import asyncpg  # type: ignore[import-untyped]
 import httpx
@@ -1290,7 +1291,7 @@ async def spotify_login(request: Request, device: Optional[str] = None) -> Respo
     url = (
         f"https://accounts.spotify.com/authorize"
         f"?client_id={SPOTIFY_CLIENT_ID}"
-        f"&response_type=token"
+        f"&response_type=code"
         f"&redirect_uri={quote(redirect_uri)}"
         f"&scope={scopes.replace(' ', '%20')}"
     )
@@ -1316,47 +1317,75 @@ async def spotify_check(device: str) -> dict[str, str]:
     return {"status": "pending"}
 
 @get("/auth/spotify/callback")
-async def spotify_callback() -> Response[str]:
-    html_content = """
-        <html><body><script>
-            const hash = window.location.hash.substring(1);
-            const hashParams = new URLSearchParams(hash);
-            const queryParams = new URLSearchParams(window.location.search);
-            const token = hashParams.get('access_token');
-            const state = hashParams.get('state') || queryParams.get('state');
+async def spotify_callback(request: Request) -> Response[str]:
+    import base64
+    code = request.query_params.get("code")
+    state = request.query_params.get("state") or ""
+    
+    if not code:
+        error_msg = request.query_params.get("error", "Unknown error")
+        return Response(
+            content=f"Spotify connection failed: {error_msg}. <br><a href='/'>Return to Game</a>",
+            media_type="text/html"
+        )
+    
+    base = os.environ.get("BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/auth/spotify/callback"
+    
+    # base64 encode client_id:client_secret
+    auth_str = f"{SPOTIFY_CLIENT_ID}:{SPOTIFY_CLIENT_SECRET}"
+    auth_b64 = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
+    
+    headers = {
+        "Authorization": f"Basic {auth_b64}",
+        "Content-Type": "application/x-www-form-urlencoded"
+    }
+    
+    data = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": redirect_uri
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post("https://accounts.spotify.com/api/token", data=data, headers=headers)
+            token_data = resp.json()
             
-            if (token) {
-                if (state && state !== 'null' && state !== 'undefined' && state !== '') {
-                    // Device flow! Save on server
-                    fetch('/api/spotify/save-token', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ device: state, token: token })
-                    })
-                    .then(res => {
-                        document.body.innerHTML = `
-                            <div style="background: #0a0a0f; color: white; font-family: monospace; text-align: center; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;">
-                                <div style="font-size: 50px; margin-bottom: 20px;">🎵</div>
-                                <h2 style="color: #14f195; letter-spacing: 2px;">SPOTIFY CONNECTED</h2>
-                                <p style="color: #ccc; font-size: 14px; margin-top: 10px;">Your device has been paired successfully!</p>
-                                <p style="color: #666; font-size: 11px; margin-top: 20px;">You can now close this tab and return to the game.</p>
-                            </div>
-                        `;
-                    })
-                    .catch(err => {
-                        document.body.innerHTML = '<div style="color: red; padding: 20px;">Error pairing device: ' + err + '</div>';
-                    });
-                } else {
-                    // Standard WebApp flow
-                    localStorage.setItem('spotify_access_token', token);
-                    window.location.href = '/';
-                }
-            } else {
-                document.body.innerHTML = 'Spotify connection failed. Please make sure you have the client ID configured. <br><a href="/">Return to Game</a>';
-            }
-        </script></body></html>
-    """
-    return Response(content=html_content, media_type="text/html")
+            if resp.status_code != 200 or "access_token" not in token_data:
+                err_detail = token_data.get("error_description", token_data.get("error", "Unknown error"))
+                return Response(
+                    content=f"Spotify token exchange failed: {err_detail}. <br>Please verify your SPOTIFY_CLIENT_SECRET in the .env file.<br><a href='/'>Return to Game</a>",
+                    media_type="text/html"
+                )
+            
+            token = token_data["access_token"]
+            
+            if state and state != 'null' and state != 'undefined' and state != '':
+                SPOTIFY_DEVICE_SESSIONS[state] = token
+                html_content = """
+                    <html><body>
+                        <div style="background: #0a0a0f; color: white; font-family: monospace; text-align: center; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px;">
+                            <div style="font-size: 50px; margin-bottom: 20px;">🎵</div>
+                            <h2 style="color: #14f195; letter-spacing: 2px;">SPOTIFY CONNECTED</h2>
+                            <p style="color: #ccc; font-size: 14px; margin-top: 10px;">Your device has been paired successfully!</p>
+                            <p style="color: #666; font-size: 11px; margin-top: 20px;">You can now close this tab and return to the game.</p>
+                        </div>
+                    </body></html>
+                """
+            else:
+                html_content = f"""
+                    <html><body><script>
+                        localStorage.setItem('spotify_access_token', '{token}');
+                        window.location.href = '/';
+                    </script></body></html>
+                """
+            return Response(content=html_content, media_type="text/html")
+    except Exception as e:
+        return Response(
+            content=f"Error exchanging token: {str(e)}. <br>Please verify your SPOTIFY_CLIENT_SECRET is configured.<br><a href='/'>Return to Game</a>",
+            media_type="text/html"
+        )
 
 
 @get("/")

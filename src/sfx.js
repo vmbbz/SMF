@@ -319,7 +319,52 @@ export class SFX {
     try {
       const ctx = this._ctx();
       
-      const playPluck = (freq, time, volume = 0.03) => {
+      const playGong = (time, volume = 0.04) => {
+        const now = time;
+        
+        // 1. Low deep impact body
+        const oscLow = ctx.createOscillator();
+        const gainLow = ctx.createGain();
+        oscLow.type = 'sawtooth';
+        oscLow.frequency.setValueAtTime(98, now); // G2
+        oscLow.frequency.linearRampToValueAtTime(55, now + 1.5);
+        gainLow.gain.setValueAtTime(0, now);
+        gainLow.gain.linearRampToValueAtTime(volume * 0.4, now + 0.05);
+        gainLow.gain.exponentialRampToValueAtTime(0.0001, now + 2.5);
+        oscLow.connect(gainLow);
+        gainLow.connect(ctx.destination);
+        oscLow.start(now);
+        oscLow.stop(now + 2.5);
+
+        // 2. Bright shimmery splash metallic wash ("dhssssssss")
+        const freqs = [330, 440, 587, 880, 1200, 1500, 1800];
+        freqs.forEach((baseFreq, idx) => {
+          const oscMetallic = ctx.createOscillator();
+          const gainMetallic = ctx.createGain();
+          
+          oscMetallic.type = 'square';
+          oscMetallic.frequency.setValueAtTime(baseFreq, now);
+          oscMetallic.frequency.exponentialRampToValueAtTime(baseFreq * 0.9, now + 2.0);
+          
+          gainMetallic.gain.setValueAtTime(0, now);
+          gainMetallic.gain.linearRampToValueAtTime(volume * 0.12, now + 0.01 + (idx * 0.002));
+          gainMetallic.gain.exponentialRampToValueAtTime(0.0001, now + 2.8);
+          
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'bandpass';
+          filter.frequency.setValueAtTime(1000 + idx * 200, now);
+          filter.Q.setValueAtTime(1.5, now);
+          
+          oscMetallic.connect(filter);
+          filter.connect(gainMetallic);
+          gainMetallic.connect(ctx.destination);
+          
+          oscMetallic.start(now);
+          oscMetallic.stop(now + 2.8);
+        });
+      };
+
+      const playPluck = (freq, time, volume = 0.075) => {
         const now = time;
         
         // Main string body
@@ -328,11 +373,11 @@ export class SFX {
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, now);
         
-        // Guzheng plucked characteristic: instant attack, rapid decay, moderate release
+        // Guzheng plucked characteristic: instant attack, rapid decay, very long resonant tail
         gain.gain.setValueAtTime(0, now);
         gain.gain.linearRampToValueAtTime(volume, now + 0.002);
-        gain.gain.exponentialRampToValueAtTime(volume * 0.1, now + 0.04);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.5);
+        gain.gain.exponentialRampToValueAtTime(volume * 0.08, now + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.0); // Longer ringing tail (2.0s instead of 0.5s)
         
         // Sharp pluck noise / pick strike (using a quick decaying high-frequency sawtooth)
         const pick = ctx.createOscillator();
@@ -341,33 +386,33 @@ export class SFX {
         pick.frequency.setValueAtTime(freq * 3, now); // sharp third harmonic
         pickGain.gain.setValueAtTime(0, now);
         pickGain.gain.linearRampToValueAtTime(volume * 0.45, now + 0.002);
-        pickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.015); // extremely fast decay for the pluck edge
+        pickGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.015);
         pick.connect(pickGain);
         pickGain.connect(ctx.destination);
         pick.start(now);
         pick.stop(now + 0.02);
 
-        // Ringing metallic string resonance
+        // Ringing metallic string resonance - made longer for Guzheng physical depth
         const resonance = ctx.createOscillator();
         const resGain = ctx.createGain();
         resonance.type = 'sine';
         resonance.frequency.setValueAtTime(freq * 2, now);
         resGain.gain.setValueAtTime(0, now);
         resGain.gain.linearRampToValueAtTime(volume * 0.25, now + 0.002);
-        resGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+        resGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.50); // Longer tail (0.50s instead of 0.15s)
         resonance.connect(resGain);
         resGain.connect(ctx.destination);
         resonance.start(now);
-        resonance.stop(now + 0.15);
+        resonance.stop(now + 0.50);
 
         osc.connect(gain);
         gain.connect(ctx.destination);
         
         osc.start(now);
-        osc.stop(now + 0.5);
+        osc.stop(now + 2.0);
       };
 
-      const playPad = (freq, time, duration, volume = 0.02) => {
+      const playPad = (freq, time, duration, volume = 0.004) => { // Quieter pad (0.004 instead of 0.02)
         const now = time;
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -389,10 +434,10 @@ export class SFX {
 
       const pentatonicScale = [523.25, 587.33, 659.25, 783.99, 880.00, 1046.50, 1174.66, 1318.51, 1567.98, 1760.00];
       const padChords = [
-        [261.63, 392.00, 523.25], // C major (octave higher)
-        [293.66, 440.00, 587.33], // D major (octave higher)
-        [329.63, 523.25, 659.25], // E minor (octave higher)
-        [392.00, 587.33, 783.99]  // G major (octave higher)
+        [261.63, 392.00, 523.25], // C major
+        [293.66, 440.00, 587.33], // D major
+        [329.63, 523.25, 659.25], // E minor
+        [392.00, 587.33, 783.99]  // G major
       ];
 
       let step = 0;
@@ -402,20 +447,30 @@ export class SFX {
         if (!this._bgmActive) return;
         const now = ctx.currentTime;
         
-        // Pad every 16 steps (6.4 seconds)
-        if (step % 16 === 0) {
-          const chord = padChords[Math.floor(Math.random() * padChords.length)];
-          chord.forEach(freq => playPad(freq, now, 6.0, 0.015));
+        // play gong at the start and then periodically every 32 beats
+        if (step === 0 || step % 32 === 0) {
+          playGong(now, 0.05);
         }
 
-        // Procedural Guzheng plucks
-        if (step % 2 === 0 && Math.random() < 0.65) {
+        // Pad (flute/bass drone) every 16 steps (6.4 seconds) — very soft/ambient
+        if (step % 16 === 0) {
+          const chord = padChords[Math.floor(Math.random() * padChords.length)];
+          chord.forEach(freq => playPad(freq, now, 6.0, 0.005));
+        }
+
+        // High density cascading Guzheng plucks (more melody notes, louder plucks)
+        if (Math.random() < 0.85) {
           const idx = Math.floor(Math.random() * pentatonicScale.length);
-          playPluck(pentatonicScale[idx], now, 0.035);
+          playPluck(pentatonicScale[idx], now, 0.08); // Louder main pluck (0.08)
           
-          if (Math.random() < 0.25) {
+          // Cascading secondary plucks for rich Chinese string runs
+          if (Math.random() < 0.5) {
             const orn = pentatonicScale[Math.min(idx + 2, pentatonicScale.length - 1)];
-            playPluck(orn, now + 0.15, 0.018);
+            playPluck(orn, now + 0.15, 0.045);
+          }
+          if (Math.random() < 0.3) {
+            const orn2 = pentatonicScale[Math.max(0, idx - 1)];
+            playPluck(orn2, now + 0.3, 0.035);
           }
         }
         

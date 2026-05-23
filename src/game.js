@@ -561,13 +561,14 @@ export class Game {
         hitDesc = `CROTCH SHOT! You took ${totalDmg} damage below the belt!`;
         atkDesc = `LOW BLOW! You hit them in the crotch for ${totalDmg}!`;
       } else {
-        if (zone === "arm" || zone === "leg") {
+        const isArmOrLeg = zone === "arm" || zone === "leg";
+        if (isArmOrLeg) {
           color = "#88aaaa";
           logText = `${totalDmg} ${zone}`;
         }
         if (this.sfx) {
           const isKick = attacker.currentAttack && attacker.currentAttack.toLowerCase().includes("kick");
-          if (isKick && typeof this.sfx.playHeavyWhipImpact === "function") {
+          if (isKick && isArmOrLeg && typeof this.sfx.playHeavyWhipImpact === "function") {
             this.sfx.playHeavyWhipImpact();
           } else {
             this.sfx.hit();
