@@ -644,7 +644,7 @@ async def _call_llm_provider(
     
     # Smart fallbacks to free Gemini API or Grok if preferred keys are missing
     if provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
-        if os.environ.get("XAI_API_KEY") or os.environ.get("X_API_KEY"):
+        if os.environ.get("XAI_API_KEY"):
             print("[llm-fighter:fallback] ANTHROPIC_API_KEY not set, using XAI_API_KEY instead")
             return await _llm_xai(messages, system_prompt, temperature=temperature)
         elif os.environ.get("GEMINI_API_KEY"):
@@ -652,7 +652,7 @@ async def _call_llm_provider(
             return await _llm_gemini(messages, system_prompt, temperature=temperature)
         
     if provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
-        if os.environ.get("XAI_API_KEY") or os.environ.get("X_API_KEY"):
+        if os.environ.get("XAI_API_KEY"):
             print("[llm-fighter:fallback] OPENAI_API_KEY not set, using XAI_API_KEY instead")
             return await _llm_xai(messages, system_prompt, temperature=temperature)
         elif os.environ.get("GEMINI_API_KEY"):
@@ -837,9 +837,9 @@ async def _llm_xai(
     temperature: float | None = None,
 ) -> str:
     """Call xAI Grok API (using OpenAI compatible endpoint)."""
-    api_key = os.environ.get("XAI_API_KEY") or os.environ.get("X_API_KEY")
+    api_key = os.environ.get("XAI_API_KEY")
     if not api_key:
-        raise HTTPException(status_code=500, detail="XAI_API_KEY / X_API_KEY not set")
+        raise HTTPException(status_code=500, detail="XAI_API_KEY not set")
 
     # OpenAI-compatible messages format
     xai_messages = [{"role": "system", "content": system_prompt}] + messages
@@ -984,7 +984,7 @@ def _clean_tts_text(text: str, max_chars: int = 200) -> str:
 @post("/api/voice/llm")
 async def voice_llm(data: dict[str, Any]) -> dict:
     """Send conversation to xAI Grok, Anthropic, or Gemini and return response text."""
-    xai_key = os.environ.get("XAI_API_KEY") or os.environ.get("X_API_KEY")
+    xai_key = os.environ.get("XAI_API_KEY")
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     gemini_key = os.environ.get("GEMINI_API_KEY")
     messages = data.get("messages", [])
