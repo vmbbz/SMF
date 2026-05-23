@@ -15,6 +15,26 @@ import { generatePersonality } from './token-utils.js';
 
 window.generatePersonality = generatePersonality;
 
+// Native Capacitor Initialization (Locked Landscape & Full-screen Status Bar)
+if (window.Capacitor) {
+  try {
+    const plugins = window.Capacitor.Plugins;
+    if (plugins) {
+      // Hide status bar programmatically for full-screen immersive play
+      if (plugins.StatusBar && typeof plugins.StatusBar.hide === 'function') {
+        plugins.StatusBar.hide().catch(err => console.warn('[Native] StatusBar hide failed:', err));
+      }
+      // Lock orientation to landscape-primary programmatically
+      if (plugins.ScreenOrientation && typeof plugins.ScreenOrientation.lock === 'function') {
+        plugins.ScreenOrientation.lock({ orientation: 'landscape' }).catch(err => console.warn('[Native] ScreenOrientation lock failed:', err));
+      }
+    }
+  } catch (e) {
+    console.warn('[Native] Failed to initialize mobile premium views:', e);
+  }
+}
+
+
 const canvas = document.getElementById('game');
 const screens = {
   landing: document.getElementById('landing'),
