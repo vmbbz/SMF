@@ -177,6 +177,14 @@ export class Game {
     // queued: consume approved; inject hadouken on next frame
     this._hadoukenConsumePending = false;
     this._hadoukenConsumeQueued = false;
+    this.walletActionPaused = false;
+    this.walletActionPauseReason = "";
+
+    window.addEventListener('smf_wallet_action_pause', (e) => {
+      const detail = e && e.detail ? e.detail : {};
+      this.walletActionPaused = !!detail.paused;
+      this.walletActionPauseReason = String(detail.reason || '');
+    });
   }
 
   /** Logical (CSS pixel) dimensions */
@@ -284,6 +292,27 @@ export class Game {
     });
   }
 
+  _promptBoostRefillFlow(profile) {
+    if (!profile || !profile.walletConnected || profile.walletReadOnly) {
+      this._showOutOfPremiumBoosts();
+      return;
+    }
+
+    if (window.isMultiplayerMatch) {
+      this._showOutOfPremiumBoosts();
+      this.showBoostMessage("⚠️ Refill boosts after this round.", "spike");
+      return;
+    }
+
+    if (typeof window.requestBoostRefillFlow === 'function') {
+      window.requestBoostRefillFlow({ autoPause: true });
+      this.showBoostMessage("⚠️ Fight paused. Refill boosts.", "runner");
+      return;
+    }
+
+    this._showOutOfPremiumBoosts();
+  }
+
   _update(dt) {
     // Waiting for providers or showing fight alert — no game logic
     // Intro sequence — walk in and show stats
@@ -302,6 +331,7 @@ export class Game {
     }
 
     if (this.roundOver) return;
+    if (this.walletActionPaused) return;
 
     this.roundTimer -= dt;
     if (this.roundTimer <= 0) {
@@ -387,7 +417,7 @@ export class Game {
                   return;
                 }
                 if (consumeResult && consumeResult.status === 409) {
-                  this._showOutOfPremiumBoosts();
+                  this._promptBoostRefillFlow(profile);
                   return;
                 }
                 if (consumeResult && consumeResult.status === 401) {
@@ -408,6 +438,9 @@ export class Game {
           p1Pressed.delete(Actions.HADOUKEN);
           p1Actions.delete(Actions.HADOUKEN);
           this.showBoostMessage("⚠️ Read-only wallet cannot spend boosts.", "spike");
+          if (typeof window.showWalletConnect === 'function') {
+            window.showWalletConnect({ focusStore: true });
+          }
         } else {
           // Guest/offline fallback for non-wallet profiles.
           if (profile.boosts > 0) {
@@ -1441,6 +1474,28 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       grad.addColorStop(1, DG.gradEnd || '#ff00ff');
       ctx.fillStyle = grad;
       ctx.fillText("FIGHT!", w / 2, h / 2);
+      ctx.restore();
+    }
+
+    if (this.walletActionPaused) {
+      const reason = this.walletActionPauseReason || 'wallet_action';
+      const statusCopy = reason === 'boost_refill_required'
+        ? 'REFILL BOOSTS TO RESUME'
+        : 'COMPLETE WALLET ACTION';
+      ctx.save();
+      ctx.fillStyle = 'rgba(5, 8, 12, 0.78)';
+      ctx.fillRect(0, 0, w, h);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 28px monospace';
+      ctx.fillStyle = '#ffcc00';
+      ctx.fillText('PAUSED', w / 2, h / 2 - 28);
+      ctx.font = 'bold 13px monospace';
+      ctx.fillStyle = '#e8eef5';
+      ctx.fillText(statusCopy, w / 2, h / 2 + 4);
+      ctx.font = '11px monospace';
+      ctx.fillStyle = '#9fb1c2';
+      ctx.fillText('Open Profile/Wallet modal and complete the flow.', w / 2, h / 2 + 28);
       ctx.restore();
     }
   }

@@ -150,6 +150,38 @@ function updateBoostIndicators(boosts) {
   }
 }
 
+function isNativeCapacitorPlatform() {
+  try {
+    return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform());
+  } catch {
+    return false;
+  }
+}
+
+function getNativeMwaPlugin() {
+  return window.Capacitor?.Plugins?.SolanaMwa || null;
+}
+
+function hasNativeMwaBridge() {
+  return isNativeCapacitorPlatform() && !!getNativeMwaPlugin();
+}
+
+function emitWalletGameplayPause(paused, reason = 'wallet_action') {
+  window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
+    detail: { paused: !!paused, reason: String(reason || 'wallet_action') }
+  }));
+}
+
+if (hasNativeMwaBridge()) {
+  try {
+    getNativeMwaPlugin().addListener('walletCallback', (event) => {
+      console.log('[Wallet][MWA] callback intent received:', event?.uri || event);
+    });
+  } catch (e) {
+    console.warn('[Wallet][MWA] failed to attach callback listener:', e);
+  }
+}
+
 const WALLET_AUTH_STORAGE_KEY = 'smf_wallet_auth_session';
 
 function getWalletAuthSession() {
@@ -178,6 +210,16 @@ function bytesToBase64(bytes) {
 }
 
 async function signWalletAuthMessage(message) {
+  const nativeMwa = getNativeMwaPlugin();
+  if (nativeMwa) {
+    const signed = await nativeMwa.signMessage({ message });
+    const signatureBase64 = String(signed?.signatureBase64 || '').trim();
+    if (!signatureBase64) {
+      throw new Error('Native wallet bridge returned an empty signature.');
+    }
+    return signatureBase64;
+  }
+
   if (!window.solana || typeof window.solana.signMessage !== 'function') {
     throw new Error('Wallet does not support message signing.');
   }
@@ -188,6 +230,25 @@ async function signWalletAuthMessage(message) {
     throw new Error('Wallet did not return a signature.');
   }
   return bytesToBase64(signatureBytes);
+}
+
+async function nativeMwaSignAndSendSerializedTx(transaction) {
+  const nativeMwa = getNativeMwaPlugin();
+  if (!nativeMwa) {
+    throw new Error('Native Solana bridge unavailable.');
+  }
+  const serialized = transaction.serialize({
+    verifySignatures: false,
+    requireAllSignatures: false
+  });
+  const signed = await nativeMwa.signAndSendTransaction({
+    transactionBase64: bytesToBase64(serialized)
+  });
+  const signatureBase58 = String(signed?.signatureBase58 || '').trim();
+  if (!signatureBase58) {
+    throw new Error('Native wallet bridge returned an empty transaction signature.');
+  }
+  return { signature: signatureBase58 };
 }
 
 function isSessionValidForWallet(session, walletAddress) {
@@ -201,7 +262,9 @@ function isSessionValidForWallet(session, walletAddress) {
 
 async function ensureWalletAuthSession(walletAddress, { forceRefresh = false } = {}) {
   if (!walletAddress) throw new Error('Wallet address missing.');
-  if (!window.solana) throw new Error('Wallet provider unavailable.');
+  if (!window.solana && !hasNativeMwaBridge()) {
+    throw new Error('Wallet provider unavailable.');
+  }
 
   const existing = getWalletAuthSession();
   if (!forceRefresh && isSessionValidForWallet(existing, walletAddress)) {
@@ -252,25 +315,29 @@ async function buildWalletAuthHeaders(walletAddress, { forceRefresh = false } = 
 }
 
 async function fetchWithWalletAuth(walletAddress, url, options = {}) {
-  const method = options.method || 'GET';
-  const body = options.body;
+  const {
+    allowInteractiveReauth = true,
+    ...fetchOptions
+  } = options;
+  const method = fetchOptions.method || 'GET';
+  const body = fetchOptions.body;
   let headers = {
-    ...(options.headers || {}),
+    ...(fetchOptions.headers || {}),
     ...(await buildWalletAuthHeaders(walletAddress))
   };
   let resp = await fetch(url, {
-    ...options,
+    ...fetchOptions,
     method,
     headers,
     body
   });
-  if (resp.status === 401) {
+  if (resp.status === 401 && allowInteractiveReauth) {
     headers = {
-      ...(options.headers || {}),
+      ...(fetchOptions.headers || {}),
       ...(await buildWalletAuthHeaders(walletAddress, { forceRefresh: true }))
     };
     resp = await fetch(url, {
-      ...options,
+      ...fetchOptions,
       method,
       headers,
       body
@@ -309,6 +376,7 @@ async function consumeServerBoost(walletAddress, units = 1, reason = 'hadouken')
   try {
     resp = await fetchWithWalletAuth(walletAddress, '/api/boost/consume', {
       method: 'POST',
+      allowInteractiveReauth: false,
       body: JSON.stringify({
         wallet: walletAddress,
         units,
@@ -363,7 +431,17 @@ window.consumeBoostForHadouken = async function(walletAddress) {
   return consume;
 };
 
-export async function showWalletConnect() {
+export async function showWalletConnect(options = {}) {
+  if (options && typeof options === 'object') {
+    window.walletModalContext = {
+      ...(window.walletModalContext || {}),
+      ...options
+    };
+  }
+  const modalContext = window.walletModalContext || {};
+  const focusStore = !!modalContext.focusStore;
+  const nativeMwaBridge = hasNativeMwaBridge();
+
   let modal = document.getElementById('wallet-connect-panel');
   if (!modal) {
     modal = document.createElement('div');
@@ -542,6 +620,18 @@ export async function showWalletConnect() {
       .tx-fire-glow {
         animation: firePulse 1.5s infinite alternate;
       }
+      .wallet-store-focus {
+        border-color: rgba(255, 170, 0, 0.5) !important;
+        box-shadow: 0 0 24px rgba(255, 170, 0, 0.25);
+      }
+      @keyframes storePulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.01); }
+        100% { transform: scale(1); }
+      }
+      .wallet-store-focus-animate {
+        animation: storePulse 1.8s ease-in-out infinite;
+      }
       @keyframes firePulse {
         0% { text-shadow: 0 0 5px #ff3300, 0 0 10px #ff3300; transform: scale(1); }
         100% { text-shadow: 0 0 15px #ff9900, 0 0 25px #ff5500; transform: scale(1.1); }
@@ -575,7 +665,7 @@ export async function showWalletConnect() {
       <!-- WALLET CENTER SECTION (Optional, Mock-Free) -->
       <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 16px; margin-bottom: 12px; text-align: left;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-          <span style="font-size: 10px; font-weight: bold; color: var(--neon-blue); letter-spacing: 0.5px;">🔑 WEB3 SOLANA WALLET</span>
+          <span style="font-size: 10px; font-weight: bold; color: var(--neon-blue); letter-spacing: 0.5px;">🔑 SOLANA WALLET ${nativeMwaBridge ? '(ANDROID MWA)' : ''}</span>
           <div style="display:flex; align-items:center; gap:4px;">
             <span style="width: 6px; height: 6px; border-radius:50%; background: ${profile.walletConnected ? (profile.walletReadOnly ? '#ffcc00' : 'var(--neon-green)') : '#ff3b30'}; box-shadow: 0 0 6px ${profile.walletConnected ? (profile.walletReadOnly ? '#ffcc00' : 'var(--neon-green)') : '#ff3b30'};"></span>
             <span style="font-size: 8px; color: #aaa;">${profile.walletConnected ? (profile.walletReadOnly ? 'READ-ONLY' : 'CONNECTED') : 'DISCONNECTED'}</span>
@@ -604,17 +694,25 @@ export async function showWalletConnect() {
         ` : (window.showWalletConnectionOptions ? `
           <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); padding: 10px; border-radius: 8px; font-size: 9px; line-height: 1.4; color: #ccc;">
             <div style="font-weight:bold; color:var(--neon-green); font-size: 9px; margin-bottom: 8px; text-align:center;">🔗 CONNECT SOLANA WALLET</div>
-            
-            <p style="font-size: 8px; color: #bbb; margin-bottom: 10px; line-height: 1.3;">
-              To buy boosts and sign transactions, open this game in your wallet's browser. Or, sync your address manually in Read-Only mode.
-            </p>
 
-            <button onclick="window.copyGameUrlToClipboard()" class="premium-btn" style="padding: 6px 10px; font-size: 8px; width: 100%; margin-bottom: 8px; border-color: rgba(20,241,149,0.3);">
-              OPTION A: COPY GAME LINK TO WALLET
-            </button>
+            ${nativeMwaBridge ? `
+              <p style="font-size: 8px; color: #bbb; margin-bottom: 10px; line-height: 1.3;">
+                No compatible wallet app was detected for native Android signing. Install Phantom or Solflare, then retry.
+              </p>
+              <button onclick="window.connectSolanaWallet()" class="premium-btn" style="padding: 6px 10px; font-size: 8px; width: 100%; margin-bottom: 8px; border-color: rgba(20,241,149,0.3);">
+                RETRY WALLET DETECTION
+              </button>
+            ` : `
+              <p style="font-size: 8px; color: #bbb; margin-bottom: 10px; line-height: 1.3;">
+                To buy boosts and sign transactions, open this game in your wallet's browser. Or, sync your address manually in Read-Only mode.
+              </p>
+              <button onclick="window.copyGameUrlToClipboard()" class="premium-btn" style="padding: 6px 10px; font-size: 8px; width: 100%; margin-bottom: 8px; border-color: rgba(20,241,149,0.3);">
+                OPTION A: COPY GAME LINK TO WALLET
+              </button>
+            `}
 
             <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; margin-top: 6px;">
-              <div style="font-weight:bold; color:var(--neon-blue); font-size: 8px; margin-bottom: 6px;">OPTION B: SYNC ADDRESS (READ-ONLY)</div>
+              <div style="font-weight:bold; color:var(--neon-blue); font-size: 8px; margin-bottom: 6px;">SYNC ADDRESS (READ-ONLY)</div>
               <div style="display:flex; gap:6px;">
                 <input type="text" id="manual-wallet-input" placeholder="Paste Solana Public Key" style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:4px 8px; color:white; font-family:monospace; font-size:8px;">
                 <button onclick="window.syncManualSolanaAddress()" style="background:var(--neon-blue); border:none; color:black; font-family:inherit; font-size:8px; font-weight:bold; border-radius:4px; padding:4px 10px; cursor:pointer;">
@@ -631,19 +729,24 @@ export async function showWalletConnect() {
         ` : `
           <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $SMF tokens to buy premium boost packs.</p>
           <button onclick="window.connectSolanaWallet()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px;">
-            CONNECT SOLANA WALLET
+            ${nativeMwaBridge ? 'CONNECT VIA ANDROID WALLET (MWA)' : 'CONNECT SOLANA WALLET'}
           </button>
         `)}
       </div>
       
       <!-- PREMIUM BOOST STORE SECTION -->
-      <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 16px; margin-bottom: 12px; text-align: left;">
+      <div id="boost-store-section" class="${focusStore ? 'wallet-store-focus wallet-store-focus-animate' : ''}" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 16px; margin-bottom: 12px; text-align: left;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
           <span style="font-size: 10px; font-weight: bold; color: var(--neon-pink); letter-spacing: 0.5px;">⚡ PREMIUM BOOST STORE</span>
           <span style="font-size: 9px; background: rgba(255,0,255,0.1); border: 1px solid var(--neon-pink); padding: 2px 8px; border-radius: 10px; color: var(--neon-pink); font-weight:bold;">
             <span id="profile-boosts-count">${profile.boosts}</span> BOOSTS ACTIVE
           </span>
         </div>
+        ${focusStore ? `
+          <div style="font-size: 8px; color: #ffcc00; margin-bottom: 8px; font-weight: bold; letter-spacing: 0.4px;">
+            ⚠️ OUT OF BOOSTS: BUY A PACK TO RESUME THE FIGHT.
+          </div>
+        ` : ''}
         
         <p style="font-size: 8px; color: #888; margin-bottom: 8px; line-height: 1.4;">
           Staking is unsafe. Instead, use connected wallet $SMF tokens to **buy boost packs**! All $SMF spent is **burned forever** 🔥 (Solana Burn Program).
@@ -741,26 +844,53 @@ export async function showWalletConnect() {
 
   // Unhide modal
   modal.classList.remove('hidden');
+
+  if (focusStore) {
+    const storeSection = document.getElementById('boost-store-section');
+    if (storeSection && typeof storeSection.scrollIntoView === 'function') {
+      setTimeout(() => {
+        storeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 20);
+    }
+  }
 }
 
 export function hideWalletConnect() {
   const modal = document.getElementById('wallet-connect-panel');
+  const modalContext = window.walletModalContext || {};
   if (modal) {
     modal.classList.add('hidden');
   }
+  if (modalContext.pauseGameplay) {
+    emitWalletGameplayPause(false, 'wallet_modal_closed');
+  }
+  window.walletModalContext = null;
 }
 
 // Global hook: connect wallet (Real & Mock-Free)
 window.connectSolanaWallet = async function() {
-  if (!window.solana) {
-    // If no window.solana is detected, show the beautiful manual sync / deep link copy options panel
-    window.showWalletConnectionOptions = true;
-    showWalletConnect();
-    return;
-  }
   try {
-    const resp = await window.solana.connect();
-    const publicKeyStr = resp.publicKey.toString();
+    const nativeMwa = getNativeMwaPlugin();
+    let publicKeyStr = '';
+
+    if (nativeMwa) {
+      const result = await nativeMwa.connect();
+      publicKeyStr = String(result?.walletAddress || '').trim();
+      if (!publicKeyStr) {
+        throw new Error('Native wallet bridge did not return a wallet address.');
+      }
+      window.showWalletConnectionOptions = false;
+    } else if (window.solana) {
+      const resp = await window.solana.connect();
+      publicKeyStr = resp.publicKey.toString();
+      window.showWalletConnectionOptions = false;
+    } else {
+      // No native bridge and no browser wallet.
+      window.showWalletConnectionOptions = true;
+      showWalletConnect();
+      return;
+    }
+
     await ensureWalletAuthSession(publicKeyStr);
     
     const profile = getProfile();
@@ -784,6 +914,10 @@ window.connectSolanaWallet = async function() {
     }
   } catch (err) {
     console.error('Wallet connection rejected/failed:', err);
+    if (String(err?.code || '').includes('MWA_NO_WALLET')) {
+      window.showWalletConnectionOptions = true;
+      showWalletConnect();
+    }
     alert('⚠️ Wallet connection failed: ' + (err.message || err));
   }
 };
@@ -846,9 +980,24 @@ window.cancelWalletOptions = function() {
   showWalletConnect();
 };
 
+window.requestBoostRefillFlow = function({ autoPause = true } = {}) {
+  const shouldPause = !!autoPause && !window.isMultiplayerMatch;
+  if (shouldPause) {
+    emitWalletGameplayPause(true, 'boost_refill_required');
+  }
+  showWalletConnect({
+    focusStore: true,
+    pauseGameplay: shouldPause
+  });
+};
+
 // Global hook: disconnect wallet
 window.disconnectSolanaWallet = function() {
   const profile = getProfile();
+  const nativeMwa = getNativeMwaPlugin();
+  if (nativeMwa) {
+    nativeMwa.disconnect().catch(() => {});
+  }
   if (profile.walletAddress) {
     logoutWalletAuthSession(profile.walletAddress).catch(() => {});
   } else {
@@ -869,8 +1018,9 @@ window.purchaseBoostPack = async function(packId) {
   const profile = getProfile();
   if (!profile.walletConnected) return alert('⚠️ Wallet is not connected.');
   if (profile.walletReadOnly) return alert('⚠️ Read-only wallet mode cannot purchase. Open game in your wallet browser.');
-  if (!window.solana) {
-    return alert('⚠️ No Solana wallet adapter detected!');
+  const nativeMwa = getNativeMwaPlugin();
+  if (!window.solana && !nativeMwa) {
+    return alert('⚠️ No Solana wallet adapter detected.');
   }
 
   const txOverlay = document.getElementById('solana-tx-overlay');
@@ -881,6 +1031,7 @@ window.purchaseBoostPack = async function(packId) {
 
   // Show fullscreen glowing Solana confirmation transaction loader
   txOverlay.style.display = 'flex';
+  emitWalletGameplayPause(true, 'purchase_boost_pack');
   txSpinner.className = '';
   txSpinner.innerHTML = '⚙️';
   txSpinner.style.animation = 'spin 1.5s linear infinite';
@@ -973,7 +1124,9 @@ window.purchaseBoostPack = async function(packId) {
     transaction.feePayer = walletPub;
     
     // Request wallet signature and broadcast
-    const { signature } = await window.solana.signAndSendTransaction(transaction);
+    const { signature } = nativeMwa
+      ? await nativeMwaSignAndSendSerializedTx(transaction)
+      : await window.solana.signAndSendTransaction(transaction);
     
     txSpinner.innerHTML = '🔥';
     txSpinner.className = 'tx-fire-glow';
@@ -1032,6 +1185,7 @@ window.purchaseBoostPack = async function(packId) {
     
     setTimeout(() => {
       txOverlay.style.display = 'none';
+      emitWalletGameplayPause(false, 'purchase_boost_pack');
       showWalletConnect();
     }, 4000);
     
@@ -1043,6 +1197,7 @@ window.purchaseBoostPack = async function(packId) {
     
     setTimeout(() => {
       txOverlay.style.display = 'none';
+      emitWalletGameplayPause(false, 'purchase_boost_pack');
     }, 5000);
   }
 };
