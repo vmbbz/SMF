@@ -166,6 +166,8 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                 redis_pool = aioredis.from_url(
                     redis_url,
                     decode_responses=True,
+                    socket_timeout=5.0,
+                    socket_connect_timeout=5.0
                 )
                 # Test connection
                 await redis_pool.ping()
@@ -182,7 +184,8 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         try:
             pg_pool = await asyncpg.create_pool(
                 os.environ.get("DATABASE_URL", "postgresql://stick:fighter@localhost:5433/stickfighter"),
-                min_size=2, max_size=10
+                min_size=2, max_size=10,
+                timeout=8.0 # Prevent 60s hangs from database startup/networking issues
             )
             await ensure_schema(pg_pool)
             print("[postgres] Connected")
