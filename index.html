@@ -16,11 +16,13 @@
     @import url('https://cdn.jsdelivr.net/npm/@fontsource/shojumaru@latest/index.min.css');
 
     h1, h2, h3, .shojumaru-title {
-      font-family: 'Shojumaru', 'Press Start 2P', sans-serif !important;
+      font-family: var(--font-display, 'Shojumaru', 'Press Start 2P', sans-serif) !important;
       letter-spacing: 2px;
     }
 
     :root {
+      --font-display: 'Shojumaru', 'Press Start 2P', sans-serif;
+      --font-print: 'Press Start 2P', system-ui, sans-serif;
       --neon-green: #00ff9d;
       --neon-pink: #ff00ff;
       --neon-blue: #00d4ff;
@@ -51,11 +53,16 @@
 
     body {
       background: var(--dg-bg);
-      font-family: 'Press Start 2P', system-ui;
+      font-family: var(--font-display);
       color: #fff;
       overflow: hidden;
       height: 100vh;
       position: relative;
+    }
+
+    .print-font {
+      font-family: var(--font-print) !important;
+      letter-spacing: 0.2px;
     }
 
     #game-container {
@@ -174,7 +181,7 @@
       font-size: 14px;
       border-radius: 14px;
       outline: none;
-      font-family: inherit;
+      font-family: var(--font-print);
     }
 
     input:focus {
@@ -2070,7 +2077,7 @@
   </div>
 
   <!-- HELP MODAL -->
-  <div id="help-modal" class="screen hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1); width: 90%; max-width: 600px; height: 80vh; background: rgba(10, 10, 15, 0.96); border: 2px solid var(--neon-green); box-shadow: 0 0 30px var(--neon-green); border-radius: 24px; z-index: 2000; padding: 30px; display: flex; flex-direction: column; color: #fff; font-family: sans-serif; overflow: hidden; transition: all 0.3s ease; box-sizing: border-box;">
+  <div id="help-modal" class="screen hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1); width: 90%; max-width: 600px; height: 80vh; background: rgba(10, 10, 15, 0.96); border: 2px solid var(--neon-green); box-shadow: 0 0 30px var(--neon-green); border-radius: 24px; z-index: 2000; padding: 30px; display: flex; flex-direction: column; color: #fff; font-family: var(--font-display); overflow: hidden; transition: all 0.3s ease; box-sizing: border-box;">
     <!-- Header -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
       <h2 class="shojumaru-title" style="margin: 0; color: #fff; font-size: 24px; text-shadow: 0 0 10px var(--neon-green);">STICKLASH GUIDE 🥋</h2>
@@ -2078,7 +2085,7 @@
     </div>
 
     <!-- Scrollable content -->
-    <div style="flex: 1; overflow-y: auto; padding-right: 10px; line-height: 1.6; font-size: 14px; box-sizing: border-box;">
+    <div class="print-font" style="flex: 1; overflow-y: auto; padding-right: 10px; line-height: 1.6; font-size: 14px; box-sizing: border-box;">
       <!-- Video Trailer -->
       <video src="assets/STICKLASH-Promo.mp4" controls autoplay muted loop playsinline style="width: 100%; border-radius: 12px; border: 2px solid var(--neon-green); box-shadow: 0 0 15px var(--neon-green); margin-bottom: 20px;"></video>
       
@@ -2110,18 +2117,33 @@
       <p><strong>Securely connect your Solana wallet to read live balances, buy boost packs, and burn $SMF on-chain for premium in-game utility.</strong></p>
     </div>
 
+    <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 10px;">
+      <button id="btn-help-socials" class="premium-btn print-font" onclick="toggleHelpSocials()" style="font-size: 10px; padding: 10px 14px; margin: 0; letter-spacing: 1px;">
+        SOCIALS ▾
+      </button>
+      <div id="help-socials-panel" class="hidden print-font" style="margin-top: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 12px; text-align: left;">
+        <a href="https://x.com/sticklash" target="_blank" rel="noopener noreferrer" style="color: var(--neon-blue); text-decoration: none; font-weight: bold;">
+          @sticklash on X
+        </a>
+        <div style="margin-top: 6px; color: #c7c7c7; font-size: 10px;">
+          Follow for live updates, match clips, and alpha drops.
+        </div>
+      </div>
+      <audio id="help-socials-audio" src="assets/help-socials-hype.mp3" preload="auto"></audio>
+    </div>
+
     <!-- Close Button -->
-    <button class="premium-btn pink" onclick="closeHelpModal()" style="margin-top: 20px; font-weight: bold; letter-spacing: 2px;">CLOSE</button>
+    <button class="premium-btn pink" onclick="closeHelpModal()" style="margin-top: 10px; font-weight: bold; letter-spacing: 2px;">CLOSE</button>
   </div>
 
   <!-- TRENDING STRIP (Floor level for main menu) -->
   <div id="trending-strip" class="trending-strip"
-    style="position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-pink); padding: 6px 15px; z-index: 500; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(255,0,255,0.15);">
+    style="position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-pink); padding: 6px 15px; z-index: 500; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(255,0,255,0.15); font-family: var(--font-print);">
   </div>
 
   <!-- TRENDING STRIP (During Fight, hidden by default until fight starts) -->
   <div id="fight-trending-strip" class="trending-strip"
-    style="display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-green); padding: 6px 15px; z-index: 100; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(0,255,157,0.15);">
+    style="display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-green); padding: 6px 15px; z-index: 100; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(0,255,157,0.15); font-family: var(--font-print);">
   </div>
 
   <!-- FIGHT TOP DOCK -->
@@ -2189,7 +2211,7 @@
         style="background: rgba(204,0,255,0.1); border: 1px solid #cc00ff; color: #cc00ff; padding: 8px; font-size: 8px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; text-align:left; transition: all 0.2s;">⚡ OVERDRIVE (10 Hadouken Barrage)</button>
     </div>
     
-    <div style="font-size: 8px; color: #555; margin-top: 10px; font-family: Courier New, monospace;">Hotkey: Press 'B' key during fight</div>
+    <div class="print-font" style="font-size: 8px; color: #555; margin-top: 10px;">Hotkey: Press 'B' key during fight</div>
   </div>
 
   <!-- MEME PANEL (Main Menu) -->
@@ -2852,8 +2874,37 @@
       const modal = document.getElementById('help-modal');
       if (modal) {
         modal.classList.remove('hidden');
+        const socialsPanel = document.getElementById('help-socials-panel');
+        if (socialsPanel) socialsPanel.classList.add('hidden');
+        const socialsBtn = document.getElementById('btn-help-socials');
+        if (socialsBtn) socialsBtn.textContent = 'SOCIALS ▾';
+        const socialsAudio = document.getElementById('help-socials-audio');
+        if (socialsAudio) {
+          socialsAudio.pause();
+          socialsAudio.currentTime = 0;
+        }
         const video = modal.querySelector('video');
         if (video) video.play().catch(e => console.log(e));
+      }
+    };
+
+    window.toggleHelpSocials = () => {
+      const panel = document.getElementById('help-socials-panel');
+      const btn = document.getElementById('btn-help-socials');
+      const audio = document.getElementById('help-socials-audio');
+      if (!panel || !btn) return;
+
+      const willExpand = panel.classList.contains('hidden');
+      if (willExpand) {
+        panel.classList.remove('hidden');
+        btn.textContent = 'SOCIALS ▴';
+        if (audio) {
+          audio.currentTime = 0;
+          audio.play().catch(() => {});
+        }
+      } else {
+        panel.classList.add('hidden');
+        btn.textContent = 'SOCIALS ▾';
       }
     };
 
@@ -2862,6 +2913,15 @@
       const modal = document.getElementById('help-modal');
       if (modal) {
         modal.classList.add('hidden');
+        const panel = document.getElementById('help-socials-panel');
+        if (panel) panel.classList.add('hidden');
+        const btn = document.getElementById('btn-help-socials');
+        if (btn) btn.textContent = 'SOCIALS ▾';
+        const audio = document.getElementById('help-socials-audio');
+        if (audio) {
+          audio.pause();
+          audio.currentTime = 0;
+        }
         const video = modal.querySelector('video');
         if (video) video.pause();
       }

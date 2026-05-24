@@ -468,7 +468,7 @@ export async function showWalletConnect(options = {}) {
     txOverlay.style.alignItems = 'center';
     txOverlay.style.justifyContent = 'center';
     txOverlay.style.color = 'white';
-    txOverlay.style.fontFamily = 'monospace';
+    txOverlay.style.fontFamily = "var(--font-print, 'Press Start 2P', system-ui, sans-serif)";
     txOverlay.style.textAlign = 'center';
     txOverlay.style.padding = '20px';
     txOverlay.innerHTML = `
@@ -566,7 +566,7 @@ export async function showWalletConnect(options = {}) {
         border-radius: 8px !important;
         color: #fff !important;
         padding: 6px 12px !important;
-        font-family: inherit !important;
+        font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif) !important;
         font-size: 11px !important;
         text-align: center !important;
         width: 160px !important;
@@ -602,7 +602,7 @@ export async function showWalletConnect(options = {}) {
         border-radius: 8px;
         color: #000;
         cursor: pointer;
-        font-family: inherit;
+        font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
         font-size: 9px;
         font-weight: bold;
         padding: 6px 10px;
@@ -643,7 +643,7 @@ export async function showWalletConnect(options = {}) {
   // Generate profile avatar HTML
   const avatarSrc = profile.avatar || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="%2314f195" fill-opacity="0.1" stroke="%2314f195" stroke-width="2"/><path d="M50 30a12 12 0 1 0 0 24 12 12 0 1 0 0-24zm0 28c-18 0-30 10-30 20v4h60v-4c0-10-12-20-30-20z" fill="%2314f195"/></svg>';
   modal.innerHTML = `
-    <div style="color: white; font-family: 'Shojumaru', 'Press Start 2P', sans-serif; text-align: center; max-height: 80vh; overflow-y: auto; padding-right: 5px;">
+    <div style="color: white; font-family: var(--font-display, 'Shojumaru', 'Press Start 2P', sans-serif); text-align: center; max-height: 80vh; overflow-y: auto; padding-right: 5px;">
       
       <!-- HEADER -->
       <h3 style="color: var(--neon-green); margin-bottom: 15px; font-size: 14px; letter-spacing: 2px; text-shadow: 0 0 8px rgba(20,241,149,0.3);">👤 USER FIGHTER PROFILE</h3>
@@ -673,7 +673,7 @@ export async function showWalletConnect(options = {}) {
         </div>
         
         ${profile.walletConnected ? `
-          <div style="background: rgba(0,194,255,0.05); border: 1px solid rgba(0,194,255,0.15); padding: 10px; border-radius: 8px; font-size: 9px; font-family: monospace;">
+          <div style="background: rgba(0,194,255,0.05); border: 1px solid rgba(0,194,255,0.15); padding: 10px; border-radius: 8px; font-size: 9px; font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);">
             <div style="display:flex; justify-content:space-between; margin-bottom: 4px;">
               <span style="color:#aaa;">Address:</span>
               <span style="color:#fff;" title="${profile.walletAddress}">${profile.walletAddress.substring(0, 6)}...${profile.walletAddress.substring(profile.walletAddress.length - 4)}</span>
@@ -714,7 +714,7 @@ export async function showWalletConnect(options = {}) {
             <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; margin-top: 6px;">
               <div style="font-weight:bold; color:var(--neon-blue); font-size: 8px; margin-bottom: 6px;">SYNC ADDRESS (READ-ONLY)</div>
               <div style="display:flex; gap:6px;">
-                <input type="text" id="manual-wallet-input" placeholder="Paste Solana Public Key" style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:4px 8px; color:white; font-family:monospace; font-size:8px;">
+                <input type="text" id="manual-wallet-input" placeholder="Paste Solana Public Key" style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:4px 8px; color:white; font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif); font-size:8px;">
                 <button onclick="window.syncManualSolanaAddress()" style="background:var(--neon-blue); border:none; color:black; font-family:inherit; font-size:8px; font-weight:bold; border-radius:4px; padding:4px 10px; cursor:pointer;">
                   SYNC
                 </button>

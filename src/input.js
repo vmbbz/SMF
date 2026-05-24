@@ -41,12 +41,38 @@ export class InputManager {
 
   addAdapter(adapter) {
     this.adapters.push(adapter);
-    adapter.attach();
+    if (adapter && typeof adapter.attach === 'function') {
+      try {
+        const maybePromise = adapter.attach();
+        if (maybePromise && typeof maybePromise.catch === 'function') {
+          maybePromise.catch(err => {
+            const name = adapter?.constructor?.name || 'UnknownAdapter';
+            console.warn(`[InputManager] ${name} attach failed:`, err);
+          });
+        }
+      } catch (err) {
+        const name = adapter?.constructor?.name || 'UnknownAdapter';
+        console.warn(`[InputManager] ${name} attach threw:`, err);
+      }
+    }
     return this;
   }
 
   removeAdapter(adapter) {
-    adapter.detach();
+    if (adapter && typeof adapter.detach === 'function') {
+      try {
+        const maybePromise = adapter.detach();
+        if (maybePromise && typeof maybePromise.catch === 'function') {
+          maybePromise.catch(err => {
+            const name = adapter?.constructor?.name || 'UnknownAdapter';
+            console.warn(`[InputManager] ${name} detach failed:`, err);
+          });
+        }
+      } catch (err) {
+        const name = adapter?.constructor?.name || 'UnknownAdapter';
+        console.warn(`[InputManager] ${name} detach threw:`, err);
+      }
+    }
     this.adapters = this.adapters.filter(a => a !== adapter);
     return this;
   }

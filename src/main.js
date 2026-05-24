@@ -16,6 +16,21 @@ import { StageMusicManager } from './stage-music.js';
 
 window.generatePersonality = generatePersonality;
 
+const NATIVE_BACKEND_ORIGIN = (typeof window !== 'undefined' && window.__SMF_NATIVE_BACKEND_ORIGIN)
+  ? String(window.__SMF_NATIVE_BACKEND_ORIGIN)
+  : 'https://sticklash.fun';
+
+function toWsOrigin(httpOrigin) {
+  return String(httpOrigin || '')
+    .replace(/^https:\/\//i, 'wss://')
+    .replace(/^http:\/\//i, 'ws://')
+    .replace(/\/+$/, '');
+}
+
+function toHttpOrigin(origin) {
+  return String(origin || '').replace(/\/+$/, '');
+}
+
 // Native Capacitor Initialization (Display Configs & API Interceptor Proxies)
 if (window.Capacitor) {
   try {
@@ -31,18 +46,23 @@ if (window.Capacitor) {
   }
 
   try {
-    // Intercept relative fetch requests and proxy them to the production remote server (https://sticklash.fun)
+    const nativeApiOrigin = toHttpOrigin(NATIVE_BACKEND_ORIGIN);
+    const nativeWsOrigin = toWsOrigin(nativeApiOrigin);
+    window.__SMF_API_ORIGIN = nativeApiOrigin;
+    window.__SMF_WS_ORIGIN = nativeWsOrigin;
+
+    // Intercept relative fetch requests and proxy them to the production remote server
     const originalFetch = window.fetch;
     window.fetch = function(input, init) {
       let url = typeof input === 'string' ? input : (input && input.url ? input.url : '');
       
       if (typeof url === 'string') {
         if (url.startsWith('/api/')) {
-          url = 'https://sticklash.fun' + url;
+          url = nativeApiOrigin + url;
         } else if (url.startsWith('https://localhost/api/')) {
-          url = url.replace('https://localhost', 'https://sticklash.fun');
+          url = url.replace('https://localhost', nativeApiOrigin);
         } else if (url.startsWith('http://localhost/api/')) {
-          url = url.replace('http://localhost', 'https://sticklash.fun');
+          url = url.replace('http://localhost', nativeApiOrigin);
         }
       }
 
@@ -59,14 +79,14 @@ if (window.Capacitor) {
     window.EventSource = function(url, configuration) {
       if (typeof url === 'string') {
         if (url.startsWith('/api/')) {
-          url = 'https://sticklash.fun' + url;
+          url = nativeApiOrigin + url;
         } else if (url.startsWith('https://localhost/api/')) {
-          url = url.replace('https://localhost', 'https://sticklash.fun');
+          url = url.replace('https://localhost', nativeApiOrigin);
         }
       }
       return new OriginalEventSource(url, configuration);
     };
-    console.log('[Native] Global Fetch & EventSource proxies established to https://sticklash.fun.');
+    console.log(`[Native] Global Fetch/EventSource proxies -> ${nativeApiOrigin} | WS origin -> ${nativeWsOrigin}`);
   } catch (e) {
     console.warn('[Native] Failed to establish API interceptor proxies:', e);
   }
@@ -402,6 +422,8 @@ hideFightSceneUi();
 let activeAdapters = [];
 // Track active peer connection for multiplayer cleanup
 let peerConnection = null;
+let multiplayerFightStarting = false;
+let multiplayerRoundOverHandled = false;
 
 /** Show a screen by name, hiding all others */
 function showScreen(name) {
@@ -475,17 +497,21 @@ function createInput(playerNum, modeIdx, providerIdx, character = null) {
 
 /** Clean up all active adapters */
 async function cleanupAdapters() {
-  for (const adapter of activeAdapters) {
+  const adaptersToCleanup = Array.isArray(activeAdapters) ? [...activeAdapters] : [];
+  for (const adapter of adaptersToCleanup) {
     if (adapter.detach) await adapter.detach();
   }
   activeAdapters = [];
 
   // Reset dynamic Voice Control toggling state
   if (window.activeVoiceAdapter) {
-    try {
-      await window.activeVoiceAdapter.detach();
-    } catch (e) {
-      console.warn('[Cleanup] Voice adapter detach failed:', e);
+    const isManagedByActiveList = adaptersToCleanup.includes(window.activeVoiceAdapter);
+    if (!isManagedByActiveList) {
+      try {
+        await window.activeVoiceAdapter.detach();
+      } catch (e) {
+        console.warn('[Cleanup] Voice adapter detach failed:', e);
+      }
     }
     window.activeVoiceAdapter = null;
   }
@@ -502,6 +528,14 @@ function showOnboarding() {
   if (game) { game.running = false; game = null; }
   cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
+  stopRoomPolling();
+  stopWaitingInArena();
+  stopMatchmakingPoll();
+  stopMmSearchTimer();
+  mmPlayerId = null;
+  mmWaitingGame = false;
+  multiplayerFightStarting = false;
+  multiplayerRoundOverHandled = false;
   p1Input = null;
   p2Input = null;
   stageMusic.stopForMenu();
@@ -516,6 +550,14 @@ function showLanding() {
   if (game) { game.running = false; game = null; }
   cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
+  stopRoomPolling();
+  stopWaitingInArena();
+  stopMatchmakingPoll();
+  stopMmSearchTimer();
+  mmPlayerId = null;
+  mmWaitingGame = false;
+  multiplayerFightStarting = false;
+  multiplayerRoundOverHandled = false;
   p1Input = null;
   p2Input = null;
   teardownFightAudio();
@@ -553,7 +595,14 @@ async function startFight() {
   // Preload SFX + wait for all adapters to be ready (mic, WS, etc.)
   const readyPromises = [sfx.preload()];
   for (const adapter of activeAdapters) {
-    if (adapter.waitUntilReady) readyPromises.push(adapter.waitUntilReady());
+    if (adapter.waitUntilReady) {
+      const adapterName = adapter?.constructor?.name || 'Adapter';
+      readyPromises.push(
+        adapter.waitUntilReady(9000).catch(err => {
+          console.warn(`[Startup] ${adapterName} readiness timeout/failure:`, err);
+        })
+      );
+    }
   }
 
   // Start the game loop (renders stage + fighters while waiting)
@@ -885,11 +934,57 @@ safeListener('btn-copy-url', 'click', () => {
 // Room status polling
 // ─────────────────────────────────────────────
 let roomPollTimer = null;
+let roomPollInFlight = false;
+let roomPollErrorStreak = 0;
+let roomPollBlockedUntil = 0;
+const ROOM_POLL_INTERVAL_MS = 2000;
 
 function stopRoomPolling() {
   if (roomPollTimer) {
     clearInterval(roomPollTimer);
     roomPollTimer = null;
+  }
+  roomPollInFlight = false;
+  roomPollErrorStreak = 0;
+  roomPollBlockedUntil = 0;
+}
+
+async function pollRoomStatusOnce(code) {
+  if (!code || roomPollInFlight) return;
+  if (Date.now() < roomPollBlockedUntil) return;
+
+  roomPollInFlight = true;
+  try {
+    const activeCode = localStorage.getItem('sf_roomCode');
+    if (!activeCode || activeCode !== code) {
+      stopRoomPolling();
+      return;
+    }
+
+    const resp = await fetch(`/api/room/status?code=${encodeURIComponent(code)}`);
+    if (!resp.ok) {
+      roomPollErrorStreak += 1;
+      if (roomPollErrorStreak >= 3) {
+        const backoffMs = Math.min(1000 * Math.pow(2, roomPollErrorStreak - 2), 8000);
+        roomPollBlockedUntil = Date.now() + backoffMs;
+      }
+      console.warn('[room-poll] Status check failed:', resp.status);
+      return;
+    }
+
+    roomPollErrorStreak = 0;
+    roomPollBlockedUntil = 0;
+    const data = await resp.json();
+    await handleRoomStatusUpdate(data);
+  } catch (err) {
+    roomPollErrorStreak += 1;
+    if (roomPollErrorStreak >= 3) {
+      const backoffMs = Math.min(1000 * Math.pow(2, roomPollErrorStreak - 2), 8000);
+      roomPollBlockedUntil = Date.now() + backoffMs;
+    }
+    console.warn('[room-poll] Error:', err);
+  } finally {
+    roomPollInFlight = false;
   }
 }
 
@@ -898,22 +993,13 @@ function startRoomPolling() {
   const code = localStorage.getItem('sf_roomCode');
   if (!code) return;
 
-  roomPollTimer = setInterval(async () => {
-    try {
-      const resp = await fetch(`/api/room/status?code=${encodeURIComponent(code)}`);
-      if (!resp.ok) {
-        console.warn('[room-poll] Status check failed:', resp.status);
-        return;
-      }
-      const data = await resp.json();
-      handleRoomStatusUpdate(data);
-    } catch (err) {
-      console.warn('[room-poll] Error:', err);
-    }
-  }, 2000);
+  void pollRoomStatusOnce(code);
+  roomPollTimer = setInterval(() => {
+    void pollRoomStatusOnce(code);
+  }, ROOM_POLL_INTERVAL_MS);
 }
 
-function handleRoomStatusUpdate(data) {
+async function handleRoomStatusUpdate(data) {
   const myNum = localStorage.getItem('sf_playerNum');
 
   if (data.status === 'selecting' && (state === 'roomLobby' || state === 'victoryOverlay' || state === 'matchResults')) {
@@ -925,11 +1011,11 @@ function handleRoomStatusUpdate(data) {
     // Opponent confirmed — transition from waiting arena to real fight
     stopRoomPolling();
     stopWaitingInArena();
-    startMultiplayerFight(data);
+    await startMultiplayerFight(data);
   } else if (data.status === 'fighting' && state !== 'fighting') {
     // Both controllers confirmed — start the fight (normal path)
     stopRoomPolling();
-    startMultiplayerFight(data);
+    await startMultiplayerFight(data);
   } else if (data.status === 'finished' && state === 'waitingInArena') {
     // Forfeit — opponent didn't pick a controller in time
     stopRoomPolling();
@@ -1079,7 +1165,7 @@ safeListener('btn-ctrl-confirm', 'click', async () => {
     const data = await resp.json();
     if (data.bothReady) {
       stopRoomPolling();
-      startMultiplayerFight(data);
+      await startMultiplayerFight(data);
     } else {
       // First controller confirmed — enter the arena and wait for opponent
       startWaitingInArena(data.controllerWaitDeadline);
@@ -1242,147 +1328,183 @@ function stopWaitingInArena() {
 }
 
 /** Start a multiplayer fight using the locally selected controller */
-function startMultiplayerFight(_roomData) {
+async function startMultiplayerFight(_roomData) {
+  if (multiplayerFightStarting) {
+    console.log('[multiplayer] Fight startup already in progress, skipping duplicate call');
+    return;
+  }
+  multiplayerFightStarting = true;
+  multiplayerRoundOverHandled = false;
+
   const myNum = parseInt(localStorage.getItem('sf_playerNum') || '1', 10);
   const roomCode = localStorage.getItem('sf_roomCode');
   const playerId = localStorage.getItem('sf_playerId');
 
-  state = 'fighting';
-  hideAllScreens();
-  if (canvas && canvas.classList) canvas.classList.add('active');
-  resize();
-  setLandingAudioButtonVisible(false);
-  setFightDockVisible(true);
-  prepareFightAudio();
+  try {
+    stopRoomPolling();
+    stopWaitingInArena();
 
-  const fightStripEl = document.getElementById('fight-trending-strip');
-  if (fightStripEl) fightStripEl.style.display = 'block';
+    if (game) {
+      game.running = false;
+      game.roundOver = true;
+    }
+    if (peerConnection) {
+      peerConnection.close();
+      peerConnection = null;
+    }
+    await cleanupAdapters();
 
-  // Create input for local player based on room controller selection
-  const localInput = createInput(myNum, roomModeIdx, roomProviderIdx);
+    state = 'fighting';
+    hideAllScreens();
+    if (canvas && canvas.classList) canvas.classList.add('active');
+    resize();
+    setLandingAudioButtonVisible(false);
+    setFightDockVisible(true);
+    prepareFightAudio();
 
-  // Remote player gets an InputManager with a RemoteInputAdapter
-  // that receives inputs from the peer via WebRTC data channel
-  const remoteInput = new InputManager();
-  const remoteAdapter = new RemoteInputAdapter();
-  remoteInput.addAdapter(remoteAdapter);
+    const fightStripEl = document.getElementById('fight-trending-strip');
+    if (fightStripEl) fightStripEl.style.display = 'block';
 
-  const myInput = myNum === 1 ? localInput : remoteInput;
-  const opInput = myNum === 1 ? remoteInput : localInput;
+    // Create input for local player based on room controller selection
+    const localInput = createInput(myNum, roomModeIdx, roomProviderIdx);
 
-  const myLabel = getPlayerLabel(roomModeIdx, roomProviderIdx);
-  const opLabel = 'Remote';
+    // Remote player gets an InputManager with a RemoteInputAdapter
+    // that receives inputs from the peer via WebRTC data channel
+    const remoteInput = new InputManager();
+    const remoteAdapter = new RemoteInputAdapter();
+    remoteInput.addAdapter(remoteAdapter);
 
-  const p1Label = myNum === 1 ? myLabel : opLabel;
-  const p2Label = myNum === 1 ? opLabel : myLabel;
+    const myInput = myNum === 1 ? localInput : remoteInput;
+    const opInput = myNum === 1 ? remoteInput : localInput;
 
-  // Preload SFX + adapters
-  const readyPromises = [sfx.preload()];
-  for (const adapter of activeAdapters) {
-    if (adapter.waitUntilReady) readyPromises.push(adapter.waitUntilReady());
-  }
+    const myLabel = getPlayerLabel(roomModeIdx, roomProviderIdx);
+    const opLabel = 'Remote';
 
-  game = new Game(canvas, myInput, opInput, sfx, { p1Label, p2Label, stageMusic });
-  game.start();
+    const p1Label = myNum === 1 ? myLabel : opLabel;
+    const p2Label = myNum === 1 ? opLabel : myLabel;
 
-  for (const adapter of activeAdapters) {
-    if (adapter.setGameRef) adapter.setGameRef(game);
-  }
-
-  window._game = game;
-
-  // Establish WebRTC peer connection + game WebSocket
-  if (roomCode && playerId) {
-    peerConnection = new PeerConnection(roomCode, playerId, myNum);
-
-    // Client-side prediction with rollback reconciliation
-    const predictionManager = new PredictionManager(game, myNum);
-    game.predictionManager = predictionManager;
-
-    // Feed remote peer inputs into the RemoteInputAdapter
-    peerConnection.onRemoteInput((msg) => {
-      remoteAdapter.receiveInput(msg);
-    });
-
-    // Handle authoritative server state — prediction manager reconciles
-    peerConnection.onServerState((msg) => {
-      if (msg.type === 'state' && predictionManager) {
-        predictionManager.applyServerState(msg);
+    // Preload SFX + adapters
+    const readyPromises = [sfx.preload()];
+    for (const adapter of activeAdapters) {
+      if (adapter.waitUntilReady) {
+        const adapterName = adapter?.constructor?.name || 'Adapter';
+        readyPromises.push(
+          adapter.waitUntilReady(9000).catch(err => {
+            console.warn(`[Multiplayer Startup] ${adapterName} readiness timeout/failure:`, err);
+          })
+        );
       }
-      if (msg.type === 'round_over' && game) {
-        game.roundOver = true;
-        handleMultiplayerRoundOver(msg);
-      }
-      if (msg.type === 'room_expired') {
-        handleRoomExpired();
-      }
-    });
+    }
 
-    peerConnection.connect();
+    game = new Game(canvas, myInput, opInput, sfx, { p1Label, p2Label, stageMusic });
+    game.start();
 
-    // 1. Mark this as a multiplayer match
-    window.isMultiplayerMatch = true;
+    window._game = game;
+    window.game = game;
+    window.currentGame = game;
 
-    // 2. Fetch and apply local player avatar from OIDC claims
-    try {
-      const profileStr = localStorage.getItem('smf_user_profile');
-      if (profileStr) {
-        const profile = JSON.parse(profileStr);
-        if (profile) {
-          const localFighter = myNum === 1 ? game.p1 : game.p2;
-          if (localFighter) {
-            if (profile.avatar) {
-              const img = new Image();
-              img.crossOrigin = 'anonymous';
-              img.onload = () => { localFighter.headImage = img; };
-              img.src = profile.avatar;
-            }
-            if (profile.name) {
-              if (myNum === 1) game.p1Label = profile.name;
-              else game.p2Label = profile.name;
+    for (const adapter of activeAdapters) {
+      if (adapter.setGameRef) adapter.setGameRef(game);
+    }
+
+    // Establish WebRTC peer connection + game WebSocket
+    if (roomCode && playerId) {
+      peerConnection = new PeerConnection(roomCode, playerId, myNum);
+
+      // Client-side prediction with rollback reconciliation
+      const predictionManager = new PredictionManager(game, myNum);
+      game.predictionManager = predictionManager;
+
+      // Feed remote peer inputs into the RemoteInputAdapter
+      peerConnection.onRemoteInput((msg) => {
+        remoteAdapter.receiveInput(msg);
+      });
+
+      // Handle authoritative server state — prediction manager reconciles
+      peerConnection.onServerState((msg) => {
+        if (msg.type === 'state' && predictionManager) {
+          predictionManager.applyServerState(msg);
+        }
+        if (msg.type === 'round_over' && game) {
+          game.roundOver = true;
+          void handleMultiplayerRoundOver(msg);
+        }
+        if (msg.type === 'room_expired') {
+          handleRoomExpired();
+        }
+      });
+
+      peerConnection.connect();
+
+      // 1. Mark this as a multiplayer match
+      window.isMultiplayerMatch = true;
+
+      // 2. Fetch and apply local player avatar from OIDC claims
+      try {
+        const profileStr = localStorage.getItem('smf_user_profile');
+        if (profileStr) {
+          const profile = JSON.parse(profileStr);
+          if (profile) {
+            const localFighter = myNum === 1 ? game.p1 : game.p2;
+            if (localFighter) {
+              if (profile.avatar) {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = () => { localFighter.headImage = img; };
+                img.src = profile.avatar;
+              }
+              if (profile.name) {
+                if (myNum === 1) game.p1Label = profile.name;
+                else game.p2Label = profile.name;
+              }
             }
           }
         }
+      } catch (e) {
+        console.error('[Multiplayer] Failed to load local profile avatar:', e);
       }
-    } catch (e) {
-      console.error('[Multiplayer] Failed to load local profile avatar:', e);
+
+      // 3. Listen to remote profile metadata exchange to apply remote head and label
+      peerConnection.onRemoteProfile((profile) => {
+        console.log('[Multiplayer] Remote profile received:', profile);
+        window.opponentProfile = profile;
+        const remoteFighter = myNum === 1 ? game.p2 : game.p1;
+        if (remoteFighter) {
+          if (profile.avatar) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => { remoteFighter.headImage = img; };
+            img.src = profile.avatar;
+          }
+          if (profile.name) {
+            if (myNum === 1) game.p2Label = profile.name;
+            else game.p1Label = profile.name;
+          }
+        }
+      });
+
+      // Tap into localInput.endFrame to buffer inputs for replay and send
+      // to peer + server. Captures the exact actions the game loop just consumed.
+      const origEndFrame = localInput.endFrame.bind(localInput);
+      localInput.endFrame = () => {
+        if (peerConnection) {
+          const actions = localInput.getActions();
+          const pressed = localInput.getJustPressed();
+          const seq = predictionManager.nextSeq();
+          predictionManager.bufferInput(seq, actions, pressed, game._dt);
+          peerConnection.sendInput(actions, pressed, seq);
+        }
+        origEndFrame();
+      };
     }
 
-    // 3. Listen to remote profile metadata exchange to apply remote head and label
-    peerConnection.onRemoteProfile((profile) => {
-      console.log('[Multiplayer] Remote profile received:', profile);
-      window.opponentProfile = profile;
-      const remoteFighter = myNum === 1 ? game.p2 : game.p1;
-      if (remoteFighter) {
-        if (profile.avatar) {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => { remoteFighter.headImage = img; };
-          img.src = profile.avatar;
-        }
-        if (profile.name) {
-          if (myNum === 1) game.p2Label = profile.name;
-          else game.p1Label = profile.name;
-        }
-      }
-    });
-
-    // Tap into localInput.endFrame to buffer inputs for replay and send
-    // to peer + server. Captures the exact actions the game loop just consumed.
-    const origEndFrame = localInput.endFrame.bind(localInput);
-    localInput.endFrame = () => {
-      if (peerConnection) {
-        const actions = localInput.getActions();
-        const pressed = localInput.getJustPressed();
-        const seq = predictionManager.nextSeq();
-        predictionManager.bufferInput(seq, actions, pressed, game._dt);
-        peerConnection.sendInput(actions, pressed, seq);
-      }
-      origEndFrame();
-    };
+    await Promise.all(readyPromises);
+    if (game) game.showFightAlert();
+  } catch (err) {
+    console.error('[multiplayer] Failed to bootstrap fight:', err);
+  } finally {
+    multiplayerFightStarting = false;
   }
-
-  Promise.all(readyPromises).then(() => game.showFightAlert());
 }
 
 // ─────────────────────────────────────────────
@@ -1423,8 +1545,16 @@ function handleControllerForfeit(data) {
 
 /** Handle the round_over message from the server */
 async function handleMultiplayerRoundOver(msg) {
+  if (multiplayerRoundOverHandled) {
+    console.log('[multiplayer] Ignoring duplicate round_over payload');
+    return;
+  }
+  multiplayerRoundOverHandled = true;
+
   // Brief delay so players see the KO on canvas before switching screens
   await new Promise(r => setTimeout(r, 2000));
+
+  const finishedGame = game;
 
   // Stop the game and clean up peer connection
   if (game) { game.running = false; }
@@ -1452,7 +1582,7 @@ async function handleMultiplayerRoundOver(msg) {
       winnerEl.textContent = 'YOU WIN!';
       winnerEl.classList.add(myNum === 1 ? 'p1-wins' : 'p2-wins');
       // Track opponent symbol for victory capture
-      window.lastOpponentSymbol = game && game.p2 && game.p2.tokenData ? game.p2.tokenData.symbol : 'MEME';
+      window.lastOpponentSymbol = finishedGame && finishedGame.p2 && finishedGame.p2.tokenData ? finishedGame.p2.tokenData.symbol : 'MEME';
       // Call our new victory function
       if (window.captureVictory) {
         await window.captureVictory('player');
@@ -1831,7 +1961,7 @@ async function handleMatchFound(data) {
   roomProviderIdx = mmProviderIdx;
 
   mmPlayerId = null;
-  startMultiplayerFight(data);
+  await startMultiplayerFight(data);
 }
 
 // Cancel button
@@ -2917,7 +3047,7 @@ window.activeVoiceAdapter = null;
 window.isVoiceControlActive = false;
 
 window.toggleVoiceControl = async function(forceState) {
-  const g = window.currentGame;
+  const g = window.currentGame || window._game || window.game;
   if (!g || !g.p1Input) {
     console.warn('[VoiceToggle] No active game or P1 input found.');
     return;
@@ -2938,21 +3068,36 @@ window.toggleVoiceControl = async function(forceState) {
 
     try {
       if (!window.activeVoiceAdapter) {
-        window.activeVoiceAdapter = new VoiceAdapter(1);
+        const existingVoice = (g.p1Input.adapters || []).find(
+          a => a && a.constructor && a.constructor.name === 'VoiceAdapter'
+        );
+        if (existingVoice) {
+          window.activeVoiceAdapter = existingVoice;
+        } else {
+          window.activeVoiceAdapter = new VoiceAdapter(1);
+        }
       }
 
       if (window.activeVoiceAdapter.setGameRef) {
         window.activeVoiceAdapter.setGameRef(g);
       }
 
-      // Initialize the audio stream & connect WebSocket
-      await window.activeVoiceAdapter.attach();
-      await window.activeVoiceAdapter.waitUntilReady();
+      const adapters = g.p1Input.adapters || [];
+      const alreadyRegistered = adapters.includes(window.activeVoiceAdapter);
+
+      // Initialize mic + STT if not already live.
+      if (!alreadyRegistered || !window.activeVoiceAdapter.ready) {
+        const needsAttach = !window.activeVoiceAdapter.mediaStream;
+        if (needsAttach) {
+          await window.activeVoiceAdapter.attach();
+        }
+        await window.activeVoiceAdapter.waitUntilReady(9000);
+      }
 
       // Register the adapter dynamically alongside manual keyboard/joystick
-      const adapters = g.p1Input.adapters || [];
-      if (!adapters.includes(window.activeVoiceAdapter)) {
-        g.p1Input.addAdapter(window.activeVoiceAdapter);
+      if (!alreadyRegistered) {
+        // Adapter is already attached above; avoid double attach through InputManager.addAdapter().
+        adapters.push(window.activeVoiceAdapter);
       }
 
       window.isVoiceControlActive = true;
@@ -2980,11 +3125,32 @@ window.toggleVoiceControl = async function(forceState) {
       if (micBtn) {
         micBtn.classList.remove('loading', 'active');
         const tooltip = micBtn.querySelector('.mic-tooltip');
-        if (tooltip) tooltip.innerText = 'MIC DENIED / ERROR';
+        if (tooltip) {
+          const code = err && err.code ? String(err.code) : '';
+          if (code === 'VOICE_MIC_PERMISSION_DENIED') {
+            tooltip.innerText = 'MIC PERMISSION DENIED';
+          } else if (code === 'VOICE_MEDIA_UNSUPPORTED') {
+            tooltip.innerText = 'MIC NOT SUPPORTED';
+          } else if (code === 'VOICE_MIC_NOT_FOUND') {
+            tooltip.innerText = 'NO MIC DETECTED';
+          } else if (code === 'VOICE_STT_SERVER_CONFIG') {
+            tooltip.innerText = 'VOICE BACKEND OFFLINE';
+          } else if (code === 'VOICE_READY_TIMEOUT' || code === 'VOICE_STT_SOCKET_CLOSED') {
+            tooltip.innerText = 'VOICE NETWORK TIMEOUT';
+          } else {
+            tooltip.innerText = 'MIC / VOICE ERROR';
+          }
+        }
         
         // Shake / red flash error warning
         micBtn.style.borderColor = 'rgba(255, 0, 80, 0.9)';
-        setTimeout(() => { micBtn.style.borderColor = ''; }, 1500);
+        setTimeout(() => {
+          micBtn.style.borderColor = '';
+          const tip = micBtn.querySelector('.mic-tooltip');
+          if (tip && !window.isVoiceControlActive) {
+            tip.innerText = 'TOGGLE VOICE CONTROL [V]';
+          }
+        }, 1800);
       }
     }
   } else {
@@ -2993,7 +3159,7 @@ window.toggleVoiceControl = async function(forceState) {
     console.log('[VoiceToggle] Deactivating Voice Control...');
 
     if (g.p1Input && window.activeVoiceAdapter) {
-      g.p1Input.removeAdapter(window.activeVoiceAdapter);
+      g.p1Input.adapters = (g.p1Input.adapters || []).filter(a => a !== window.activeVoiceAdapter);
     }
 
     if (window.activeVoiceAdapter) {

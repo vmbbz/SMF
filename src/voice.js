@@ -71,6 +71,31 @@ const STT_RECONNECT_BASE_DELAY = 1000; // ms
 const STT_RECONNECT_MAX_DELAY = 10000; // ms
 const STT_RECONNECT_JITTER = 350; // ms
 const STT_RECONNECT_CAP_ATTEMPTS = 10;
+const STT_READY_TIMEOUT_MS = 9000;
+
+function resolveWsUrl(pathname) {
+  const path = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  const wsOriginRaw = typeof window !== 'undefined' ? String(window.__SMF_WS_ORIGIN || '').trim() : '';
+  const apiOriginRaw = typeof window !== 'undefined' ? String(window.__SMF_API_ORIGIN || '').trim() : '';
+  let origin = wsOriginRaw;
+  if (!origin && apiOriginRaw) {
+    origin = apiOriginRaw
+      .replace(/^https:\/\//i, 'wss://')
+      .replace(/^http:\/\//i, 'ws://');
+  }
+  if (!origin) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    origin = `${protocol}//${window.location.host}`;
+  }
+  return `${origin.replace(/\/+$/, '')}${path}`;
+}
+
+function createVoiceError(message, code, cause = null) {
+  const err = new Error(message);
+  err.code = code;
+  if (cause) err.cause = cause;
+  return err;
+}
 
 export class VoiceAdapter {
   constructor(player) {
@@ -85,6 +110,7 @@ export class VoiceAdapter {
     this.ready = false;
     this._game = null;
     this._readyResolve = null;
+    this._readyReject = null;
     this._audioBuffer = [];
     this._messages = [];       // conversation history for LLM
     this._llmBusy = false;     // prevent overlapping LLM calls
@@ -103,17 +129,40 @@ export class VoiceAdapter {
     this._isClosing = false;
     this._reconnectAttempts = 0;
     this._reconnectDelay = STT_RECONNECT_BASE_DELAY;
+    this._readyResolve = null;
+    this._readyReject = null;
+
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      throw createVoiceError(
+        'This device/browser does not expose MediaDevices.getUserMedia().',
+        'VOICE_MEDIA_UNSUPPORTED'
+      );
+    }
 
     // 1. Request mic FIRST (needs user gesture context)
     console.log(`[Voice P${this.player}] Requesting microphone...`);
-    this.mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        sampleRate: 16000,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
+    try {
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          sampleRate: 16000,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+    } catch (err) {
+      const domName = err && err.name ? String(err.name) : 'UnknownError';
+      if (domName === 'NotAllowedError' || domName === 'SecurityError') {
+        throw createVoiceError('Microphone permission was denied by the user or system policy.', 'VOICE_MIC_PERMISSION_DENIED', err);
+      }
+      if (domName === 'NotFoundError' || domName === 'OverconstrainedError') {
+        throw createVoiceError('No compatible microphone input was found on this device.', 'VOICE_MIC_NOT_FOUND', err);
+      }
+      if (domName === 'NotReadableError') {
+        throw createVoiceError('Microphone is busy or unavailable (possibly in use by another app).', 'VOICE_MIC_NOT_READABLE', err);
+      }
+      throw createVoiceError(`Microphone initialization failed (${domName}).`, 'VOICE_MIC_INIT_FAILED', err);
+    }
     console.log(`[Voice P${this.player}] Microphone granted, starting capture`);
 
     this.audioContext = new AudioContext({ sampleRate: 16000 });
@@ -160,8 +209,7 @@ export class VoiceAdapter {
     this._clearReconnectTimer();
     this._disposeSttSocket();
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws/stt`;
+    const wsUrl = resolveWsUrl('/ws/stt');
     console.log(`[Voice P${this.player}] Connecting to STT WebSocket at ${wsUrl} (reconnect attempt: ${this._reconnectAttempts})`);
 
     const ws = new WebSocket(wsUrl);
@@ -199,6 +247,17 @@ export class VoiceAdapter {
       console.log(`[Voice P${this.player}] STT WebSocket closed: code=${e.code}`);
       this.ready = false;
       this.sttWs = null;
+
+      // If we were still waiting for initial readiness, fail fast with a useful cause.
+      if (this._readyReject && !this._isClosing) {
+        const reason = e && e.reason ? ` ${e.reason}` : '';
+        const closeCode = e && typeof e.code === 'number' ? e.code : 0;
+        const code = closeCode === 4000 ? 'VOICE_STT_SERVER_CONFIG' : 'VOICE_STT_SOCKET_CLOSED';
+        const reject = this._readyReject;
+        this._readyResolve = null;
+        this._readyReject = null;
+        reject(createVoiceError(`Speech socket closed before ready (code ${closeCode}).${reason}`, code));
+      }
 
       if (!this._isClosing) {
         this._scheduleReconnect();
@@ -238,6 +297,8 @@ export class VoiceAdapter {
     const ws = this.sttWs;
     this.sttWs = null;
     this.ready = false;
+    this._readyResolve = null;
+    this._readyReject = null;
     try {
       ws.onopen = null;
       ws.onmessage = null;
@@ -476,9 +537,20 @@ export class VoiceAdapter {
   }
 
   /** Returns a promise that resolves when mic + STT are ready */
-  waitUntilReady() {
+  waitUntilReady(timeoutMs = STT_READY_TIMEOUT_MS) {
     if (this.ready) return Promise.resolve();
-    return new Promise(resolve => { this._readyResolve = resolve; });
+    return new Promise((resolve, reject) => {
+      this._readyResolve = resolve;
+      this._readyReject = reject;
+      if (timeoutMs > 0) {
+        setTimeout(() => {
+          if (this.ready || this._readyResolve !== resolve) return;
+          this._readyResolve = null;
+          this._readyReject = null;
+          reject(createVoiceError(`Timed out waiting for speech connection (${timeoutMs}ms).`, 'VOICE_READY_TIMEOUT'));
+        }, timeoutMs);
+      }
+    });
   }
 
   /** Send buffered audio chunks, keeping only the last ~4 seconds */
@@ -503,6 +575,7 @@ export class VoiceAdapter {
     if (this._readyResolve) {
       this._readyResolve();
       this._readyResolve = null;
+      this._readyReject = null;
     }
   }
 
@@ -557,6 +630,8 @@ export class VoiceAdapter {
     this._disposeSttSocket();
     this._sttSocketGeneration++;
     this.ready = false;
+    this._readyResolve = null;
+    this._readyReject = null;
   }
 
   setFacing(facing) {

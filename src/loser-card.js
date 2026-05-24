@@ -30,7 +30,7 @@ window.renderRichCard = function(token, isWinner) {
     if (!catchphraseEl) {
       catchphraseEl = document.createElement('div');
       catchphraseEl.id = 'rich-catchphrase';
-      catchphraseEl.style.cssText = `font-style:italic;color:${isWinner?'var(--neon-green)':'var(--neon-pink)'};font-size:12px;margin-top:15px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.2);`;
+      catchphraseEl.style.cssText = `font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);font-style:italic;color:${isWinner?'var(--neon-green)':'var(--neon-pink)'};font-size:12px;margin-top:15px;padding-top:10px;border-top:1px dashed rgba(255,255,255,0.2);`;
       content.parentElement.appendChild(catchphraseEl);
     }
     
@@ -70,12 +70,12 @@ window.switchRichTab = function(tabIndex) {
         <img src="${token.logoURI || 'assets/smf-logo.png'}" class="banner" style="width:80px;height:80px;border-radius:50%;border:2px solid ${mainColor};margin-bottom:10px;object-fit:cover;">
         <h2 style="font-size:18px;font-weight:900;color:#fff;margin-bottom:10px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">$${(token.symbol || 'MEME').toUpperCase()} <span class="loser-badge" style="background:${mainColor};color:#000;font-size:9px;padding:2px 6px;border-radius:4px;vertical-align:middle;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">${badgeText}</span></h2>
         
-        <div class="power-rating" style="font-size:11px;color:var(--neon-blue);margin-bottom:15px;background:rgba(0,212,255,0.1);padding:6px;border-radius:6px;border:1px dashed var(--neon-blue);font-family:'Shojumaru', 'Press Start 2P', sans-serif;">
+        <div class="power-rating" style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);font-size:11px;color:var(--neon-blue);margin-bottom:15px;background:rgba(0,212,255,0.1);padding:6px;border-radius:6px;border:1px dashed var(--neon-blue);">
           <strong>POWER:</strong> 
           <span class="power-value" style="color:#fff;font-weight:bold;font-size:13px;">${calculatePowerLevel(token)}</span>
         </div>
 
-        <div class="market-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:9px;background:rgba(255,255,255,0.05);padding:10px 8px;border-radius:8px;margin-bottom:15px;text-align:left;">
+        <div class="market-grid" style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:9px;background:rgba(255,255,255,0.05);padding:10px 8px;border-radius:8px;margin-bottom:15px;text-align:left;">
           <div style="padding-bottom:5px;"><span style="color:${mainColor};">MCAP</span><br><strong style="font-size:10px;color:#fff;">$${formatCompact(token.marketCap)}</strong></div>
           <div style="padding-bottom:5px;"><span style="color:${mainColor};">24h VOL</span><br><strong style="font-size:10px;color:#fff;">$${formatCompact(token.volume24h)}</strong></div>
           <div style="padding-top:5px;border-top:1px solid rgba(255,255,255,0.05);"><span style="color:${mainColor};">LIQUIDITY</span><br><strong style="font-size:10px;color:#fff;">$${formatCompact(token.liquidity)}</strong></div>
@@ -90,12 +90,12 @@ window.switchRichTab = function(tabIndex) {
         <h3 style="color:var(--neon-blue);font-size:11px;margin-bottom:15px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">Live $${(token.symbol || 'MEME').toUpperCase()} X Feed</h3>
         
         <div id="social-tweets">
-          <div id="tweets-loading" style="color:#888;font-size:10px;text-align:center;">Loading live tweets...</div>
+          <div id="tweets-loading" style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);color:#888;font-size:10px;text-align:center;">Loading live tweets...</div>
         </div>
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:15px;">
-          <button onclick="window.open('https://twitter.com/search?q=%23${(token.symbol || 'MEME').toUpperCase()}', '_blank')" style="background:#1DA1F2;color:#fff;border:none;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;text-align:center;">Search X</button>
-          <button onclick="window.open('https://t.me/share/url?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent('Come fight $' + (token.symbol || 'MEME').toUpperCase() + ' in the Sticklash arena!')}', '_blank')" style="background:#0088cc;color:#fff;border:none;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:inherit;text-align:center;">Share TG</button>
+          <button onclick="window.open('https://twitter.com/search?q=%23${(token.symbol || 'MEME').toUpperCase()}', '_blank')" style="background:#1DA1F2;color:#fff;border:none;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);text-align:center;">Search X</button>
+          <button onclick="window.open('https://t.me/share/url?url=${encodeURIComponent(window.location.href)}&text=${encodeURIComponent('Come fight $' + (token.symbol || 'MEME').toUpperCase() + ' in the Sticklash arena!')}', '_blank')" style="background:#0088cc;color:#fff;border:none;padding:8px;border-radius:8px;font-size:10px;font-weight:bold;cursor:pointer;font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);text-align:center;">Share TG</button>
         </div>
       </div>
     `;
@@ -105,7 +105,7 @@ window.switchRichTab = function(tabIndex) {
     content.innerHTML = `
       <div class="safety-tab" style="animation: punchIn 0.3s ease; text-align: left;">
         <h3 style="color:var(--neon-green);font-size:12px;margin-bottom:15px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">SAFETY CHECK</h3>
-        <div class="rug-score" style="font-size:11px; margin-bottom: 15px; color: #ccc; background:rgba(0,0,0,0.3); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); line-height:1.6;">
+        <div class="rug-score" style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);font-size:11px; margin-bottom: 15px; color: #ccc; background:rgba(0,0,0,0.3); padding:12px; border-radius:8px; border:1px solid rgba(255,255,255,0.1); line-height:1.6;">
           <div style="margin-bottom:5px;"><span style="color:var(--neon-green);font-weight:bold;">Holders:</span> <strong style="color:#fff;">${token.holders || 'N/A'}</strong></div>
           <div style="margin-bottom:5px;"><span style="color:var(--neon-blue);font-weight:bold;">Liquidity:</span> <strong style="color:#fff;">$${formatCompact(token.liquidity)}</strong></div>
           <div style="margin-bottom:5px;">Top Holder %: <strong style="color:#fff;">${Math.max(5, Math.floor(Math.random() * 30))}%</strong></div>
@@ -113,7 +113,7 @@ window.switchRichTab = function(tabIndex) {
         </div>
         <div id="safety-tweets">
           <h4 style="color:var(--neon-blue);font-size:10px;margin-bottom:10px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">Live X $Cashtag Intel</h4>
-          <div id="tweets-loading" style="color:#888;font-size:10px;text-align:center;">Loading signals...</div>
+          <div id="tweets-loading" style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);color:#888;font-size:10px;text-align:center;">Loading signals...</div>
         </div>
       </div>
     `;
@@ -167,7 +167,7 @@ async function loadTweetsIntoContainer(symbol, containerId) {
     if (!container) return;
 
     if (!data.tweets || data.tweets.length === 0) {
-      container.innerHTML = `<div style="color:#888;font-size:10px;text-align:center;">No recent X tweets found for ${cashtag}.</div>`;
+      container.innerHTML = `<div style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);color:#888;font-size:10px;text-align:center;">No recent X tweets found for ${cashtag}.</div>`;
       return;
     }
 
@@ -178,7 +178,7 @@ async function loadTweetsIntoContainer(symbol, containerId) {
     data.tweets.forEach((t, i) => {
       const color = i % 2 === 0 ? 'var(--neon-green)' : 'var(--neon-pink)';
       html += `
-        <div style="background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;font-size:10px;margin-bottom:10px;border-left:3px solid ${color};">
+        <div style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);background:rgba(255,255,255,0.05);padding:10px;border-radius:8px;font-size:10px;margin-bottom:10px;border-left:3px solid ${color};">
           <strong style="color:#fff;">${t.author}</strong><br>
           <span style="color:#ccc;">"${t.text}"</span>
         </div>
@@ -187,6 +187,6 @@ async function loadTweetsIntoContainer(symbol, containerId) {
     container.innerHTML = html;
   } catch (err) {
     const container = document.getElementById(containerId);
-    if (container) container.innerHTML = `<div style="color:#888;font-size:10px;text-align:center;">Failed to load live tweets.</div>`;
+    if (container) container.innerHTML = `<div style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);color:#888;font-size:10px;text-align:center;">Failed to load live tweets.</div>`;
   }
 }

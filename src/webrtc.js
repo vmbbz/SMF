@@ -15,6 +15,23 @@ const WS_RECONNECT_MAX_DELAY = 15000; // ms
 const WS_RECONNECT_JITTER = 350; // ms
 const WS_RECONNECT_CAP_ATTEMPTS = 8;
 
+function resolveWsUrl(pathname) {
+  const path = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  const wsOriginRaw = typeof window !== 'undefined' ? String(window.__SMF_WS_ORIGIN || '').trim() : '';
+  const apiOriginRaw = typeof window !== 'undefined' ? String(window.__SMF_API_ORIGIN || '').trim() : '';
+  let origin = wsOriginRaw;
+  if (!origin && apiOriginRaw) {
+    origin = apiOriginRaw
+      .replace(/^https:\/\//i, 'wss://')
+      .replace(/^http:\/\//i, 'ws://');
+  }
+  if (!origin) {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    origin = `${proto}//${location.host}`;
+  }
+  return `${origin.replace(/\/+$/, '')}${path}`;
+}
+
 /**
  * Manages a WebRTC peer connection + data channel for one multiplayer room,
  * along with the fallback WebSocket to the game server.
@@ -207,8 +224,7 @@ export class PeerConnection {
     this._clearWsReconnectTimer();
     this._disposeWebSocket();
 
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/ws/game/${this.roomCode}?player=${this.playerNum}`;
+    const url = resolveWsUrl(`/ws/game/${this.roomCode}?player=${this.playerNum}`);
     const ws = new WebSocket(url);
     const generation = ++this._wsGeneration;
     this.ws = ws;
