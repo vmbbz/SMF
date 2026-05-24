@@ -9,6 +9,7 @@
 //   overdrive 2.0x+        Purple chaos + 10 hadoukens + P1 levitated 3s
 
 import { PlayerEffects } from './player-effects.js';
+import { tokenDetailsPath } from './api-endpoints.js';
 
 // Tier thresholds (ratio = new_price / baseline_price at fight start)
 // Anything below 1.20x (20% gain) is ignored per product decision.
@@ -313,7 +314,7 @@ export class LiveBoostSystem {
   async _checkBoost() {
     if (!this.tokenMint || this.game.roundOver) return;
     try {
-      const res = await fetch(`/api/token/${this.tokenMint}`);
+      const res = await fetch(tokenDetailsPath(this.tokenMint));
       if (!res.ok) return;
       const fresh = await res.json();
       if (!fresh) return;

@@ -1,5 +1,6 @@
 // wallet-connect.js
 // Redesigned User Profile, 100% Mock-Free Solana Wallet, & Premium Boost Store Modal
+import { tokenDetailsPath } from './src/api-endpoints.js';
 
 // Initialize user profile in localStorage on module load
 export function getProfile() {
@@ -490,7 +491,7 @@ export async function showWalletConnect(options = {}) {
       activeMint = config.smfMint;
       activeRpc = config.solanaRpc;
       
-      const tokenRes = await fetch(`/api/token/${config.smfMint}`);
+      const tokenRes = await fetch(tokenDetailsPath(config.smfMint));
       if (tokenRes.ok) {
         const tokenInfo = await tokenRes.json();
         if (tokenInfo && tokenInfo.price) {

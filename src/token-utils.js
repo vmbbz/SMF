@@ -1,3 +1,5 @@
+import { API_ROUTES, tokenDetailsPath } from './api-endpoints.js';
+
 const CACHE_KEY = 'smf_token_cache';
 const CACHE_TTL = 60000;
 
@@ -18,7 +20,7 @@ export function setCachedToken(mint, data) {
 
 async function getTrendingTokens(count = 8) {
   try {
-    const res = await fetch(`/api/trending?count=${count}`);
+    const res = await fetch(`${API_ROUTES.TRENDING}?count=${count}`);
     const tokens = await res.json();
     return tokens;
   } catch (e) {
@@ -32,7 +34,7 @@ async function getTokenByMint(mint) {
   if (cached) return cached;
 
   try {
-    const res = await fetch(`/api/token/${mint}`);
+    const res = await fetch(tokenDetailsPath(mint));
     const data = await res.json();
     if (!data || !data.mint) throw new Error('Token not found');
     

@@ -119,6 +119,17 @@ BOOST_PACKS: dict[str, dict[str, int | str]] = {
     "chaos": {"boosts": 45, "usd_cents": 500},
 }
 
+MARKET_API_PREFIX = os.environ.get("SMF_MARKET_API_PREFIX", "/api/marketfeed/v2").rstrip("/")
+MARKET_TRENDING_ROUTE = f"{MARKET_API_PREFIX}/trending-scan"
+MARKET_GRADUATES_ROUTE = f"{MARKET_API_PREFIX}/graduate-scan"
+MARKET_TOKEN_ROUTE = f"{MARKET_API_PREFIX}/token-scan/{{mint:str}}"
+ALLOW_LEGACY_MARKET_ENDPOINTS = os.environ.get("SMF_ALLOW_LEGACY_MARKET_ENDPOINTS", "0").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+
 BOOST_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS player_boost_balances (
     wallet_address TEXT PRIMARY KEY,
@@ -2140,19 +2151,42 @@ async def api_boost_consume(request: Request, data: dict[str, Any]) -> dict[str,
         "idempotent": False,
     }
 
-@get("/api/trending")
-async def api_trending(count: int = 12) -> List[Dict[str, Any]]:
+@get(MARKET_TRENDING_ROUTE)
+async def api_market_trending(count: int = 12) -> List[Dict[str, Any]]:
     return await birdeye_service.fetch_trending_tokens(count)
 
-@get("/api/graduates")
-async def api_graduates(count: int = 8) -> List[Dict[str, Any]]:
+@get(MARKET_GRADUATES_ROUTE)
+async def api_market_graduates(count: int = 8) -> List[Dict[str, Any]]:
     return await birdeye_service.fetch_graduated_tokens(count)
 
-@get("/api/token/{mint:str}")
-async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
+@get(MARKET_TOKEN_ROUTE)
+async def api_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
     # mark_hot=True: this endpoint is called by live fights for boost detection.
     # Hot tokens get a 90s TTL (vs 300s for cold) and are prioritised by the warmer.
     return await birdeye_service.get_cached_token(mint, mark_hot=True)
+
+def _assert_legacy_market_endpoint_allowed() -> None:
+    if ALLOW_LEGACY_MARKET_ENDPOINTS:
+        return
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy market endpoint retired. Please upgrade to the latest app build."
+    )
+
+@get("/api/trending")
+async def api_trending(count: int = 12) -> List[Dict[str, Any]]:
+    _assert_legacy_market_endpoint_allowed()
+    return await api_market_trending(count)
+
+@get("/api/graduates")
+async def api_graduates(count: int = 8) -> List[Dict[str, Any]]:
+    _assert_legacy_market_endpoint_allowed()
+    return await api_market_graduates(count)
+
+@get("/api/token/{mint:str}")
+async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
+    _assert_legacy_market_endpoint_allowed()
+    return await api_market_token_details(mint)
 
 @get("/api/proxy/image")
 async def proxy_image(url: str) -> Response:
@@ -3554,6 +3588,9 @@ app = Litestar(
         api_boost_create_intent,
         api_boost_confirm,
         api_boost_consume,
+        api_market_trending,
+        api_market_graduates,
+        api_market_token_details,
         api_trending,
         api_graduates,
         api_token_details,

@@ -13,6 +13,7 @@ import { PeerConnection, RemoteInputAdapter } from './webrtc.js';
 import { PredictionManager } from './prediction.js';
 import { generatePersonality } from './token-utils.js';
 import { StageMusicManager } from './stage-music.js';
+import { API_ROUTES } from './api-endpoints.js';
 
 window.generatePersonality = generatePersonality;
 
@@ -3020,7 +3021,7 @@ window.nextFight = async function() {
   // Priority 3: fetch fresh trending as last resort
   if (!nextToken) {
     try {
-      const res = await fetch('/api/trending?count=12');
+      const res = await fetch(`${API_ROUTES.TRENDING}?count=12`);
       const fresh = await res.json();
       if (Array.isArray(fresh) && fresh.length > 0) {
         window.pumpQueue = fresh.slice(1);
