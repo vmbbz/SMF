@@ -92,32 +92,36 @@ class SolanaMwaPlugin : Plugin() {
         }
 
         scope.launch {
-            val sender = ActivityResultSender(activity)
-            when (val result = walletAdapter.connect(sender)) {
-                is TransactionResult.Success -> {
-                    val account = result.authResult.accounts.firstOrNull()
-                    if (account == null) {
-                        call.reject("Wallet connected but no account returned", "MWA_NO_ACCOUNT")
-                        return@launch
+            try {
+                val sender = ActivityResultSender(activity)
+                when (val result = walletAdapter.connect(sender)) {
+                    is TransactionResult.Success -> {
+                        val account = result.authResult.accounts.firstOrNull()
+                        if (account == null) {
+                            call.reject("Wallet connected but no account returned", "MWA_NO_ACCOUNT")
+                            return@launch
+                        }
+                        val walletAddress = base58Encode(account.publicKey)
+                        persistConnection(walletAddress, result.authResult.authToken)
+                        val out = JSObject()
+                        out.put("walletAddress", walletAddress)
+                        out.put("connected", true)
+                        out.put("hasAuthToken", !result.authResult.authToken.isNullOrBlank())
+                        call.resolve(out)
                     }
-                    val walletAddress = base58Encode(account.publicKey)
-                    persistConnection(walletAddress, result.authResult.authToken)
-                    val out = JSObject()
-                    out.put("walletAddress", walletAddress)
-                    out.put("connected", true)
-                    out.put("hasAuthToken", !result.authResult.authToken.isNullOrBlank())
-                    call.resolve(out)
+                    is TransactionResult.NoWalletFound -> {
+                        call.reject("No MWA wallet found on device.", "MWA_NO_WALLET")
+                    }
+                    is TransactionResult.Failure -> {
+                        call.reject(
+                            "Wallet connection failed: ${result.e.message}",
+                            "MWA_CONNECT_FAILED",
+                            result.e
+                        )
+                    }
                 }
-                is TransactionResult.NoWalletFound -> {
-                    call.reject("No MWA wallet found on device.", "MWA_NO_WALLET")
-                }
-                is TransactionResult.Failure -> {
-                    call.reject(
-                        "Wallet connection failed: ${result.e.message}",
-                        "MWA_CONNECT_FAILED",
-                        result.e
-                    )
-                }
+            } catch (e: Exception) {
+                call.reject("Wallet connection crashed: ${e.message}", "MWA_CONNECT_CRASH", e)
             }
         }
     }
@@ -137,44 +141,48 @@ class SolanaMwaPlugin : Plugin() {
         }
 
         scope.launch {
-            val sender = ActivityResultSender(activity)
-            when (val result = walletAdapter.transact(sender) { authResult ->
-                signMessagesDetached(
-                    arrayOf(message.toByteArray(StandardCharsets.UTF_8)),
-                    arrayOf(authResult.accounts.first().publicKey)
-                )
-            }) {
-                is TransactionResult.Success -> {
-                    val account = result.authResult.accounts.firstOrNull()
-                    if (account != null) {
-                        val walletAddress = base58Encode(account.publicKey)
-                        persistConnection(walletAddress, result.authResult.authToken)
-                    }
-                    val signedMessage = result.payload
-                        .messages
-                        .firstOrNull()
-                        ?.signatures
-                        ?.firstOrNull()
-                    if (signedMessage == null) {
-                        call.reject("Wallet returned empty signature payload", "MWA_EMPTY_SIGNATURE")
-                        return@launch
-                    }
-                    val out = JSObject()
-                    out.put("signatureBase64", Base64.encodeToString(signedMessage, Base64.NO_WRAP))
-                    out.put("signatureBase58", base58Encode(signedMessage))
-                    out.put("walletAddress", prefs.getString(KEY_WALLET_ADDRESS, null))
-                    call.resolve(out)
-                }
-                is TransactionResult.NoWalletFound -> {
-                    call.reject("No MWA wallet found on device.", "MWA_NO_WALLET")
-                }
-                is TransactionResult.Failure -> {
-                    call.reject(
-                        "Message signing failed: ${result.e.message}",
-                        "MWA_SIGN_MESSAGE_FAILED",
-                        result.e
+            try {
+                val sender = ActivityResultSender(activity)
+                when (val result = walletAdapter.transact(sender) { authResult ->
+                    signMessagesDetached(
+                        arrayOf(message.toByteArray(StandardCharsets.UTF_8)),
+                        arrayOf(authResult.accounts.first().publicKey)
                     )
+                }) {
+                    is TransactionResult.Success -> {
+                        val account = result.authResult.accounts.firstOrNull()
+                        if (account != null) {
+                            val walletAddress = base58Encode(account.publicKey)
+                            persistConnection(walletAddress, result.authResult.authToken)
+                        }
+                        val signedMessage = result.payload
+                            .messages
+                            .firstOrNull()
+                            ?.signatures
+                            ?.firstOrNull()
+                        if (signedMessage == null) {
+                            call.reject("Wallet returned empty signature payload", "MWA_EMPTY_SIGNATURE")
+                            return@launch
+                        }
+                        val out = JSObject()
+                        out.put("signatureBase64", Base64.encodeToString(signedMessage, Base64.NO_WRAP))
+                        out.put("signatureBase58", base58Encode(signedMessage))
+                        out.put("walletAddress", prefs.getString(KEY_WALLET_ADDRESS, null))
+                        call.resolve(out)
+                    }
+                    is TransactionResult.NoWalletFound -> {
+                        call.reject("No MWA wallet found on device.", "MWA_NO_WALLET")
+                    }
+                    is TransactionResult.Failure -> {
+                        call.reject(
+                            "Message signing failed: ${result.e.message}",
+                            "MWA_SIGN_MESSAGE_FAILED",
+                            result.e
+                        )
+                    }
                 }
+            } catch (e: Exception) {
+                call.reject("Message signing crashed: ${e.message}", "MWA_SIGN_MESSAGE_CRASH", e)
             }
         }
     }
@@ -201,37 +209,41 @@ class SolanaMwaPlugin : Plugin() {
         }
 
         scope.launch {
-            val sender = ActivityResultSender(activity)
-            when (val result = walletAdapter.transact(sender) { _ ->
-                signAndSendTransactions(arrayOf(txBytes))
-            }) {
-                is TransactionResult.Success -> {
-                    val account = result.authResult.accounts.firstOrNull()
-                    if (account != null) {
-                        val walletAddress = base58Encode(account.publicKey)
-                        persistConnection(walletAddress, result.authResult.authToken)
+            try {
+                val sender = ActivityResultSender(activity)
+                when (val result = walletAdapter.transact(sender) { _ ->
+                    signAndSendTransactions(arrayOf(txBytes))
+                }) {
+                    is TransactionResult.Success -> {
+                        val account = result.authResult.accounts.firstOrNull()
+                        if (account != null) {
+                            val walletAddress = base58Encode(account.publicKey)
+                            persistConnection(walletAddress, result.authResult.authToken)
+                        }
+                        val signatureBytes = result.payload.signatures.firstOrNull()
+                        if (signatureBytes == null) {
+                            call.reject("Wallet returned empty transaction signature", "MWA_EMPTY_TX_SIGNATURE")
+                            return@launch
+                        }
+                        val out = JSObject()
+                        out.put("signatureBase58", base58Encode(signatureBytes))
+                        out.put("signatureBase64", Base64.encodeToString(signatureBytes, Base64.NO_WRAP))
+                        out.put("walletAddress", prefs.getString(KEY_WALLET_ADDRESS, null))
+                        call.resolve(out)
                     }
-                    val signatureBytes = result.payload.signatures.firstOrNull()
-                    if (signatureBytes == null) {
-                        call.reject("Wallet returned empty transaction signature", "MWA_EMPTY_TX_SIGNATURE")
-                        return@launch
+                    is TransactionResult.NoWalletFound -> {
+                        call.reject("No MWA wallet found on device.", "MWA_NO_WALLET")
                     }
-                    val out = JSObject()
-                    out.put("signatureBase58", base58Encode(signatureBytes))
-                    out.put("signatureBase64", Base64.encodeToString(signatureBytes, Base64.NO_WRAP))
-                    out.put("walletAddress", prefs.getString(KEY_WALLET_ADDRESS, null))
-                    call.resolve(out)
+                    is TransactionResult.Failure -> {
+                        call.reject(
+                            "Transaction signing failed: ${result.e.message}",
+                            "MWA_SIGN_AND_SEND_FAILED",
+                            result.e
+                        )
+                    }
                 }
-                is TransactionResult.NoWalletFound -> {
-                    call.reject("No MWA wallet found on device.", "MWA_NO_WALLET")
-                }
-                is TransactionResult.Failure -> {
-                    call.reject(
-                        "Transaction signing failed: ${result.e.message}",
-                        "MWA_SIGN_AND_SEND_FAILED",
-                        result.e
-                    )
-                }
+            } catch (e: Exception) {
+                call.reject("Transaction signing crashed: ${e.message}", "MWA_SIGN_AND_SEND_CRASH", e)
             }
         }
     }
@@ -246,24 +258,29 @@ class SolanaMwaPlugin : Plugin() {
         }
 
         scope.launch {
-            val sender = ActivityResultSender(activity)
-            when (val result = walletAdapter.disconnect(sender)) {
-                is TransactionResult.Success -> {
-                    clearConnection()
-                    call.resolve(JSObject().put("disconnected", true))
+            try {
+                val sender = ActivityResultSender(activity)
+                when (val result = walletAdapter.disconnect(sender)) {
+                    is TransactionResult.Success -> {
+                        clearConnection()
+                        call.resolve(JSObject().put("disconnected", true))
+                    }
+                    is TransactionResult.NoWalletFound -> {
+                        clearConnection()
+                        call.resolve(JSObject().put("disconnected", true))
+                    }
+                    is TransactionResult.Failure -> {
+                        clearConnection()
+                        call.reject(
+                            "Wallet disconnect failed: ${result.e.message}",
+                            "MWA_DISCONNECT_FAILED",
+                            result.e
+                        )
+                    }
                 }
-                is TransactionResult.NoWalletFound -> {
-                    clearConnection()
-                    call.resolve(JSObject().put("disconnected", true))
-                }
-                is TransactionResult.Failure -> {
-                    clearConnection()
-                    call.reject(
-                        "Wallet disconnect failed: ${result.e.message}",
-                        "MWA_DISCONNECT_FAILED",
-                        result.e
-                    )
-                }
+            } catch (e: Exception) {
+                clearConnection()
+                call.reject("Wallet disconnect crashed: ${e.message}", "MWA_DISCONNECT_CRASH", e)
             }
         }
     }
@@ -329,7 +346,7 @@ class SolanaMwaPlugin : Plugin() {
         private const val KEY_AUTH_TOKEN = "auth_token"
         private const val KEY_WALLET_ADDRESS = "wallet_address"
         private const val DEFAULT_IDENTITY_URI = "https://sticklash.fun"
-        private const val DEFAULT_ICON_URI = "assets/favicon-32x32.png"
+        private const val DEFAULT_ICON_URI = "https://sticklash.fun/favicon.ico"
         private const val DEFAULT_IDENTITY_NAME = "SMF StickLash"
         private const val CALLBACK_SCHEME = "com.solanamemefighter.app"
         private const val CALLBACK_HOST = "wallet-callback"
