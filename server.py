@@ -90,6 +90,8 @@ matchmaking_task: MatchmakingTask | None = None
 DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_PAYMENT_TOKEN_PRICE_FALLBACK = Decimal("0")
+DEFAULT_ANDROID_PACKAGE_NAME = "com.solanamemefighter.app"
+DEFAULT_ANDROID_CERT_SHA256 = "84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76"
 BOOST_INTENT_TTL_SECONDS = int(os.environ.get("BOOST_INTENT_TTL_SECONDS", "600"))
 STARTER_BOOSTS = int(os.environ.get("STARTER_BOOSTS", "15"))
 WALLET_AUTH_CHALLENGE_TTL_SECONDS = int(os.environ.get("WALLET_AUTH_CHALLENGE_TTL_SECONDS", "300"))
@@ -1673,8 +1675,20 @@ async def favicon() -> Response:
 
 @get("/.well-known/assetlinks.json")
 async def android_assetlinks() -> Response:
-    assetlinks = (ROOT / ".well-known" / "assetlinks.json").read_text(encoding="utf-8")
-    return Response(content=assetlinks, media_type="application/json")
+    package_name = os.environ.get("ANDROID_APP_PACKAGE_NAME", DEFAULT_ANDROID_PACKAGE_NAME).strip()
+    fingerprint = os.environ.get("ANDROID_APP_SHA256_CERT_FINGERPRINT", DEFAULT_ANDROID_CERT_SHA256).strip()
+    payload = [
+        {
+            "relation": ["delegate_permission/common.handle_all_urls"],
+            "target": {
+                "namespace": "android_app",
+                "package_name": package_name,
+                "sha256_cert_fingerprints": [fingerprint],
+            },
+        }
+    ]
+    return Response(content=json.dumps(payload, indent=2), media_type="application/json")
+
 
 # ─────────────────────────────────────────────
 # Solscan Discovery Engine Endpoints
