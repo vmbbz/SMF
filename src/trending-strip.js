@@ -48,18 +48,20 @@ export class TrendingStrip {
 
   render() {
     this.container.innerHTML = `
-      <div class="strip-header" style="display:flex; justify-content:space-between; align-items:center; width:100%;">
-        <span style="font-family: var(--font-display, 'Shojumaru', 'Press Start 2P', sans-serif); font-weight:900;color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-size:9px;margin-right:15px;text-shadow:0 0 10px var(--neon-blue); flex:1; text-align:left;">🚀 LIVE STREAM</span>
-        <div onclick="window.openHelpModal && window.openHelpModal()" style="display:inline-flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.6); border:1px solid var(--neon-pink); width:18px; height:18px; border-radius:50%; font-family:var(--font-display, 'Shojumaru', 'Press Start 2P', sans-serif); font-size:10px; color:#fff; cursor:pointer; box-shadow:0 0 8px var(--neon-pink); transition:all 0.2s; user-select:none; margin:0 auto; flex:0 0 auto;" onmouseover="this.style.transform='scale(1.25)';" onmouseout="this.style.transform='scale(1)';" title="Game Guide">i</div>
-        
-        <div style="flex:1; text-align:right;">
-          <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn" style="background:var(--neon-pink);color:#000;border:none;padding:4px 8px;border-radius:4px;font-weight:bold;cursor:pointer;font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);font-size:9px;display:inline-block;">
+      <div class="strip-header">
+        <div class="strip-title-wrap" aria-label="Live market stream">
+          <span class="strip-signal-dot"></span>
+          <span class="strip-title">LIVE MARKET</span>
+        </div>
+        <button class="strip-info-btn" type="button" onclick="window.openHelpModal && window.openHelpModal()" title="Game Guide">?</button>
+        <div class="strip-actions">
+          <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn strip-mode-btn" type="button">
             ${this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS'}
           </button>
         </div>
       </div>
-      <div class="marquee-container" style="overflow:hidden;white-space:nowrap;margin-top:6px;position:relative;width:100%;">
-        <div class="marquee" id="${this.container.id}-inner" style="display:inline-block;animation:marquee 40s linear infinite;"></div>
+      <div class="marquee-container">
+        <div class="marquee" id="${this.container.id}-inner"></div>
       </div>
     `;
 
@@ -72,16 +74,117 @@ export class TrendingStrip {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
         }
+        .strip-header {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+          align-items: center;
+          column-gap: 8px;
+          width: 100%;
+          min-height: 28px;
+        }
+        .strip-title-wrap {
+          display: inline-flex;
+          align-items: center;
+          gap: 7px;
+          min-width: 0;
+          height: 28px;
+        }
+        .strip-signal-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: var(--neon-green);
+          box-shadow: 0 0 10px rgba(0, 255, 157, 0.85);
+          flex: 0 0 auto;
+        }
+        .strip-title {
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-family: var(--font-display, 'Shojumaru', 'Press Start 2P', sans-serif);
+          font-size: 10px;
+          line-height: 1;
+          color: var(--neon-blue);
+          text-shadow: 0 0 10px rgba(0, 212, 255, 0.7);
+        }
+        .strip-info-btn {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          border: 1px solid rgba(255, 0, 255, 0.75);
+          background: rgba(0, 0, 0, 0.62);
+          color: #fff;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
+          font-size: 9px;
+          line-height: 1;
+          box-shadow: 0 0 9px rgba(255, 0, 255, 0.48);
+          transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        .strip-info-btn:hover {
+          transform: scale(1.12);
+          border-color: var(--neon-green);
+        }
+        .strip-actions {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          min-width: 0;
+          height: 28px;
+        }
+        .strip-mode-btn {
+          height: 24px;
+          max-width: 148px;
+          border: 1px solid rgba(255, 0, 255, 0.72);
+          border-radius: 999px;
+          background: linear-gradient(135deg, rgba(255, 0, 255, 0.95), rgba(0, 212, 255, 0.88));
+          color: #050505;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 10px;
+          font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
+          font-size: 8px;
+          line-height: 1;
+          text-align: center;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          box-shadow: 0 0 12px rgba(255, 0, 255, 0.28);
+        }
+        .marquee-container {
+          overflow: hidden;
+          white-space: nowrap;
+          margin-top: 6px;
+          position: relative;
+          width: 100%;
+          min-height: 30px;
+        }
+        .marquee {
+          display: inline-flex;
+          align-items: center;
+          min-height: 30px;
+          animation: marquee 40s linear infinite;
+          will-change: transform;
+        }
         .token-pill {
           display: inline-flex;
           align-items: center;
-          background: rgba(255,255,255,0.1);
-          border: 1px solid rgba(255,255,255,0.2);
+          height: 28px;
+          background: rgba(255,255,255,0.09);
+          border: 1px solid rgba(255,255,255,0.18);
           border-radius: 20px;
-          padding: 4px 12px 4px 4px;
-          margin-right: 12px;
+          padding: 2px 10px 2px 3px;
+          margin-right: 10px;
           cursor: pointer;
           transition: all 0.2s ease;
+          vertical-align: middle;
         }
         .token-pill:hover {
           background: rgba(255,0,255,0.2);
@@ -89,22 +192,90 @@ export class TrendingStrip {
           transform: scale(1.05);
         }
         .token-pill img {
-          width: 24px;
-          height: 24px;
+          width: 22px;
+          height: 22px;
           border-radius: 50%;
-          margin-right: 10px;
+          margin-right: 8px;
+          flex: 0 0 auto;
         }
         .token-pill .symbol {
           font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
           font-weight: bold;
           color: #fff;
-          margin-right: 10px;
+          margin-right: 8px;
+          font-size: 9px;
+          line-height: 1;
         }
         .token-pill .power {
           font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
           color: var(--neon-green);
           font-weight: 900;
-          font-size: 12px;
+          font-size: 9px;
+          line-height: 1;
+        }
+        .market-loading-text {
+          display: inline-flex;
+          align-items: center;
+          min-height: 28px;
+          color: rgba(255, 255, 255, 0.62);
+          font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
+          font-size: 8px;
+          line-height: 1.35;
+        }
+        @media (max-width: 1024px) {
+          .strip-header {
+            grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr);
+            column-gap: 6px;
+            min-height: 26px;
+          }
+          .strip-title-wrap,
+          .strip-actions {
+            height: 26px;
+          }
+          .strip-title {
+            font-size: 9px;
+          }
+          .strip-info-btn {
+            width: 22px;
+            height: 22px;
+            font-size: 10px;
+          }
+          .strip-mode-btn {
+            height: 22px;
+            max-width: 112px;
+            padding: 0 7px;
+            font-size: 7px;
+          }
+          .marquee-container,
+          .marquee {
+            min-height: 26px;
+          }
+          .marquee-container {
+            margin-top: 5px;
+            padding-bottom: 4px;
+          }
+          .token-pill {
+            height: 24px;
+            padding: 2px 7px 2px 2px;
+            margin-right: 6px;
+            border-radius: 14px;
+          }
+          .token-pill img {
+            width: 18px;
+            height: 18px;
+            margin-right: 5px;
+          }
+          .token-pill .symbol,
+          .token-pill .power {
+            font-size: 7px;
+          }
+          .token-pill .symbol {
+            margin-right: 5px;
+          }
+          .market-loading-text {
+            min-height: 24px;
+            font-size: 7px;
+          }
         }
       `;
       document.head.appendChild(style);
@@ -120,7 +291,7 @@ export class TrendingStrip {
     if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS';
 
     if (this.tokens.length === 0) {
-      inner.innerHTML = `<span style="color:#888; font-size: 10px; font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif); letter-spacing: 0.5px;">Loading trending tokens...</span>`;
+      inner.innerHTML = `<span class="market-loading-text">Loading market stream...</span>`;
       return;
     }
 

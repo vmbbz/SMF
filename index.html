@@ -266,31 +266,6 @@
       transition: width linear;
     }
 
-
-    /* Mobile-only: tighter trending strip pills */
-    @media (max-width: 1024px) {
-      .token-pill {
-        padding: 2px 7px 2px 2px !important;
-        margin-right: 6px !important;
-        border-radius: 14px !important;
-      }
-
-      .token-pill img {
-        width: 18px !important;
-        height: 18px !important;
-        margin-right: 5px !important;
-      }
-
-      .token-pill .symbol {
-        font-size: 10px !important;
-        margin-right: 5px !important;
-      }
-
-      .token-pill .power {
-        font-size: 9px !important;
-      }
-    }
-
     .loser-tabs {
       display: flex;
       justify-content: center;
@@ -697,10 +672,65 @@
       display: flex; 
       align-items: center; 
       gap: 5px; 
-      font-family: inherit; 
+      font-family: var(--font-print);
+      letter-spacing: 0.2px;
       white-space: nowrap; 
       backdrop-filter: blur(5px);
       transition: all 0.3s ease;
+    }
+
+    .hud-profile-btn {
+      width: 44px;
+      height: 44px;
+      min-width: 44px;
+      padding: 0;
+      border-radius: 50%;
+      border: 2px solid var(--neon-blue);
+      background:
+        radial-gradient(circle at 32% 25%, rgba(255, 255, 255, 0.22), transparent 24px),
+        radial-gradient(circle at center, rgba(0, 212, 255, 0.16), rgba(7, 10, 14, 0.94));
+      box-shadow: 0 0 15px rgba(0, 212, 255, 0.42), inset 0 0 10px rgba(0, 0, 0, 0.45);
+      cursor: pointer;
+      overflow: hidden;
+      position: relative;
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .hud-profile-btn:hover {
+      transform: translateY(-2px) scale(1.04);
+      border-color: var(--neon-green);
+      box-shadow: 0 0 18px rgba(20, 241, 149, 0.55), inset 0 0 10px rgba(0, 0, 0, 0.35);
+    }
+
+    .hud-profile-btn img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .hud-profile-btn .profile-fallback-mark {
+      font-family: var(--font-display);
+      font-size: 18px;
+      line-height: 1;
+      transform: translateY(1px);
+      text-shadow: 0 0 10px rgba(0, 212, 255, 0.65);
+    }
+
+    .hud-profile-btn::after {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      pointer-events: none;
     }
     
     .weather-btn {
@@ -864,36 +894,6 @@
       letter-spacing: 0.4px;
     }
 
-    /* Circular top user menu trigger (Spotify-era placement, Solana profile action) */
-    #btn-user-profile {
-      position: fixed;
-      top: max(12px, env(safe-area-inset-top));
-      right: 12px;
-      z-index: 760;
-      width: 44px;
-      height: 44px;
-      border-radius: 50%;
-      border: 1px solid rgba(20, 241, 149, 0.7);
-      background: radial-gradient(circle at 30% 28%, rgba(24, 34, 46, 0.95), rgba(7, 10, 14, 0.98));
-      color: #f2fff8;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      cursor: pointer;
-      box-shadow: 0 0 14px rgba(20, 241, 149, 0.4), inset 0 0 10px rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(7px);
-      transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #btn-user-profile:hover {
-      transform: translateY(-1px) scale(1.03);
-      box-shadow: 0 0 20px rgba(20, 241, 149, 0.55), inset 0 0 10px rgba(0, 0, 0, 0.25);
-      border-color: rgba(20, 241, 149, 1);
-    }
-
     @media (max-width: 1024px) {
       .screen {
         position: fixed !important;
@@ -919,14 +919,6 @@
         top: max(8px, env(safe-area-inset-top));
         width: calc(100vw - 12px);
         align-items: flex-start;
-      }
-
-      #btn-user-profile {
-        top: max(8px, env(safe-area-inset-top));
-        right: 8px;
-        width: 40px;
-        height: 40px;
-        font-size: 16px;
       }
 
       #btn-fight-menu {
@@ -971,6 +963,12 @@
         font-size: 18px !important;
       }
 
+      #hud-widgets .hud-profile-btn {
+        width: 44px !important;
+        height: 44px !important;
+        min-width: 44px !important;
+      }
+
     }
 
     /* Mobile landscape combat ergonomics */
@@ -978,11 +976,6 @@
       #fight-top-dock {
         top: max(6px, env(safe-area-inset-top));
         width: calc(100vw - 10px);
-      }
-
-      #btn-user-profile {
-        top: max(6px, env(safe-area-inset-top));
-        right: 8px;
       }
 
       #btn-fight-menu {
@@ -1017,6 +1010,12 @@
         height: 38px !important;
         min-width: 38px !important;
         font-size: 15px !important;
+      }
+
+      #hud-widgets .hud-profile-btn {
+        width: 38px !important;
+        height: 38px !important;
+        min-width: 38px !important;
       }
 
       #mobile-controls {
@@ -2207,11 +2206,13 @@
     </div>
   </div>
 
-  <button id="btn-user-profile" type="button" title="User Profile & Wallet" onclick="window.showWalletConnect && window.showWalletConnect()">👤</button>
-
-
   <!-- HUD WIDGETS (Bottom Center on PC, vertically centred on mobile) -->
   <div id="hud-widgets">
+    <!-- USER PROFILE / SOLANA WALLET -->
+    <button id="user-pic" class="hud-profile-btn" type="button" title="User Profile & Wallet" onclick="window.showWalletConnect && window.showWalletConnect()">
+      <span class="profile-fallback-mark">忍</span>
+    </button>
+
     <!-- WEATHER TOGGLE -->
     <button id="btn-weather" class="hud-btn weather-btn" onclick="if(window.toggleWeather) window.toggleWeather()">
       <span class="desktop-text">🌧️ WEATHER</span>
@@ -2620,7 +2621,7 @@
   <script type="module">
     import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';
     import { Effects } from './src/effects.js';
-    import { showWalletConnect, hideWalletConnect } from './wallet-connect.js';
+    import { getProfile, showWalletConnect, hideWalletConnect } from './wallet-connect.js';
 
     // Global exports
     window.getTrendingTokens = getTrendingTokens;
@@ -2629,6 +2630,30 @@
     window.effects = new Effects();
     window.showWalletConnect = showWalletConnect;
     window.hideWalletConnect = hideWalletConnect;
+
+    window.syncHudUserProfile = () => {
+      const profileBtn = document.getElementById('user-pic');
+      if (!profileBtn) return;
+      const profile = getProfile();
+      const avatar = profile && profile.avatar ? String(profile.avatar) : '';
+      const name = profile && profile.name ? String(profile.name) : 'Guest Fighter';
+      profileBtn.title = `${name} - User Profile & Wallet`;
+      profileBtn.replaceChildren();
+      if (avatar) {
+        const img = document.createElement('img');
+        img.src = avatar;
+        img.alt = name;
+        profileBtn.appendChild(img);
+      } else {
+        const fallback = document.createElement('span');
+        fallback.className = 'profile-fallback-mark';
+        fallback.textContent = '忍';
+        profileBtn.appendChild(fallback);
+      }
+    };
+
+    window.addEventListener('smf_profile_updated', () => window.syncHudUserProfile());
+    window.syncHudUserProfile();
 
     let pumpQueue = [];
 
@@ -2800,6 +2825,7 @@
         window.trendingStrip = new window.TrendingStrip('trending-strip');
         window.trendingStrip.init();
       }
+      window.syncHudUserProfile();
       console.log('%c✅ $SMF STICK LASH FULLY LOADED — READY TO FIGHT', 'color:#ff00ff;font-size:18px');
     });
   </script>
