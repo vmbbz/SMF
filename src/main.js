@@ -2537,7 +2537,7 @@ function updateAuthUI() {
     // Sync to smf_user_profile
     try {
       const profileStr = localStorage.getItem('smf_user_profile');
-      let profile = { name: "Guest Fighter", avatar: "", boosts: 15, walletConnected: false, walletAddress: "", smfBalance: 0 };
+      let profile = { name: "Guest Fighter", avatar: "", boosts: 15, walletConnected: false, walletReadOnly: false, walletAuthenticated: false, walletAddress: "", smfBalance: 0 };
       if (profileStr) {
         profile = JSON.parse(profileStr);
       }

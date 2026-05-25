@@ -379,7 +379,7 @@ export class Game {
     ) {
       try {
         const profileStr = localStorage.getItem('smf_user_profile');
-        let profile = { name: "Guest Fighter", avatar: "", boosts: 15, walletConnected: false, walletAddress: "", smfBalance: 0 };
+        let profile = { name: "Guest Fighter", avatar: "", boosts: 15, walletConnected: false, walletReadOnly: false, walletAuthenticated: false, walletAddress: "", smfBalance: 0 };
         if (profileStr) {
           profile = JSON.parse(profileStr);
         } else {
@@ -414,7 +414,10 @@ export class Game {
                   return;
                 }
                 if (consumeResult && consumeResult.status === 401) {
-                  this.showBoostMessage("⚠️ Wallet session expired.", "spike");
+                  this.showBoostMessage("⚠️ Secure wallet sign-in required.", "spike");
+                  if (!window.isMultiplayerMatch && typeof window.requestWalletSecurityFlow === 'function') {
+                    window.requestWalletSecurityFlow({ autoPause: true });
+                  }
                   return;
                 }
                 this.showBoostMessage("⚠️ Boost verification failed.", "spike");

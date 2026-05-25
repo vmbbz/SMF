@@ -21,13 +21,35 @@ export function getProfile() {
       boosts: 15, // Free $3 starter boosts initialized automatically
       walletConnected: false,
       walletReadOnly: false,
+      walletAuthenticated: false,
       walletAddress: '',
       smfBalance: 0 // Fetch real balance on-chain
     };
     saveProfile(profile);
-  } else if (typeof profile.walletReadOnly !== 'boolean') {
-    profile.walletReadOnly = false;
-    saveProfile(profile);
+  } else {
+    let changed = false;
+    if (typeof profile.walletReadOnly !== 'boolean') {
+      profile.walletReadOnly = false;
+      changed = true;
+    }
+    if (typeof profile.walletAuthenticated !== 'boolean') {
+      profile.walletAuthenticated = false;
+      changed = true;
+    }
+    if (profile.walletReadOnly || !profile.walletConnected || !profile.walletAddress) {
+      if (profile.walletAuthenticated) {
+        profile.walletAuthenticated = false;
+        changed = true;
+      }
+    } else {
+      const session = getWalletAuthSession();
+      const sessionReady = isSessionValidForWallet(session, profile.walletAddress);
+      if (profile.walletAuthenticated !== sessionReady) {
+        profile.walletAuthenticated = sessionReady;
+        changed = true;
+      }
+    }
+    if (changed) saveProfile(profile);
   }
   return profile;
 }
@@ -167,6 +189,30 @@ function hasNativeMwaBridge() {
   return isNativeCapacitorPlatform() && !!getNativeMwaPlugin();
 }
 
+const WALLET_FLOW_IDLE = {
+  stage: 'idle',
+  title: '',
+  message: '',
+  tone: 'neutral'
+};
+
+function getWalletFlow() {
+  return window.smfWalletFlow || WALLET_FLOW_IDLE;
+}
+
+function setWalletFlow(stage, title, message, tone = 'neutral') {
+  window.smfWalletFlow = {
+    stage: String(stage || 'idle'),
+    title: String(title || ''),
+    message: String(message || ''),
+    tone: String(tone || 'neutral')
+  };
+}
+
+function clearWalletFlow() {
+  window.smfWalletFlow = { ...WALLET_FLOW_IDLE };
+}
+
 function emitWalletGameplayPause(paused, reason = 'wallet_action') {
   window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
     detail: { paused: !!paused, reason: String(reason || 'wallet_action') }
@@ -283,6 +329,24 @@ function isSessionValidForWallet(session, walletAddress) {
   return now < Number(session.expiresAtUnix);
 }
 
+function isWalletAuthenticated(profile) {
+  if (!profile || !profile.walletConnected || profile.walletReadOnly || !profile.walletAddress) {
+    return false;
+  }
+  return isSessionValidForWallet(getWalletAuthSession(), profile.walletAddress);
+}
+
+function buildStoredWalletAuthHeaders(walletAddress) {
+  const session = getWalletAuthSession();
+  if (!isSessionValidForWallet(session, walletAddress)) {
+    return null;
+  }
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${session.token}`
+  };
+}
+
 async function ensureWalletAuthSession(walletAddress, { forceRefresh = false } = {}) {
   if (!walletAddress) throw new Error('Wallet address missing.');
   if (!window.solana && !hasNativeMwaBridge()) {
@@ -395,11 +459,19 @@ async function consumeServerBoost(walletAddress, units = 1, reason = 'hadouken')
   const consumeId = (window.crypto && typeof window.crypto.randomUUID === 'function')
     ? window.crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const headers = buildStoredWalletAuthHeaders(walletAddress);
+  if (!headers) {
+    return {
+      ok: false,
+      status: 401,
+      error: 'Wallet security sign-in required before boosts can be spent.'
+    };
+  }
   let resp = null;
   try {
-    resp = await fetchWithWalletAuth(walletAddress, '/api/boost/consume', {
+    resp = await fetch('/api/boost/consume', {
       method: 'POST',
-      allowInteractiveReauth: false,
+      headers,
       body: JSON.stringify({
         wallet: walletAddress,
         units,
@@ -539,6 +611,14 @@ export async function showWalletConnect(options = {}) {
   }
 
   const profile = getProfile();
+  const walletAuthReady = isWalletAuthenticated(profile);
+  const walletFlow = getWalletFlow();
+  const walletStatusLabel = profile.walletConnected
+    ? (profile.walletReadOnly ? 'READ-ONLY' : (walletAuthReady ? 'SECURE' : 'CONNECTED'))
+    : 'DISCONNECTED';
+  const walletStatusColor = profile.walletConnected
+    ? (profile.walletReadOnly ? '#ffcc00' : (walletAuthReady ? 'var(--neon-green)' : 'var(--neon-blue)'))
+    : '#ff3b30';
   
   // Custom HSL/fluctuating price for SMF
   const smfPrice = fetchedSMFPrice || 0.00762; 
@@ -655,6 +735,70 @@ export async function showWalletConnect(options = {}) {
       .wallet-store-focus-animate {
         animation: storePulse 1.8s ease-in-out infinite;
       }
+      .wallet-flow-banner {
+        background: linear-gradient(135deg, rgba(20,241,149,0.10), rgba(0,194,255,0.08));
+        border: 1px solid rgba(20,241,149,0.22);
+        border-radius: 12px;
+        padding: 10px;
+        margin-bottom: 10px;
+        box-shadow: 0 0 18px rgba(20,241,149,0.08);
+      }
+      .wallet-flow-banner.warn {
+        background: linear-gradient(135deg, rgba(255,204,0,0.12), rgba(255,0,255,0.06));
+        border-color: rgba(255,204,0,0.28);
+      }
+      .wallet-flow-banner.error {
+        background: linear-gradient(135deg, rgba(255,59,48,0.12), rgba(255,0,255,0.05));
+        border-color: rgba(255,59,48,0.35);
+      }
+      .wallet-flow-title {
+        color: var(--neon-green);
+        font-size: 9px;
+        font-weight: 900;
+        letter-spacing: 0.6px;
+        margin-bottom: 5px;
+      }
+      .wallet-flow-copy {
+        color: #d8f8ff;
+        font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
+        font-size: 7px;
+        line-height: 1.55;
+      }
+      .wallet-step-row {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: 8px;
+        align-items: start;
+        color: #cbd7df;
+        font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
+        font-size: 7px;
+        line-height: 1.45;
+        margin-top: 7px;
+      }
+      .wallet-step-dot {
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.18);
+        color: #888;
+        font-size: 8px;
+      }
+      .wallet-step-dot.done {
+        background: rgba(20,241,149,0.16);
+        border-color: rgba(20,241,149,0.55);
+        color: var(--neon-green);
+        box-shadow: 0 0 10px rgba(20,241,149,0.25);
+      }
+      .wallet-step-dot.active {
+        background: rgba(0,194,255,0.16);
+        border-color: rgba(0,194,255,0.55);
+        color: var(--neon-blue);
+        box-shadow: 0 0 10px rgba(0,194,255,0.25);
+      }
       @keyframes firePulse {
         0% { text-shadow: 0 0 5px #ff3300, 0 0 10px #ff3300; transform: scale(1); }
         100% { text-shadow: 0 0 15px #ff9900, 0 0 25px #ff5500; transform: scale(1.1); }
@@ -690,10 +834,17 @@ export async function showWalletConnect(options = {}) {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
           <span style="font-size: 10px; font-weight: bold; color: var(--neon-blue); letter-spacing: 0.5px;">🔑 SOLANA WALLET ${nativeMwaBridge ? '(ANDROID MWA)' : ''}</span>
           <div style="display:flex; align-items:center; gap:4px;">
-            <span style="width: 6px; height: 6px; border-radius:50%; background: ${profile.walletConnected ? (profile.walletReadOnly ? '#ffcc00' : 'var(--neon-green)') : '#ff3b30'}; box-shadow: 0 0 6px ${profile.walletConnected ? (profile.walletReadOnly ? '#ffcc00' : 'var(--neon-green)') : '#ff3b30'};"></span>
-            <span style="font-size: 8px; color: #aaa;">${profile.walletConnected ? (profile.walletReadOnly ? 'READ-ONLY' : 'CONNECTED') : 'DISCONNECTED'}</span>
+            <span style="width: 6px; height: 6px; border-radius:50%; background: ${walletStatusColor}; box-shadow: 0 0 6px ${walletStatusColor};"></span>
+            <span style="font-size: 8px; color: #aaa;">${walletStatusLabel}</span>
           </div>
         </div>
+
+        ${walletFlow.stage !== 'idle' && walletFlow.title ? `
+          <div class="wallet-flow-banner ${walletFlow.tone === 'error' ? 'error' : (walletFlow.tone === 'warn' ? 'warn' : '')}">
+            <div class="wallet-flow-title">${walletFlow.title}</div>
+            <div class="wallet-flow-copy">${walletFlow.message}</div>
+          </div>
+        ` : ''}
         
         ${profile.walletConnected ? `
           <div style="background: rgba(0,194,255,0.05); border: 1px solid rgba(0,194,255,0.15); padding: 10px; border-radius: 8px; font-size: 9px; font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);">
@@ -705,6 +856,27 @@ export async function showWalletConnect(options = {}) {
               <span style="color:#aaa;">Token Balance:</span>
               <span style="color:var(--neon-green); font-weight:bold;">${Number(profile.smfBalance).toLocaleString(undefined, {maximumFractionDigits: 4})} $SMF</span>
             </div>
+            ${!profile.walletReadOnly ? `
+              <div style="background:rgba(0,0,0,0.22); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px; margin:8px 0;">
+                <div class="wallet-step-row">
+                  <span class="wallet-step-dot done">1</span>
+                  <span>Wallet connected. Phantom returned your public address to StickLash.</span>
+                </div>
+                <div class="wallet-step-row">
+                  <span class="wallet-step-dot ${walletAuthReady ? 'done' : 'active'}">2</span>
+                  <span>${walletAuthReady ? 'Security sign-in complete. Boost buys and spends are unlocked.' : 'Sign one free message so our server can protect your boost balance. No tokens move.'}</span>
+                </div>
+              </div>
+              ${walletAuthReady ? `
+                <div style="font-size: 8px; color: var(--neon-green); margin-bottom: 8px; line-height: 1.35;">
+                  SECURE SESSION ACTIVE: wallet actions can use server-authoritative boosts without interrupting gameplay.
+                </div>
+              ` : `
+                <button onclick="window.secureWalletSignIn()" class="premium-btn" style="padding: 7px 10px; font-size: 8px; width: 100%; margin-bottom: 8px; border-color: rgba(20,241,149,0.45);">
+                  SIGN FREE SECURITY MESSAGE
+                </button>
+              `}
+            ` : ''}
             ${profile.walletReadOnly ? `
               <div style="font-size: 8px; color: #ffcc00; margin-bottom: 8px; line-height: 1.35;">
                 READ-ONLY MODE: Open StickLash inside Phantom/Backpack browser to sign secure actions.
@@ -778,39 +950,39 @@ export async function showWalletConnect(options = {}) {
         <!-- PACKAGES -->
         <div style="display:flex; flex-direction:column; gap:6px; margin-bottom: 8px;">
           <!-- Pack 1 -->
-          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly) ? 'locked' : ''}">
+          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">🔵 Micro Pack (5 Premium Boosts)</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly) ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
               BUY & BURN
             </button>
           </div>
           <!-- Pack 2 -->
-          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly) ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
+          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:var(--neon-green);">🔥 Degen Pack (20 Boosts) - BEST VALUE</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly) ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
               BUY & BURN
             </button>
           </div>
           <!-- Pack 3 -->
-          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly) ? 'locked' : ''}">
+          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">⚡ Chaos Pack (45 Premium Boosts)</div>
               <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly) ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
               BUY & BURN
             </button>
           </div>
         </div>
         
-        ${(!profile.walletConnected || profile.walletReadOnly) ? `
-          <div style="font-size: 7px; color:${profile.walletReadOnly ? '#ffcc00' : '#ff3b30'}; text-align:center; font-weight:bold; letter-spacing:0.3px;">${profile.walletReadOnly ? '⚠️ READ-ONLY MODE CANNOT PURCHASE. OPEN IN WALLET BROWSER.' : '⚠️ CONNECT SOLANA WALLET TO UNLOCK PURCHASES'}</div>
+        ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? `
+          <div style="font-size: 7px; color:${profile.walletReadOnly ? '#ffcc00' : (!walletAuthReady && profile.walletConnected ? 'var(--neon-blue)' : '#ff3b30')}; text-align:center; font-weight:bold; letter-spacing:0.3px;">${profile.walletReadOnly ? '⚠️ READ-ONLY MODE CANNOT PURCHASE. OPEN IN WALLET BROWSER.' : (!walletAuthReady && profile.walletConnected ? '⚠️ SIGN FREE SECURITY MESSAGE TO UNLOCK PURCHASES' : '⚠️ CONNECT SOLANA WALLET TO UNLOCK PURCHASES')}</div>
         ` : ''}
       </div>
 
@@ -890,11 +1062,101 @@ export function hideWalletConnect() {
   window.walletModalContext = null;
 }
 
+async function refreshConnectedWalletProfile(publicKeyStr, { authenticated = false } = {}) {
+  const profile = getProfile();
+  profile.walletConnected = true;
+  profile.walletReadOnly = false;
+  profile.walletAuthenticated = !!authenticated && isWalletAuthenticated({ ...profile, walletAddress: publicKeyStr });
+  profile.walletAddress = publicKeyStr;
+
+  await updateOnChainBalance(profile);
+  await syncServerBoostBalance(profile);
+
+  profile.walletAuthenticated = isWalletAuthenticated(profile);
+  saveProfile(profile);
+  updateBoostIndicators(profile.boosts);
+  return profile;
+}
+
+window.secureWalletSignIn = async function(options = {}) {
+  const { silent = false } = options || {};
+  const profile = getProfile();
+  if (!profile.walletConnected || profile.walletReadOnly || !profile.walletAddress) {
+    if (!silent) alert('⚠️ Connect a signing wallet first.');
+    return false;
+  }
+
+  if (isWalletAuthenticated(profile)) {
+    profile.walletAuthenticated = true;
+    saveProfile(profile);
+    return true;
+  }
+
+  try {
+    setWalletFlow(
+      'awaiting_signature',
+      'SECURE SIGN-IN',
+      'Opening Phantom for a free message signature. This proves wallet ownership and does not move tokens.',
+      'warn'
+    );
+    emitWalletGameplayPause(true, 'wallet_security_signin');
+    showWalletConnect();
+
+    await ensureWalletAuthSession(profile.walletAddress, { forceRefresh: true });
+
+    profile.walletAuthenticated = true;
+    await syncServerBoostBalance(profile);
+    saveProfile(profile);
+    updateBoostIndicators(profile.boosts);
+
+    setWalletFlow(
+      'ready',
+      'WALLET READY',
+      'Secure session active. Boost buys and boost spends are now unlocked without surprise signing during gameplay.',
+      'success'
+    );
+    showWalletConnect();
+
+    const activeGame = window.currentGame || window.game || window._game;
+    if (activeGame && activeGame.showBoostMessage) {
+      activeGame.showBoostMessage('⚡ WALLET SECURITY READY!', 'runner');
+    }
+    return true;
+  } catch (err) {
+    console.error('Wallet security sign-in failed:', err);
+    const profileAfterError = getProfile();
+    profileAfterError.walletAuthenticated = false;
+    saveProfile(profileAfterError);
+    setWalletFlow(
+      'signature_failed',
+      'SIGN-IN NOT FINISHED',
+      walletFriendlyErrorMessage(err),
+      'error'
+    );
+    showWalletConnect();
+    if (!silent) alert('⚠️ ' + walletFriendlyErrorMessage(err));
+    return false;
+  } finally {
+    emitWalletGameplayPause(false, 'wallet_security_signin');
+  }
+};
+
 // Global hook: connect wallet (Real & Mock-Free)
 window.connectSolanaWallet = async function() {
   try {
     const nativeMwa = getNativeMwaPlugin();
     let publicKeyStr = '';
+
+    setWalletFlow(
+      'opening_wallet',
+      nativeMwa ? 'OPENING PHANTOM' : 'OPENING WALLET',
+      nativeMwa
+        ? 'Approve the StickLash connection in your Android wallet. You should return here after account selection.'
+        : 'Approve the wallet connection prompt, then finish the free security sign-in.',
+      'warn'
+    );
+    emitWalletGameplayPause(true, 'wallet_connect');
+    showWalletConnect();
 
     if (nativeMwa) {
       const result = await nativeMwa.connect();
@@ -914,18 +1176,13 @@ window.connectSolanaWallet = async function() {
       return;
     }
 
-    await ensureWalletAuthSession(publicKeyStr);
-    
-    const profile = getProfile();
-    profile.walletConnected = true;
-    profile.walletReadOnly = false;
-    profile.walletAddress = publicKeyStr;
-    
-    // Fetch live on-chain balance
-    await updateOnChainBalance(profile);
-    await syncServerBoostBalance(profile);
-    
-    saveProfile(profile);
+    await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
+    setWalletFlow(
+      'connected_needs_signature',
+      'WALLET CONNECTED',
+      'One more free signature unlocks protected boosts. This is not a transaction and no tokens move.',
+      'warn'
+    );
     
     // Redraw modal
     showWalletConnect();
@@ -933,15 +1190,18 @@ window.connectSolanaWallet = async function() {
     // Show in-game notification if applicable
     const activeGame = window.currentGame || window.game || window._game;
     if (activeGame && activeGame.showBoostMessage) {
-      activeGame.showBoostMessage("⚡ SOLANA WALLET CONNECTED!", "runner");
+      activeGame.showBoostMessage("⚡ WALLET CONNECTED. SIGN TO UNLOCK BOOSTS.", "runner");
     }
   } catch (err) {
     console.error('Wallet connection rejected/failed:', err);
+    setWalletFlow('connect_failed', 'WALLET CONNECTION FAILED', walletFriendlyErrorMessage(err), 'error');
     if (String(err?.code || '').includes('MWA_NO_WALLET')) {
       window.showWalletConnectionOptions = true;
       showWalletConnect();
     }
     alert('⚠️ ' + walletFriendlyErrorMessage(err));
+  } finally {
+    emitWalletGameplayPause(false, 'wallet_connect');
   }
 };
 
@@ -976,6 +1236,7 @@ window.syncManualSolanaAddress = async function() {
     const profile = getProfile();
     profile.walletConnected = true;
     profile.walletReadOnly = true;
+    profile.walletAuthenticated = false;
     profile.walletAddress = address;
     clearWalletAuthSession();
     
@@ -1000,6 +1261,7 @@ window.syncManualSolanaAddress = async function() {
 
 window.cancelWalletOptions = function() {
   window.showWalletConnectionOptions = false;
+  clearWalletFlow();
   showWalletConnect();
 };
 
@@ -1008,6 +1270,23 @@ window.requestBoostRefillFlow = function({ autoPause = true } = {}) {
   if (shouldPause) {
     emitWalletGameplayPause(true, 'boost_refill_required');
   }
+  showWalletConnect({
+    focusStore: true,
+    pauseGameplay: shouldPause
+  });
+};
+
+window.requestWalletSecurityFlow = function({ autoPause = true } = {}) {
+  const shouldPause = !!autoPause && !window.isMultiplayerMatch;
+  if (shouldPause) {
+    emitWalletGameplayPause(true, 'wallet_security_required');
+  }
+  setWalletFlow(
+    'security_required',
+    'SECURE WALLET SIGN-IN REQUIRED',
+    'Your wallet is connected, but boosts need one free message signature before gameplay can spend them.',
+    'warn'
+  );
   showWalletConnect({
     focusStore: true,
     pauseGameplay: shouldPause
@@ -1028,8 +1307,10 @@ window.disconnectSolanaWallet = function() {
   }
   profile.walletConnected = false;
   profile.walletReadOnly = false;
+  profile.walletAuthenticated = false;
   profile.walletAddress = '';
   profile.smfBalance = 0;
+  clearWalletFlow();
   saveProfile(profile);
 
   // Redraw modal
@@ -1038,12 +1319,27 @@ window.disconnectSolanaWallet = function() {
 
 // Global hook: purchase boost pack with server-authoritative crediting
 window.purchaseBoostPack = async function(packId) {
-  const profile = getProfile();
+  let profile = getProfile();
   if (!profile.walletConnected) return alert('⚠️ Wallet is not connected.');
   if (profile.walletReadOnly) return alert('⚠️ Read-only wallet mode cannot purchase. Open game in your wallet browser.');
   const nativeMwa = getNativeMwaPlugin();
   if (!window.solana && !nativeMwa) {
     return alert('⚠️ No Solana wallet adapter detected.');
+  }
+  if (!isWalletAuthenticated(profile)) {
+    setWalletFlow(
+      'purchase_needs_signature',
+      'SECURITY SIGN-IN REQUIRED',
+      'Sign one free message first, then StickLash can safely create your boost purchase intent.',
+      'warn'
+    );
+    showWalletConnect({ focusStore: true });
+    const signedIn = await window.secureWalletSignIn({ silent: true });
+    if (!signedIn) {
+      alert('⚠️ Finish the free wallet sign-in before buying boosts.');
+      return;
+    }
+    profile = getProfile();
   }
 
   const txOverlay = document.getElementById('solana-tx-overlay');

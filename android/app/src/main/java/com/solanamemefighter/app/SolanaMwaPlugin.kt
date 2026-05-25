@@ -157,9 +157,11 @@ class SolanaMwaPlugin : Plugin() {
             try {
                 val sender = getActivityResultSender(call) ?: return@launch
                 when (val result = walletAdapter.transact(sender) { authResult ->
+                    val account = authResult.accounts.firstOrNull()
+                        ?: throw IllegalStateException("Wallet returned no authorized account")
                     signMessagesDetached(
                         arrayOf(message.toByteArray(StandardCharsets.UTF_8)),
-                        arrayOf(authResult.accounts.first().publicKey)
+                        arrayOf(account.publicKey)
                     )
                 }) {
                     is TransactionResult.Success -> {
@@ -299,6 +301,7 @@ class SolanaMwaPlugin : Plugin() {
     }
 
     private fun persistConnection(walletAddress: String, authToken: String?) {
+        walletAdapter.authToken = authToken
         prefs.edit()
             .putString(KEY_WALLET_ADDRESS, walletAddress)
             .putString(KEY_AUTH_TOKEN, authToken)
