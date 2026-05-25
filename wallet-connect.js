@@ -173,6 +173,28 @@ function emitWalletGameplayPause(paused, reason = 'wallet_action') {
   }));
 }
 
+function walletFriendlyErrorMessage(err) {
+  const code = String(err?.code || '');
+  const message = String(err?.message || err || '');
+  const lower = message.toLowerCase();
+  if (code.includes('MWA_NO_WALLET') || lower.includes('no mwa wallet')) {
+    return 'No compatible Solana wallet app was detected. Install Phantom or Solflare, then retry.';
+  }
+  if (code.includes('MWA_SENDER_UNAVAILABLE') || lower.includes('still initializing')) {
+    return 'The Android wallet bridge is still waking up. Close and reopen StickLash, then retry.';
+  }
+  if (lower.includes('user rejected') || lower.includes('rejected') || lower.includes('declined') || lower.includes('cancel')) {
+    return 'Wallet request was cancelled. No tokens were moved.';
+  }
+  if (lower.includes('lifecycleowner') || lower.includes('register before')) {
+    return 'The Android wallet bridge was not ready. Restart StickLash, then retry.';
+  }
+  if (lower.includes('signature') || lower.includes('sign')) {
+    return 'Wallet signing could not be completed. Please retry and approve the wallet prompt.';
+  }
+  return 'Wallet connection could not be completed. Please retry from your Solana wallet.';
+}
+
 if (hasNativeMwaBridge()) {
   try {
     getNativeMwaPlugin().addListener('walletCallback', (event) => {
@@ -919,7 +941,7 @@ window.connectSolanaWallet = async function() {
       window.showWalletConnectionOptions = true;
       showWalletConnect();
     }
-    alert('⚠️ Wallet connection failed: ' + (err.message || err));
+    alert('⚠️ ' + walletFriendlyErrorMessage(err));
   }
 };
 

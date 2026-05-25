@@ -26,10 +26,12 @@ class SolanaMwaPlugin : Plugin() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var walletAdapter: MobileWalletAdapter
     private lateinit var prefs: android.content.SharedPreferences
+    private var activityResultSender: ActivityResultSender? = null
 
     override fun load() {
         super.load()
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        activityResultSender = activity?.let { ActivityResultSender(it) }
         walletAdapter = MobileWalletAdapter(
             connectionIdentity = ConnectionIdentity(
                 identityUri = Uri.parse(DEFAULT_IDENTITY_URI),
@@ -41,6 +43,17 @@ class SolanaMwaPlugin : Plugin() {
         if (!cachedAuthToken.isNullOrBlank()) {
             walletAdapter.authToken = cachedAuthToken
         }
+    }
+
+    private fun getActivityResultSender(call: PluginCall): ActivityResultSender? {
+        val sender = activityResultSender
+        if (sender == null) {
+            call.reject(
+                "Wallet bridge is still initializing. Close and reopen StickLash, then retry.",
+                "MWA_SENDER_UNAVAILABLE"
+            )
+        }
+        return sender
     }
 
     override fun handleOnDestroy() {
@@ -93,7 +106,7 @@ class SolanaMwaPlugin : Plugin() {
 
         scope.launch {
             try {
-                val sender = ActivityResultSender(activity)
+                val sender = getActivityResultSender(call) ?: return@launch
                 when (val result = walletAdapter.connect(sender)) {
                     is TransactionResult.Success -> {
                         val account = result.authResult.accounts.firstOrNull()
@@ -142,7 +155,7 @@ class SolanaMwaPlugin : Plugin() {
 
         scope.launch {
             try {
-                val sender = ActivityResultSender(activity)
+                val sender = getActivityResultSender(call) ?: return@launch
                 when (val result = walletAdapter.transact(sender) { authResult ->
                     signMessagesDetached(
                         arrayOf(message.toByteArray(StandardCharsets.UTF_8)),
@@ -210,7 +223,7 @@ class SolanaMwaPlugin : Plugin() {
 
         scope.launch {
             try {
-                val sender = ActivityResultSender(activity)
+                val sender = getActivityResultSender(call) ?: return@launch
                 when (val result = walletAdapter.transact(sender) { _ ->
                     signAndSendTransactions(arrayOf(txBytes))
                 }) {
@@ -259,7 +272,7 @@ class SolanaMwaPlugin : Plugin() {
 
         scope.launch {
             try {
-                val sender = ActivityResultSender(activity)
+                val sender = getActivityResultSender(call) ?: return@launch
                 when (val result = walletAdapter.disconnect(sender)) {
                     is TransactionResult.Success -> {
                         clearConnection()

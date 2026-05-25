@@ -17,7 +17,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from pathlib import Path
 from typing import Any, List, Dict, Optional
 from urllib.parse import urlparse
@@ -87,10 +87,9 @@ matchmaking_task: MatchmakingTask | None = None
 # Solana Boost Purchase / Ledger
 # ─────────────────────────────────────────────
 
-DEFAULT_SMF_MINT = "EPjFWdd5AufqSSjvtq8aLv9hqpstb218c3sL955m1od1"
 DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
-DEFAULT_SMF_PRICE_FALLBACK = Decimal("0.00762")
+DEFAULT_PAYMENT_TOKEN_PRICE_FALLBACK = Decimal("0")
 BOOST_INTENT_TTL_SECONDS = int(os.environ.get("BOOST_INTENT_TTL_SECONDS", "600"))
 STARTER_BOOSTS = int(os.environ.get("STARTER_BOOSTS", "15"))
 WALLET_AUTH_CHALLENGE_TTL_SECONDS = int(os.environ.get("WALLET_AUTH_CHALLENGE_TTL_SECONDS", "300"))
@@ -113,10 +112,18 @@ BOOST_RATE_LIMITS = {
 }
 _boost_rate_window: dict[str, list[float]] = {}
 
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        return max(int(os.environ.get(name, str(default))), minimum)
+    except (TypeError, ValueError):
+        return default
+
+
 BOOST_PACKS: dict[str, dict[str, int | str]] = {
-    "micro": {"boosts": 5, "usd_cents": 100},
-    "degen": {"boosts": 20, "usd_cents": 300},
-    "chaos": {"boosts": 45, "usd_cents": 500},
+    "micro": {"boosts": _env_int("BOOST_MICRO_BOOSTS", 5), "usd_cents": _env_int("BOOST_MICRO_USD_CENTS", 100)},
+    "degen": {"boosts": _env_int("BOOST_DEGEN_BOOSTS", 20), "usd_cents": _env_int("BOOST_DEGEN_USD_CENTS", 300)},
+    "chaos": {"boosts": _env_int("BOOST_CHAOS_BOOSTS", 45), "usd_cents": _env_int("BOOST_CHAOS_USD_CENTS", 500)},
 }
 
 MARKET_API_PREFIX = os.environ.get("SMF_MARKET_API_PREFIX", "/api/marketfeed/v2").rstrip("/")
@@ -517,7 +524,17 @@ async def _require_wallet_session(conn: asyncpg.Connection, request: Request, wa
 
 
 def _get_smf_mint() -> str:
-    return os.environ.get("SMF_MINT", DEFAULT_SMF_MINT)
+    mint = os.environ.get("SMF_MINT", "").strip()
+    if not mint:
+        raise ValueError("SMF_MINT must be configured")
+    return mint
+
+
+def _get_boost_payment_token_symbol(mint: str | None = None) -> str:
+    configured = os.environ.get("BOOST_PAYMENT_TOKEN_SYMBOL", "").strip()
+    if configured:
+        return configured
+    return "$SMF"
 
 
 def _get_solana_rpc() -> str:
@@ -537,6 +554,20 @@ def _as_decimal(value: Any, fallback: Decimal) -> Decimal:
     except (InvalidOperation, ValueError, TypeError):
         pass
     return fallback
+
+
+def _get_boost_payment_price_fallback(mint: str) -> Decimal:
+    configured = os.environ.get("BOOST_PAYMENT_TOKEN_PRICE_FALLBACK", "").strip()
+    if configured:
+        return _as_decimal(configured, DEFAULT_PAYMENT_TOKEN_PRICE_FALLBACK)
+    return DEFAULT_PAYMENT_TOKEN_PRICE_FALLBACK
+
+
+def _get_fixed_boost_payment_price(mint: str) -> Decimal | None:
+    configured = os.environ.get("BOOST_PAYMENT_TOKEN_FIXED_PRICE_USD", "").strip()
+    if not configured:
+        return None
+    return _as_decimal(configured, _get_boost_payment_price_fallback(mint))
 
 
 async def _fetch_mint_decimals(rpc_url: str, mint: str) -> int:
@@ -565,27 +596,38 @@ async def _compute_pack_quote(pack_id: str) -> dict[str, Any]:
     mint = _get_smf_mint()
     rpc = _get_solana_rpc()
 
-    token = await birdeye_service.get_cached_token(mint, mark_hot=False)
-    smf_price = _as_decimal((token or {}).get("price"), DEFAULT_SMF_PRICE_FALLBACK)
-
-    usd_cents = int(pack["usd_cents"])
-    usd = Decimal(usd_cents) / Decimal(100)
-    required_smf_ui = (usd / smf_price).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-    required_smf_ui_int = max(int(required_smf_ui), 1)
+    fixed_payment_price = _get_fixed_boost_payment_price(mint)
+    if fixed_payment_price is not None:
+        payment_price = fixed_payment_price
+    else:
+        token = await birdeye_service.get_cached_token(mint, mark_hot=False)
+        payment_price = _as_decimal((token or {}).get("price"), _get_boost_payment_price_fallback(mint))
+    if payment_price <= 0:
+        raise ValueError("Could not determine boost payment token price")
 
     decimals = await _fetch_mint_decimals(rpc, mint)
-    required_smf_raw = required_smf_ui_int * (10 ** decimals)
+    usd_cents = int(pack["usd_cents"])
+    usd = Decimal(usd_cents) / Decimal(100)
+    token_units_per_ui = Decimal(10) ** decimals
+    required_smf_ui = usd / payment_price
+    required_smf_raw = int((required_smf_ui * token_units_per_ui).to_integral_value(rounding=ROUND_CEILING))
+    required_smf_raw = max(required_smf_raw, 1)
+    required_smf_ui_display = Decimal(required_smf_raw) / token_units_per_ui
 
     return {
         "pack_id": pack_id,
         "boosts_count": int(pack["boosts"]),
         "usd_cents": usd_cents,
-        "smf_price": str(smf_price),
+        "smf_price": str(payment_price),
+        "payment_token_symbol": _get_boost_payment_token_symbol(mint),
+        "payment_token_price": str(payment_price),
         "mint": mint,
         "rpc": rpc,
         "token_decimals": decimals,
-        "required_smf_ui": required_smf_ui_int,
+        "required_smf_ui": str(required_smf_ui_display.normalize()),
         "required_smf_raw": required_smf_raw,
+        "required_token_ui": str(required_smf_ui_display.normalize()),
+        "required_token_raw": required_smf_raw,
     }
 
 
@@ -1627,6 +1669,12 @@ async def health() -> dict:
 async def favicon() -> Response:
     # Return empty 204 to prevent 404 errors
     return Response(content="", status_code=204)
+
+
+@get("/.well-known/assetlinks.json")
+async def android_assetlinks() -> Response:
+    assetlinks = (ROOT / ".well-known" / "assetlinks.json").read_text(encoding="utf-8")
+    return Response(content=assetlinks, media_type="application/json")
 
 # ─────────────────────────────────────────────
 # Solscan Discovery Engine Endpoints
@@ -3538,6 +3586,8 @@ app = Litestar(
     cors_config=cors_config,
     route_handlers=[
         health,
+        favicon,
+        android_assetlinks,
         index_route,
         room_route,
         leaderboard_page,

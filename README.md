@@ -94,6 +94,45 @@ To keep the token economy highly active, firing **Hadouken projectiles** in P1 p
 * **Zero Boost Lockout**: If boosts reach 0, firing Hadouken is blocked, a warning `⚠️ Out of premium boosts!` displays, and the player is prompted to buy more.
 * **SPL On-Chain Burn + Server Ledger (`wallet-connect.js` + `server.py`)**: To replenish ammo, the player completes wallet-auth message signing, signs a burn transaction in wallet, and submits the signature to backend verification. Boosts are credited only after the server verifies the on-chain burn instruction and records it in the purchase ledger.
 
+### 4. Solana Mobile Wallet Adapter Security
+The Android APK includes a native Solana Mobile Wallet Adapter bridge so mobile wallets can verify the dApp and sign secure actions without exposing keys to STICKLASH.
+* **Native MWA bridge**: `android/app/src/main/java/com/solanamemefighter/app/SolanaMwaPlugin.kt` caches the Android `ActivityResultSender` during plugin load and reuses it for wallet connect, message signing, transaction signing, and disconnect flows.
+* **Wallet sign-in session**: `POST /api/wallet-auth/challenge` creates a short-lived Solana sign-in challenge, `POST /api/wallet-auth/verify` verifies the wallet signature server-side with PyNaCl, and boost purchase/consume routes require the resulting bearer token.
+* **On-chain proof before credit**: `POST /api/boost/confirm` credits boosts only after the backend fetches the Solana transaction and verifies a matching SPL Token burn instruction for the expected wallet, mint, and amount.
+* **DApp identity relationship**: Android App Links and Digital Asset Links bind `https://sticklash.fun` to package `com.solanamemefighter.app` and release certificate fingerprint `84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76`.
+* **Public verification file**: The backend serves `.well-known/assetlinks.json` at `https://sticklash.fun/.well-known/assetlinks.json`. Wallets and Android can use this relationship to confirm the APK/domain identity instead of trusting an arbitrary app name.
+
+#### Verify Digital Asset Links After Deploy
+Run one of these after deploying to `sticklash.fun`:
+
+```powershell
+Invoke-RestMethod https://sticklash.fun/.well-known/assetlinks.json | ConvertTo-Json -Depth 10
+```
+
+```bash
+curl -i https://sticklash.fun/.well-known/assetlinks.json
+```
+
+The response must be HTTP `200`, JSON, and include:
+
+```json
+{
+  "package_name": "com.solanamemefighter.app",
+  "sha256_cert_fingerprints": [
+    "84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76"
+  ]
+}
+```
+
+Optional Google statement check:
+
+```powershell
+$url = 'https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://sticklash.fun&relation=delegate_permission/common.handle_all_urls'
+Invoke-RestMethod $url | ConvertTo-Json -Depth 10
+```
+
+If the direct URL returns `404`, the app-domain relationship is not live yet. Deploy the repo/backend first, then re-check.
+
 ---
 
 ## ✨ Feature Overview
