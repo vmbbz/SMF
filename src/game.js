@@ -175,11 +175,11 @@ export class Game {
     this._hadoukenConsumeQueued = false;
     this.walletActionPaused = false;
     this.walletActionPauseReason = "";
+    this.walletActionPauseReasons = new Set();
 
     window.addEventListener('smf_wallet_action_pause', (e) => {
       const detail = e && e.detail ? e.detail : {};
-      this.walletActionPaused = !!detail.paused;
-      this.walletActionPauseReason = String(detail.reason || '');
+      this._setWalletActionPause(detail);
     });
   }
 
@@ -216,6 +216,43 @@ export class Game {
     this._loop(this.lastTime);
   }
 
+  _setWalletActionPause(detail = {}) {
+    const wasPaused = this.walletActionPaused;
+    const reason = String(detail.reason || 'wallet_action');
+
+    if (detail.paused) {
+      this.walletActionPauseReasons.add(reason);
+    } else if (detail.clearAll || reason === '*') {
+      this.walletActionPauseReasons.clear();
+    } else {
+      this.walletActionPauseReasons.delete(reason);
+    }
+
+    const reasons = Array.from(this.walletActionPauseReasons);
+    this.walletActionPaused = reasons.length > 0;
+    this.walletActionPauseReason = reasons[reasons.length - 1] || '';
+
+    if (wasPaused && !this.walletActionPaused) {
+      this._resumeAfterUiPause();
+    }
+  }
+
+  _resumeAfterUiPause() {
+    this.lastTime = performance.now();
+    this._dt = 0.016;
+
+    try {
+      this.p1Input?.endFrame?.();
+      this.p2Input?.endFrame?.();
+    } catch (_) {
+      // Input managers should never block the fight from resuming.
+    }
+
+    if (this.stageMusic && this.stageMusic.startForFight && this.running && !this.roundOver) {
+      this.stageMusic.startForFight();
+    }
+  }
+
   /** All providers ready — show "FIGHT!" alert then start the round */
   showFightAlert() {
     this.waitingForProviders = false;
@@ -246,6 +283,15 @@ export class Game {
     // Update floor position on resize
     this.p1.floorY = this.floorY;
     this.p2.floorY = this.floorY;
+
+    if (this.walletActionPaused) {
+      this._dt = 0;
+      this._draw();
+      this.p1Input.endFrame();
+      this.p2Input.endFrame();
+      requestAnimationFrame((t) => this._loop(t));
+      return;
+    }
 
     // Tick timed adapters (CommandAdapter holds)
     this.p1Input.update(dt);
@@ -1477,7 +1523,9 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       const reason = this.walletActionPauseReason || 'wallet_action';
       const statusCopy = reason === 'boost_refill_required'
         ? 'REFILL BOOSTS TO RESUME'
-        : 'COMPLETE WALLET ACTION';
+        : reason === 'help_modal'
+          ? 'CLOSE HELP TO RESUME'
+          : 'COMPLETE WALLET ACTION';
       ctx.save();
       ctx.fillStyle = 'rgba(5, 8, 12, 0.78)';
       ctx.fillRect(0, 0, w, h);
@@ -1491,7 +1539,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.fillText(statusCopy, w / 2, h / 2 + 4);
       ctx.font = '11px monospace';
       ctx.fillStyle = '#9fb1c2';
-      ctx.fillText('Open Profile/Wallet modal and complete the flow.', w / 2, h / 2 + 28);
+      ctx.fillText(reason === 'help_modal' ? 'Your fight state is held safely.' : 'Open Profile/Wallet modal and complete the flow.', w / 2, h / 2 + 28);
       ctx.restore();
     }
   }

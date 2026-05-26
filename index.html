@@ -772,126 +772,80 @@
       align-items: center;
     }
 
-    /* In-fight top dock: quick menu + stage music controls */
-    #fight-top-dock {
-      position: fixed;
-      top: 12px;
-      top: max(12px, env(safe-area-inset-top));
-      left: 50%;
-      transform: translateX(-50%);
-      width: min(96vw, 1180px);
-      display: none;
-      justify-content: space-between;
-      align-items: flex-start;
-      z-index: 750;
-      pointer-events: none;
-    }
-
-    .fight-menu-wrap,
-    .stage-music-controls {
-      pointer-events: auto;
-    }
-
-    #btn-fight-menu {
-      border: 1px solid rgba(0, 255, 157, 0.6);
-      color: #d7ffe8;
-      background: rgba(6, 10, 14, 0.88);
-      border-radius: 999px;
-      padding: 10px 14px;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.7px;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35), 0 0 18px rgba(0, 255, 157, 0.16);
-      cursor: pointer;
-      backdrop-filter: blur(7px);
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    #fight-menu-panel {
-      display: none;
-      flex-direction: column;
-      gap: 6px;
-      margin-top: 8px;
-      min-width: 168px;
-      padding: 10px;
-      border-radius: 14px;
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      background: rgba(7, 9, 14, 0.95);
-      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.45);
-      backdrop-filter: blur(8px);
-    }
-
-    #fight-menu-panel.open {
-      display: flex;
-    }
-
-    .fight-menu-action {
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      background: rgba(255, 255, 255, 0.06);
-      color: #fff;
-      border-radius: 10px;
-      font-size: 11px;
-      letter-spacing: 0.6px;
-      font-weight: 800;
-      padding: 9px 10px;
-      cursor: pointer;
-      text-align: left;
-      transition: transform 0.14s ease, border-color 0.14s ease;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    .fight-menu-action:hover {
-      transform: translateY(-1px);
-      border-color: rgba(0, 255, 157, 0.6);
-    }
-
-    .stage-music-controls {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 8px;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.16);
-      background: rgba(6, 10, 14, 0.86);
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
-      backdrop-filter: blur(8px);
-    }
-
-    .stage-music-controls button {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      border: 1px solid rgba(255, 255, 255, 0.24);
-      background: rgba(255, 255, 255, 0.08);
-      color: #fff;
-      font-size: 15px;
-      line-height: 1;
-      cursor: pointer;
+    .music-menu-wrap {
+      position: relative;
       display: inline-flex;
       align-items: center;
-      justify-content: center;
-      padding: 0;
-      transition: transform 0.12s ease;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
     }
 
-    .stage-music-controls button:hover {
-      transform: scale(1.05);
+    .music-dropdown {
+      display: none;
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 10px);
+      transform: translateX(-50%);
+      flex-direction: column;
+      gap: 8px;
+      width: min(280px, calc(100vw - 24px));
+      padding: 12px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 136, 0, 0.38);
+      background:
+        radial-gradient(circle at 16% 14%, rgba(255, 136, 0, 0.22), transparent 92px),
+        linear-gradient(160deg, rgba(7, 9, 14, 0.98), rgba(14, 8, 5, 0.96));
+      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.5), 0 0 18px rgba(255, 85, 0, 0.18);
+      backdrop-filter: blur(10px);
+      z-index: 900;
+      box-sizing: border-box;
     }
 
-    #fight-track-label {
-      display: inline-block;
-      min-width: 120px;
-      max-width: 220px;
+    .music-dropdown.open {
+      display: flex;
+    }
+
+    .music-dropdown-title {
+      color: #ffb14a;
+      font-family: var(--font-display);
+      font-size: 12px;
+      letter-spacing: 1px;
+      text-align: center;
+      text-shadow: 0 0 10px rgba(255, 85, 0, 0.35);
+    }
+
+    .music-dropdown-track {
+      color: rgba(238, 242, 255, 0.92);
+      font-family: var(--font-print);
+      font-size: 9px;
+      line-height: 1.45;
+      text-align: center;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-size: 11px;
-      color: rgba(229, 237, 255, 0.95);
-      letter-spacing: 0.4px;
+    }
+
+    .music-dropdown-actions {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .music-dropdown-actions button {
+      min-height: 38px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      cursor: pointer;
+      font-size: 14px;
+      font-family: var(--font-print);
+      transition: transform 0.12s ease, border-color 0.12s ease;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .music-dropdown-actions button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 136, 0, 0.65);
     }
 
     @media (max-width: 1024px) {
@@ -912,39 +866,6 @@
         top: 11%;
         transform: translate(-50%, -50%);
         gap: 8px;
-      }
-
-      #fight-top-dock {
-        top: 8px;
-        top: max(8px, env(safe-area-inset-top));
-        width: calc(100vw - 12px);
-        align-items: flex-start;
-      }
-
-      #btn-fight-menu {
-        padding: 8px 11px;
-        font-size: 10px;
-      }
-
-      #fight-menu-panel {
-        min-width: 154px;
-      }
-
-      .stage-music-controls {
-        gap: 4px;
-        padding: 5px 6px;
-      }
-
-      .stage-music-controls button {
-        width: 28px;
-        height: 28px;
-        font-size: 13px;
-      }
-
-      #fight-track-label {
-        min-width: 64px;
-        max-width: 96px;
-        font-size: 10px;
       }
 
       /* Weather and Boost buttons as ultra-compact circular glass icons */
@@ -973,36 +894,16 @@
 
     /* Mobile landscape combat ergonomics */
     @media (max-width: 1024px) and (orientation: landscape) {
-      #fight-top-dock {
-        top: max(6px, env(safe-area-inset-top));
-        width: calc(100vw - 10px);
-      }
-
-      #btn-fight-menu {
-        min-height: 36px;
-        padding: 7px 10px;
-      }
-
-      .stage-music-controls {
-        gap: 5px;
-        padding: 4px 5px;
-      }
-
-      .stage-music-controls button {
-        width: 32px;
-        height: 32px;
-      }
-
-      #fight-track-label {
-        min-width: 70px;
-        max-width: 110px;
-      }
-
-      /* Drop misc HUD controls lower so they do not collide with top dock */
       #hud-widgets {
-        top: 72px;
+        top: max(12px, env(safe-area-inset-top));
         transform: translateX(-50%);
         gap: 6px;
+      }
+
+      .music-dropdown {
+        bottom: auto;
+        top: calc(100% + 8px);
+        width: min(250px, calc(100vw - 20px));
       }
 
       #hud-widgets button.hud-btn {
@@ -2188,24 +2089,6 @@
     style="display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-green); padding: 6px 15px; z-index: 100; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(0,255,157,0.15); font-family: var(--font-print);">
   </div>
 
-  <!-- FIGHT TOP DOCK -->
-  <div id="fight-top-dock">
-    <div class="fight-menu-wrap">
-      <button id="btn-fight-menu" type="button">☰ MENU</button>
-      <div id="fight-menu-panel">
-        <button id="btn-fight-menu-resume" class="fight-menu-action" type="button">RESUME FIGHT</button>
-        <button id="btn-fight-menu-rematch" class="fight-menu-action" type="button">REMATCH</button>
-        <button id="btn-fight-menu-home" class="fight-menu-action" type="button">BACK TO HOME</button>
-      </div>
-    </div>
-    <div class="stage-music-controls">
-      <button id="btn-stage-music-prev" type="button" aria-label="Previous stage track">⏮</button>
-      <button id="btn-stage-music-toggle" type="button" aria-label="Pause stage music">⏸</button>
-      <button id="btn-stage-music-next" type="button" aria-label="Next stage track">⏭</button>
-      <span id="fight-track-label">1/6 Main Theme</span>
-    </div>
-  </div>
-
   <!-- HUD WIDGETS (Bottom Center on PC, vertically centred on mobile) -->
   <div id="hud-widgets">
     <!-- USER PROFILE / SOLANA WALLET -->
@@ -2213,16 +2096,27 @@
       <span class="profile-fallback-mark">忍</span>
     </button>
 
+    <!-- MUSIC MENU -->
+    <div class="music-menu-wrap">
+      <button id="btn-music-menu" class="hud-btn bgm-btn" type="button" title="Music Controls">
+        <span class="desktop-text">⛩️ MUSIC</span>
+        <span class="mobile-text">⛩️</span>
+      </button>
+      <div id="music-dropdown" class="music-dropdown" aria-hidden="true">
+        <div class="music-dropdown-title">MUSIC</div>
+        <div id="music-track-label" class="music-dropdown-track">Landing BGM ready</div>
+        <div class="music-dropdown-actions">
+          <button id="btn-stage-music-prev" type="button" aria-label="Previous stage track">⏮</button>
+          <button id="btn-stage-music-toggle" type="button" aria-label="Play or pause music">▶</button>
+          <button id="btn-stage-music-next" type="button" aria-label="Next stage track">⏭</button>
+        </div>
+      </div>
+    </div>
+
     <!-- WEATHER TOGGLE -->
     <button id="btn-weather" class="hud-btn weather-btn" onclick="if(window.toggleWeather) window.toggleWeather()">
       <span class="desktop-text">🌧️ WEATHER</span>
       <span class="mobile-text">🌧️</span>
-    </button>
-
-    <!-- PROCEDURAL CHINESE BGM TOGGLE -->
-    <button id="btn-bgm" class="hud-btn bgm-btn" onclick="if(window.toggleBGM) window.toggleBGM()">
-      <span class="desktop-text">⛩️ LANDING BGM: ON</span>
-      <span class="mobile-text">⛩️</span>
     </button>
 
     <!-- BOOST HACK TOGGLE -->
@@ -2942,6 +2836,12 @@
 
     window.openHelpModal = () => {
       if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
+      const fightActive = document.getElementById('game')?.classList.contains('active');
+      if (fightActive) {
+        window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
+          detail: { paused: true, reason: 'help_modal' }
+        }));
+      }
       const modal = document.getElementById('help-modal');
       if (modal) {
         modal.classList.remove('hidden');
@@ -2981,6 +2881,9 @@
 
     window.closeHelpModal = () => {
       if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
+      window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
+        detail: { paused: false, reason: 'help_modal' }
+      }));
       const modal = document.getElementById('help-modal');
       if (modal) {
         modal.classList.add('hidden');

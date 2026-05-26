@@ -528,14 +528,29 @@ window.consumeBoostForHadouken = async function(walletAddress) {
 
 export async function showWalletConnect(options = {}) {
   if (options && typeof options === 'object') {
-    window.walletModalContext = {
-      ...(window.walletModalContext || {}),
+    const previousContext = window.walletModalContext || {};
+    const nextContext = {
+      ...previousContext,
       ...options
+    };
+    if (nextContext.pauseGameplay) {
+      nextContext.pauseReason = String(
+        nextContext.pauseReason ||
+        options.pauseReason ||
+        previousContext.pauseReason ||
+        'wallet_modal'
+      );
+    }
+    window.walletModalContext = {
+      ...nextContext
     };
   }
   const modalContext = window.walletModalContext || {};
   const focusStore = !!modalContext.focusStore;
   const nativeMwaBridge = hasNativeMwaBridge();
+  if (modalContext.pauseGameplay) {
+    emitWalletGameplayPause(true, modalContext.pauseReason || 'wallet_modal');
+  }
 
   let modal = document.getElementById('wallet-connect-panel');
   if (!modal) {
@@ -1057,7 +1072,7 @@ export function hideWalletConnect() {
     modal.classList.add('hidden');
   }
   if (modalContext.pauseGameplay) {
-    emitWalletGameplayPause(false, 'wallet_modal_closed');
+    emitWalletGameplayPause(false, modalContext.pauseReason || 'wallet_modal');
   }
   window.walletModalContext = null;
 }
@@ -1272,7 +1287,8 @@ window.requestBoostRefillFlow = function({ autoPause = true } = {}) {
   }
   showWalletConnect({
     focusStore: true,
-    pauseGameplay: shouldPause
+    pauseGameplay: shouldPause,
+    pauseReason: 'boost_refill_required'
   });
 };
 
@@ -1289,7 +1305,8 @@ window.requestWalletSecurityFlow = function({ autoPause = true } = {}) {
   );
   showWalletConnect({
     focusStore: true,
-    pauseGameplay: shouldPause
+    pauseGameplay: shouldPause,
+    pauseReason: 'wallet_security_required'
   });
 };
 

@@ -270,47 +270,62 @@ window.sfx = sfx;
 window.stageMusic = stageMusic;
 sfx.preload().catch(e => console.warn('[SFX] Background preload failed:', e));
 
-function syncLandingBgmButton() {
-  const btn = document.getElementById('btn-bgm');
-  if (!btn || !window.sfx) return;
-
-  const desktopEl = btn.querySelector('.desktop-text');
-  if (desktopEl) desktopEl.textContent = window.sfx._bgmActive ? '⛩️ LANDING BGM: ON' : '⛩️ LANDING BGM: OFF';
-  btn.style.borderColor = window.sfx._bgmActive ? '#ff5500' : '#555';
-  btn.style.boxShadow = window.sfx._bgmActive ? '0 0 15px rgba(255, 85, 0, 0.4)' : 'none';
+function getStageTrackCopy(uiState = stageMusic.getState()) {
+  const track = uiState.trackName || 'No Track';
+  const index = Number.isFinite(uiState.trackIndex) ? uiState.trackIndex + 1 : 0;
+  const total = Number.isFinite(uiState.totalTracks) ? uiState.totalTracks : 0;
+  return total > 0 ? `${index}/${total} ${track}` : track;
 }
 
-function syncFightMusicControls(uiState = stageMusic.getState()) {
-  const label = document.getElementById('fight-track-label');
+function syncMusicMenuButton(uiState = stageMusic.getState()) {
+  const btn = document.getElementById('btn-music-menu');
+  const label = document.getElementById('music-track-label');
   const toggleBtn = document.getElementById('btn-stage-music-toggle');
+  if (!btn) return;
+
+  const isFightMusic = state === 'fighting' || (canvas && canvas.classList.contains('active'));
+  const landingActive = !!window.sfx?._bgmActive;
+  const isActive = isFightMusic ? !!uiState.isPlaying : landingActive;
+  const stageCopy = getStageTrackCopy(uiState);
+
+  const desktopEl = btn.querySelector('.desktop-text');
+  if (desktopEl) desktopEl.textContent = '⛩️ MUSIC';
+  const mobileEl = btn.querySelector('.mobile-text');
+  if (mobileEl) mobileEl.textContent = '⛩️';
+
+  btn.style.display = 'flex';
+  btn.style.borderColor = isActive ? '#ff7a18' : 'rgba(255, 122, 24, 0.48)';
+  btn.style.boxShadow = isActive ? '0 0 15px rgba(255, 122, 24, 0.42)' : '0 0 10px rgba(255, 85, 0, 0.18)';
 
   if (label) {
-    const track = uiState.trackName || 'No Track';
-    const index = Number.isFinite(uiState.trackIndex) ? uiState.trackIndex + 1 : 0;
-    const total = Number.isFinite(uiState.totalTracks) ? uiState.totalTracks : 0;
-    label.textContent = total > 0 ? `${index}/${total} ${track}` : track;
+    label.textContent = isFightMusic
+      ? `Stage: ${stageCopy}`
+      : `Landing BGM: ${landingActive ? 'ON' : 'OFF'} | Stage: ${stageCopy}`;
   }
 
   if (toggleBtn) {
-    toggleBtn.textContent = uiState.isPlaying ? '⏸' : '▶';
-    toggleBtn.setAttribute('aria-label', uiState.isPlaying ? 'Pause stage music' : 'Play stage music');
+    const playing = isFightMusic ? !!uiState.isPlaying : landingActive;
+    toggleBtn.textContent = playing ? '⏸' : '▶';
+    toggleBtn.setAttribute('aria-label', playing ? 'Pause music' : 'Play music');
   }
+}
+
+function syncLandingBgmButton() {
+  syncMusicMenuButton();
+}
+
+function syncFightMusicControls(uiState = stageMusic.getState()) {
+  syncMusicMenuButton(uiState);
 }
 
 stageMusic.subscribe(syncFightMusicControls);
 
-function setFightDockVisible(isVisible) {
-  const dock = document.getElementById('fight-top-dock');
-  if (dock) dock.style.display = isVisible ? 'flex' : 'none';
-  if (!isVisible) {
-    const panel = document.getElementById('fight-menu-panel');
-    if (panel) panel.classList.remove('open');
-  }
+function setFightDockVisible() {
+  window.closeMusicMenu?.();
 }
 
-function setLandingAudioButtonVisible(isVisible) {
-  const btn = document.getElementById('btn-bgm');
-  if (btn) btn.style.display = isVisible ? 'flex' : 'none';
+function setLandingAudioButtonVisible() {
+  syncMusicMenuButton();
 }
 
 function hideFightSceneUi() {
@@ -345,66 +360,54 @@ window.toggleBGM = function() {
   syncLandingBgmButton();
 };
 
-window.toggleFightMenu = function(forceOpen = null) {
-  const panel = document.getElementById('fight-menu-panel');
-  if (!panel || state !== 'fighting') return false;
-
-  const nextOpen = forceOpen === null ? !panel.classList.contains('open') : !!forceOpen;
-  panel.classList.toggle('open', nextOpen);
+window.toggleMusicMenu = function(forceOpen = null) {
+  const dropdown = document.getElementById('music-dropdown');
+  if (!dropdown) return false;
+  const nextOpen = forceOpen === null ? !dropdown.classList.contains('open') : !!forceOpen;
+  dropdown.classList.toggle('open', nextOpen);
+  dropdown.setAttribute('aria-hidden', nextOpen ? 'false' : 'true');
+  syncMusicMenuButton();
   return nextOpen;
 };
 
-window.closeFightMenu = function() {
-  const panel = document.getElementById('fight-menu-panel');
-  if (panel) panel.classList.remove('open');
+window.closeMusicMenu = function() {
+  window.toggleMusicMenu(false);
 };
 
-safeListener('btn-fight-menu', 'click', (e) => {
+safeListener('btn-music-menu', 'click', (e) => {
   e.preventDefault();
   e.stopPropagation();
-  window.toggleFightMenu();
-});
-
-safeListener('btn-fight-menu-resume', 'click', (e) => {
-  e.preventDefault();
-  window.closeFightMenu();
-});
-
-safeListener('btn-fight-menu-rematch', 'click', async (e) => {
-  e.preventDefault();
-  window.closeFightMenu();
-  if (typeof window.rematchFight === 'function') {
-    await window.rematchFight();
-  }
-});
-
-safeListener('btn-fight-menu-home', 'click', (e) => {
-  e.preventDefault();
-  window.closeFightMenu();
-  const overlay = document.getElementById('victory-overlay');
-  if (overlay) overlay.classList.add('hidden');
-  showLanding();
+  window.toggleMusicMenu();
 });
 
 safeListener('btn-stage-music-prev', 'click', (e) => {
   e.preventDefault();
-  stageMusic.prevTrack({ autoplay: true, forcePlay: true, persist: true });
+  e.stopPropagation();
+  const inFight = state === 'fighting';
+  stageMusic.prevTrack({ autoplay: inFight, forcePlay: inFight, persist: true });
+  syncMusicMenuButton();
 });
 
 safeListener('btn-stage-music-toggle', 'click', (e) => {
   e.preventDefault();
-  stageMusic.togglePlayPause();
+  e.stopPropagation();
+  if (state === 'fighting') stageMusic.togglePlayPause();
+  else window.toggleBGM();
+  syncMusicMenuButton();
 });
 
 safeListener('btn-stage-music-next', 'click', (e) => {
   e.preventDefault();
-  stageMusic.nextTrack({ autoplay: true, forcePlay: true, persist: true });
+  e.stopPropagation();
+  const inFight = state === 'fighting';
+  stageMusic.nextTrack({ autoplay: inFight, forcePlay: inFight, persist: true });
+  syncMusicMenuButton();
 });
 
 document.addEventListener('click', (e) => {
-  const menuWrap = document.querySelector('#fight-top-dock .fight-menu-wrap');
-  if (!menuWrap || !menuWrap.contains(e.target)) {
-    window.closeFightMenu();
+  const musicWrap = document.querySelector('.music-menu-wrap');
+  if (!musicWrap || !musicWrap.contains(e.target)) {
+    window.closeMusicMenu();
   }
 });
 
@@ -2496,7 +2499,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Escape') {
     if (state === 'fighting') {
       e.preventDefault();
-      window.toggleFightMenu();
+      window.closeMusicMenu?.();
     }
     else if (state === 'multiplayer') showScreen('landing');
     else if (state === 'joinRoom') showScreen('multiplayer');
