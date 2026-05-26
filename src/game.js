@@ -898,62 +898,135 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
   _drawProjectile(ctx, proj) {
     ctx.save();
 
-    // Pulsing glow
-    const pulse = 1 + Math.sin(proj.animTimer * 15) * 0.15;
-    let radius = 12 * pulse;
     const variant = proj.variant || 'default';
+    const t = proj.animTimer || 0;
+    const dir = proj.vx >= 0 ? 1 : -1;
+    const pulse = 1 + Math.sin(t * 18) * 0.08;
+    const wobble = Math.sin(t * 26 + (proj.owner === 'p2' ? 1.7 : 0)) * 2.2;
+    const flicker = Math.sin(t * 41) * 0.5;
 
-    let primaryColor = DG.primary || '#00ff9d';
-    let gradStart = DG.gradStart || '#00ff9d';
-    let gradEnd = DG.gradEnd || '#ff00ff';
+    let scale = pulse;
+    let palette = {
+      glow: 'rgba(255, 84, 20, 0.28)',
+      outer: '#ff3b12',
+      mid: '#ff8a00',
+      hot: '#ffd85a',
+      core: '#fff7c2',
+      stroke: '#5b1200',
+      spark: '#ffd24a'
+    };
 
     if (variant === 'fire') {
-      primaryColor = '#ff4500'; gradStart = '#ff8c00'; gradEnd = '#ff0000';
-      radius *= 1.2;
+      scale *= 1.12;
+      palette = { ...palette, glow: 'rgba(255, 52, 0, 0.34)', outer: '#ff1900', mid: '#ff7800', hot: '#ffe05c' };
     } else if (variant === 'plasma') {
-      primaryColor = '#00ffff'; gradStart = '#ffffff'; gradEnd = '#00bfff';
+      palette = {
+        glow: 'rgba(0, 229, 255, 0.28)',
+        outer: '#00d5ff',
+        mid: '#42fff2',
+        hot: '#d9ffff',
+        core: '#ffffff',
+        stroke: '#003b59',
+        spark: '#8ffcff'
+      };
     } else if (variant === 'void') {
-      primaryColor = '#4b0082'; gradStart = '#8a2be2'; gradEnd = '#000000';
-      radius *= 1.5;
+      scale *= 1.22;
+      palette = {
+        glow: 'rgba(165, 64, 255, 0.30)',
+        outer: '#4b0082',
+        mid: '#a02cff',
+        hot: '#ff6cff',
+        core: '#ffe6ff',
+        stroke: '#180020',
+        spark: '#d65cff'
+      };
     } else if (variant === 'electric') {
-      primaryColor = '#ffff00'; gradStart = '#ffffff'; gradEnd = '#ffcc00';
+      palette = {
+        glow: 'rgba(255, 236, 48, 0.30)',
+        outer: '#ffb300',
+        mid: '#ffe100',
+        hot: '#ffffff',
+        core: '#fffde0',
+        stroke: '#573a00',
+        spark: '#fff26b'
+      };
     }
 
-    // Outer glow
-    ctx.globalAlpha = 0.3;
-    const glow = ctx.createRadialGradient(proj.x, proj.y, 0, proj.x, proj.y, radius * 2.5);
-    glow.addColorStop(0, primaryColor);
-    glow.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = glow;
+    ctx.translate(proj.x, proj.y);
+    ctx.scale(dir * scale, scale);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Soft 2D aura, kept flat so it does not read as a glossy sphere.
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = palette.glow;
     ctx.beginPath();
-    ctx.arc(proj.x, proj.y, radius * 2.5, 0, Math.PI * 2);
+    ctx.ellipse(-18, 0, 54, 20, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Core energy ball
-    ctx.globalAlpha = 0.9;
-    const core = ctx.createRadialGradient(proj.x, proj.y, 0, proj.x, proj.y, radius);
-    core.addColorStop(0, '#ffffff');
-    core.addColorStop(0.35, gradStart);
-    core.addColorStop(1, gradEnd);
-    ctx.fillStyle = core;
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Outer hand-drawn flame silhouette.
+    const outerGrad = ctx.createLinearGradient(-70, 0, 18, 0);
+    outerGrad.addColorStop(0, 'rgba(255,255,255,0)');
+    outerGrad.addColorStop(0.18, palette.outer);
+    outerGrad.addColorStop(0.62, palette.mid);
+    outerGrad.addColorStop(1, palette.hot);
+    ctx.globalAlpha = 0.96;
+    ctx.fillStyle = outerGrad;
+    ctx.strokeStyle = palette.stroke;
+    ctx.lineWidth = 2.2;
     ctx.beginPath();
-    ctx.arc(proj.x, proj.y, radius, 0, Math.PI * 2);
+    ctx.moveTo(18, 0);
+    ctx.bezierCurveTo(8, -13 - flicker, -22, -18 + wobble, -48, -8);
+    ctx.quadraticCurveTo(-67, -2 - wobble, -78, 1);
+    ctx.quadraticCurveTo(-60, 6 + flicker, -48, 12 + wobble);
+    ctx.bezierCurveTo(-20, 21 - flicker, 8, 13 + wobble, 18, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 0.55;
+    ctx.stroke();
+
+    // Hot inner lick, like an inked animation cel rather than a radial ball.
+    const innerGrad = ctx.createLinearGradient(-46, 0, 15, 0);
+    innerGrad.addColorStop(0, 'rgba(255,255,255,0)');
+    innerGrad.addColorStop(0.35, palette.mid);
+    innerGrad.addColorStop(0.72, palette.hot);
+    innerGrad.addColorStop(1, palette.core);
+    ctx.globalAlpha = 0.98;
+    ctx.fillStyle = innerGrad;
+    ctx.beginPath();
+    ctx.moveTo(13, 0);
+    ctx.bezierCurveTo(5, -7, -10, -9 - flicker, -28, -3);
+    ctx.quadraticCurveTo(-41, 1 + wobble, -48, 5);
+    ctx.quadraticCurveTo(-31, 5 - flicker, -20, 10);
+    ctx.bezierCurveTo(-4, 13, 8, 7, 13, 0);
+    ctx.closePath();
     ctx.fill();
 
-    // Trailing gradient
-    const trailLen = 35;
-    const trailDir = proj.vx > 0 ? -1 : 1;
-    ctx.globalAlpha = 0.25;
-    const trail = ctx.createLinearGradient(proj.x, proj.y, proj.x + trailDir * trailLen, proj.y);
-    trail.addColorStop(0, primaryColor);
-    trail.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = trail;
-    ctx.fillRect(
-      Math.min(proj.x, proj.x + trailDir * trailLen),
-      proj.y - 6,
-      trailLen,
-      12,
-    );
+    // Sketch strokes and speed lines sell the 2D frame-by-frame feel.
+    ctx.globalAlpha = 0.75;
+    ctx.strokeStyle = palette.hot;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const y = (i - 1) * 6 + Math.sin(t * 20 + i) * 2;
+      ctx.beginPath();
+      ctx.moveTo(-58 - i * 6, y * 0.6);
+      ctx.quadraticCurveTo(-34, y - 5, 6, y * 0.25);
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = palette.spark;
+    for (let i = 0; i < 5; i++) {
+      const sx = -46 - i * 9 + Math.sin(t * 30 + i * 2.1) * 6;
+      const sy = (i % 2 ? 1 : -1) * (14 + i * 2) + Math.cos(t * 24 + i) * 3;
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(0.35 + i * 0.45);
+      ctx.fillRect(-2, -1, 8 - i * 0.7, 2);
+      ctx.restore();
+    }
 
     ctx.restore();
   }
