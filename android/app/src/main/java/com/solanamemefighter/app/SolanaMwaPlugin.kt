@@ -13,12 +13,18 @@ import com.solana.mobilewalletadapter.clientlib.ActivityResultSender
 import com.solana.mobilewalletadapter.clientlib.ConnectionIdentity
 import com.solana.mobilewalletadapter.clientlib.MobileWalletAdapter
 import com.solana.mobilewalletadapter.clientlib.TransactionResult
+import com.solana.mobilewalletadapter.common.signin.SignInWithSolana
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.nio.charset.StandardCharsets
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
+import java.util.UUID
 
 @CapacitorPlugin(name = "SolanaMwa")
 class SolanaMwaPlugin : Plugin() {
@@ -59,6 +65,11 @@ class SolanaMwaPlugin : Plugin() {
     override fun handleOnDestroy() {
         scope.cancel()
         super.handleOnDestroy()
+    }
+
+    override fun handleOnResume() {
+        super.handleOnResume()
+        notifyListeners("walletResume", JSObject(), true)
     }
 
     override fun handleOnNewIntent(intent: Intent) {
@@ -135,6 +146,74 @@ class SolanaMwaPlugin : Plugin() {
                 }
             } catch (e: Exception) {
                 call.reject("Wallet connection crashed: ${e.message}", "MWA_CONNECT_CRASH", e)
+            }
+        }
+    }
+
+    @PluginMethod
+    fun signIn(call: PluginCall) {
+        val activity = activity
+        if (activity == null) {
+            call.reject("Activity unavailable")
+            return
+        }
+
+        val nonce = call.getString("nonce")?.trim()?.takeIf { it.isNotEmpty() } ?: createNonce()
+        val statement = call.getString("statement")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: "Sign in to StickLash. This proves wallet ownership and does not move tokens."
+        val payload = SignInWithSolana.Payload(
+            DEFAULT_DOMAIN,
+            null,
+            statement,
+            Uri.parse(DEFAULT_IDENTITY_URI),
+            "1",
+            DEFAULT_CHAIN_ID,
+            nonce,
+            isoNow(),
+            null,
+            null,
+            "sticklash-wallet-auth",
+            arrayOf(Uri.parse(DEFAULT_IDENTITY_URI))
+        )
+
+        scope.launch {
+            try {
+                val sender = getActivityResultSender(call) ?: return@launch
+                when (val result = walletAdapter.signIn(sender, payload)) {
+                    is TransactionResult.Success -> {
+                        val signInResult = result.payload
+                        val walletAddress = base58Encode(signInResult.publicKey)
+                        if (walletAddress.isBlank()) {
+                            call.reject("Wallet sign-in returned no account", "MWA_SIGN_IN_NO_ACCOUNT")
+                            return@launch
+                        }
+
+                        persistConnection(walletAddress, result.authResult.authToken)
+                        val out = JSObject()
+                        out.put("walletAddress", walletAddress)
+                        out.put("connected", true)
+                        out.put("authenticated", true)
+                        out.put("hasAuthToken", !result.authResult.authToken.isNullOrBlank())
+                        out.put("nonce", nonce)
+                        out.put("signedMessageBase64", Base64.encodeToString(signInResult.signedMessage, Base64.NO_WRAP))
+                        out.put("signatureBase64", Base64.encodeToString(signInResult.signature, Base64.NO_WRAP))
+                        out.put("signatureBase58", base58Encode(signInResult.signature))
+                        out.put("signatureType", signInResult.signatureType)
+                        call.resolve(out)
+                    }
+                    is TransactionResult.NoWalletFound -> {
+                        call.reject("No MWA wallet found on device.", "MWA_NO_WALLET")
+                    }
+                    is TransactionResult.Failure -> {
+                        call.reject(
+                            "Wallet sign-in failed: ${result.e.message}",
+                            "MWA_SIGN_IN_FAILED",
+                            result.e
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                call.reject("Wallet sign-in crashed: ${e.message}", "MWA_SIGN_IN_CRASH", e)
             }
         }
     }
@@ -316,6 +395,16 @@ class SolanaMwaPlugin : Plugin() {
         walletAdapter.authToken = null
     }
 
+    private fun createNonce(): String {
+        return UUID.randomUUID().toString().replace("-", "")
+    }
+
+    private fun isoNow(): String {
+        val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US)
+        formatter.timeZone = TimeZone.getTimeZone("UTC")
+        return formatter.format(Date())
+    }
+
     private fun base58Encode(input: ByteArray): String {
         if (input.isEmpty()) return ""
 
@@ -364,6 +453,8 @@ class SolanaMwaPlugin : Plugin() {
         private const val DEFAULT_IDENTITY_URI = "https://sticklash.fun"
         private const val DEFAULT_ICON_URI = "https://sticklash.fun/favicon.ico"
         private const val DEFAULT_IDENTITY_NAME = "SMF StickLash"
+        private const val DEFAULT_DOMAIN = "sticklash.fun"
+        private const val DEFAULT_CHAIN_ID = "solana:mainnet-beta"
         private const val CALLBACK_SCHEME = "com.solanamemefighter.app"
         private const val CALLBACK_HOST = "wallet-callback"
         private const val BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"

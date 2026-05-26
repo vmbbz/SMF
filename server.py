@@ -501,6 +501,18 @@ def _wallet_auth_message(request: Request, wallet: str, nonce: str, issued_at_un
     )
 
 
+def _parse_siws_message_fields(message: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    lines = [line.strip() for line in message.splitlines()]
+    for index, line in enumerate(lines):
+        if index == 1 and line:
+            fields["wallet"] = line
+        elif ": " in line:
+            key, value = line.split(": ", 1)
+            fields[key.lower().replace(" ", "_")] = value.strip()
+    return fields
+
+
 async def _require_wallet_session(conn: asyncpg.Connection, request: Request, wallet: str) -> None:  # type: ignore[type-arg]
     token = _extract_bearer_token(request)
     if not token:
@@ -1833,6 +1845,107 @@ async def api_wallet_auth_verify(data: dict[str, Any]) -> dict[str, Any]:
             )
 
     _audit_boost_event("wallet_auth_verified", wallet=wallet, challenge_id=challenge_id)
+    return {
+        "wallet": wallet,
+        "token": session_token,
+        "expiresAtUnix": session_expires_at_unix,
+    }
+
+
+@post("/api/wallet-auth/verify-siws")
+async def api_wallet_auth_verify_siws(data: dict[str, Any]) -> dict[str, Any]:
+    """Verify a native MWA Sign-In-with-Solana payload and issue a session token."""
+    if boost_pg_pool is None:
+        raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    wallet = _normalize_wallet_address(data.get("wallet"))
+    signature = str(data.get("signature") or "").strip()
+    signed_message_b64 = str(data.get("signedMessageBase64") or data.get("signed_message_base64") or "").strip()
+    if not _is_valid_wallet_address(wallet):
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
+    if not signature:
+        raise HTTPException(status_code=400, detail="signature is required")
+    if not signed_message_b64:
+        raise HTTPException(status_code=400, detail="signedMessageBase64 is required")
+    _check_rate_limit("wallet-auth-verify", wallet)
+
+    try:
+        signature_bytes = _decode_signature(signature)
+        wallet_bytes = _base58_decode(wallet)
+        padding = "=" * ((4 - len(signed_message_b64) % 4) % 4)
+        message_bytes = base64.b64decode(signed_message_b64 + padding, validate=True)
+        message = message_bytes.decode("utf-8")
+    except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid SIWS payload: {exc}")
+    if len(wallet_bytes) != 32:
+        raise HTTPException(status_code=400, detail="Wallet public key bytes length invalid")
+
+    fields = _parse_siws_message_fields(message)
+    if fields.get("wallet") != wallet:
+        raise HTTPException(status_code=403, detail="SIWS wallet mismatch")
+    if fields.get("uri") != "https://sticklash.fun":
+        raise HTTPException(status_code=403, detail="SIWS URI mismatch")
+    if fields.get("version") != "1":
+        raise HTTPException(status_code=403, detail="SIWS version mismatch")
+    if fields.get("chain_id") not in {"solana:mainnet-beta", "mainnet"}:
+        raise HTTPException(status_code=403, detail="SIWS chain mismatch")
+    nonce = fields.get("nonce", "")
+    if len(nonce) < 16:
+        raise HTTPException(status_code=400, detail="SIWS nonce missing")
+
+    try:
+        import nacl.signing  # type: ignore[import-not-found]
+        from nacl.exceptions import BadSignatureError  # type: ignore[import-not-found]
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Wallet auth dependency missing on server (PyNaCl).",
+        )
+
+    verify_key = nacl.signing.VerifyKey(wallet_bytes)
+    try:
+        verify_key.verify(message_bytes, signature_bytes)
+    except BadSignatureError:
+        raise HTTPException(status_code=401, detail="Invalid SIWS signature")
+
+    session_token = secrets.token_urlsafe(48)
+    session_hash = _token_hash(session_token)
+    session_expires_at_unix = int(time.time()) + WALLET_AUTH_SESSION_TTL_SECONDS
+    challenge_id = "siws:" + hashlib.sha256(f"{wallet}:{nonce}".encode("utf-8")).hexdigest()
+
+    async with boost_pg_pool.acquire() as conn:
+        async with conn.transaction():
+            inserted = await conn.fetchval(
+                """
+                INSERT INTO wallet_auth_challenges (
+                    challenge_id, wallet_address, nonce, message, expires_at, consumed_at
+                )
+                VALUES ($1, $2, $3, $4, to_timestamp($5), NOW())
+                ON CONFLICT (challenge_id) DO NOTHING
+                RETURNING challenge_id
+                """,
+                challenge_id,
+                wallet,
+                nonce,
+                message,
+                session_expires_at_unix,
+            )
+            if inserted is None:
+                raise HTTPException(status_code=409, detail="SIWS nonce already used")
+            await conn.execute(
+                """
+                INSERT INTO wallet_auth_sessions (
+                    token_hash, wallet_address, challenge_id, expires_at
+                )
+                VALUES ($1, $2, $3, to_timestamp($4))
+                """,
+                session_hash,
+                wallet,
+                challenge_id,
+                session_expires_at_unix,
+            )
+
+    _audit_boost_event("wallet_auth_siws_verified", wallet=wallet, challenge_id=challenge_id)
     return {
         "wallet": wallet,
         "token": session_token,
@@ -3646,6 +3759,7 @@ app = Litestar(
         api_smf_config,
         api_wallet_auth_challenge,
         api_wallet_auth_verify,
+        api_wallet_auth_verify_siws,
         api_wallet_auth_logout,
         api_boost_packs,
         api_boost_balance,
