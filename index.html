@@ -64,6 +64,26 @@
       font-family: var(--font-print) !important;
       letter-spacing: 0.2px;
     }
+    .help-socials-panel {
+      overflow: hidden;
+      max-height: 0;
+      opacity: 0;
+      transform: translateY(-6px);
+      margin-top: 0 !important;
+      padding-top: 0 !important;
+      padding-bottom: 0 !important;
+      border-width: 0 !important;
+      transition: max-height 260ms ease, opacity 220ms ease, transform 240ms ease, margin-top 220ms ease, padding 220ms ease, border-width 220ms ease;
+    }
+    .help-socials-panel.is-open {
+      max-height: 110px;
+      opacity: 1;
+      transform: translateY(0);
+      margin-top: 8px !important;
+      padding-top: 10px !important;
+      padding-bottom: 10px !important;
+      border-width: 1px !important;
+    }
 
     #game-container {
       position: relative;
@@ -2079,9 +2099,9 @@
       <button id="btn-help-socials" class="premium-btn print-font" onclick="toggleHelpSocials()" style="font-size: 10px; padding: 10px 14px; margin: 0; letter-spacing: 1px;">
         SOCIALS ▾
       </button>
-      <div id="help-socials-panel" class="hidden print-font" style="margin-top: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 12px; text-align: left;">
-        <a href="https://x.com/sticklash" target="_blank" rel="noopener noreferrer" style="color: var(--neon-blue); text-decoration: none; font-weight: bold;">
-          @sticklash on X
+      <div id="help-socials-panel" class="print-font help-socials-panel" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 12px; text-align: left;">
+        <a href="https://x.com/sticklashfun" target="_blank" rel="noopener noreferrer" style="color: var(--neon-blue); text-decoration: none; font-weight: bold;">
+          @sticklashfun
         </a>
         <div style="margin-top: 6px; color: #c7c7c7; font-size: 10px;">
           Follow for live updates, match clips, and alpha drops.
@@ -2868,7 +2888,7 @@
       if (modal) {
         modal.classList.remove('hidden');
         const socialsPanel = document.getElementById('help-socials-panel');
-        if (socialsPanel) socialsPanel.classList.add('hidden');
+        if (socialsPanel) socialsPanel.classList.remove('is-open');
         const socialsBtn = document.getElementById('btn-help-socials');
         if (socialsBtn) socialsBtn.textContent = 'SOCIALS ▾';
         const socialsAudio = document.getElementById('help-socials-audio');
@@ -2887,16 +2907,16 @@
       const audio = document.getElementById('help-socials-audio');
       if (!panel || !btn) return;
 
-      const willExpand = panel.classList.contains('hidden');
+      const willExpand = !panel.classList.contains('is-open');
       if (willExpand) {
-        panel.classList.remove('hidden');
+        panel.classList.add('is-open');
         btn.textContent = 'SOCIALS ▴';
         if (audio) {
           audio.currentTime = 0;
           audio.play().catch(() => {});
         }
       } else {
-        panel.classList.add('hidden');
+        panel.classList.remove('is-open');
         btn.textContent = 'SOCIALS ▾';
       }
     };
@@ -2910,7 +2930,7 @@
       if (modal) {
         modal.classList.add('hidden');
         const panel = document.getElementById('help-socials-panel');
-        if (panel) panel.classList.add('hidden');
+        if (panel) panel.classList.remove('is-open');
         const btn = document.getElementById('btn-help-socials');
         if (btn) btn.textContent = 'SOCIALS ▾';
         const audio = document.getElementById('help-socials-audio');
