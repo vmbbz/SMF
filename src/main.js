@@ -20,6 +20,7 @@ window.generatePersonality = generatePersonality;
 const NATIVE_BACKEND_ORIGIN = (typeof window !== 'undefined' && window.__SMF_NATIVE_BACKEND_ORIGIN)
   ? String(window.__SMF_NATIVE_BACKEND_ORIGIN)
   : 'https://sticklash.fun';
+const PUBLIC_GAME_ORIGIN = 'https://sticklash.fun';
 
 function toWsOrigin(httpOrigin) {
   return String(httpOrigin || '')
@@ -30,6 +31,22 @@ function toWsOrigin(httpOrigin) {
 
 function toHttpOrigin(origin) {
   return String(origin || '').replace(/\/+$/, '');
+}
+
+function getCanonicalShareOrigin() {
+  const configured = (typeof window !== 'undefined' && (window.__SMF_PUBLIC_ORIGIN || window.__SMF_SHARE_ORIGIN))
+    ? String(window.__SMF_PUBLIC_ORIGIN || window.__SMF_SHARE_ORIGIN)
+    : PUBLIC_GAME_ORIGIN;
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return PUBLIC_GAME_ORIGIN;
+  }
+}
+
+function getCanonicalShareUrl(path = '/') {
+  const normalizedPath = String(path || '/').startsWith('/') ? String(path || '/') : `/${path}`;
+  return `${getCanonicalShareOrigin()}${normalizedPath}`;
 }
 
 // Native Capacitor Initialization (Display Configs & API Interceptor Proxies)
@@ -1329,7 +1346,7 @@ function startWaitingInArena(deadline) {
     const remaining = Math.max(0, Math.ceil((waitingArenaDeadline * 1000 - Date.now()) / 1000));
     const isMobileWaiting = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
     const isLandscapeWaiting = isMobileWaiting && window.innerWidth > window.innerHeight;
-    const countdownFont = isLandscapeWaiting ? 40 : (isMobileWaiting ? 38 : 34);
+    const countdownFont = isLandscapeWaiting ? 36 : (isMobileWaiting ? 34 : 32);
     ctx.font = `bold ${countdownFont}px monospace`;
     ctx.textAlign = 'center';
     ctx.fillStyle = remaining <= 10 ? (DG.danger || '#f04438') : (DG.text || '#fbfbff');
@@ -2740,6 +2757,415 @@ window.toggleWeather = function() {
 // Premium Victory & Social (Phase 3)
 // ─────────────────────────────────────────────
 
+function randomChoice(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function dataUrlToBlob(dataUrl) {
+  return fetch(dataUrl).then(res => res.blob());
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Unable to read image blob'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function canvasToBlobSafe(sourceCanvas, type = 'image/png', quality) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (sourceCanvas.toBlob) {
+        sourceCanvas.toBlob(blob => {
+          if (blob) resolve(blob);
+          else reject(new Error('Canvas capture returned an empty image'));
+        }, type, quality);
+        return;
+      }
+
+      dataUrlToBlob(sourceCanvas.toDataURL(type, quality)).then(resolve).catch(reject);
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+async function captureGameFrameBlob() {
+  const gameCanvas = document.getElementById('game');
+  if (gameCanvas) {
+    try {
+      return await canvasToBlobSafe(gameCanvas, 'image/png');
+    } catch (err) {
+      console.warn('[Share] Direct canvas capture failed, trying DOM fallback:', err?.message || err);
+    }
+  }
+
+  const stage = document.getElementById('game-container') || gameCanvas;
+  if (stage && typeof html2canvas !== 'undefined') {
+    try {
+      const rendered = await html2canvas(stage, {
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: null,
+        scale: Math.min(2, window.devicePixelRatio || 1),
+      });
+      return await canvasToBlobSafe(rendered, 'image/png');
+    } catch (err) {
+      console.warn('[Share] DOM fallback capture failed:', err?.message || err);
+    }
+  }
+
+  return null;
+}
+
+function drawRoundRectPath(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function loadImageFromBlob(blob) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(blob);
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error('Unable to load captured image'));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function drawCoverImage(ctx, image, x, y, width, height) {
+  const imageRatio = image.width / image.height;
+  const targetRatio = width / height;
+  let sx = 0;
+  let sy = 0;
+  let sw = image.width;
+  let sh = image.height;
+
+  if (imageRatio > targetRatio) {
+    sw = image.height * targetRatio;
+    sx = (image.width - sw) / 2;
+  } else {
+    sh = image.width / targetRatio;
+    sy = (image.height - sh) / 2;
+  }
+
+  ctx.drawImage(image, sx, sy, sw, sh, x, y, width, height);
+}
+
+async function composeVictoryShareCard({ frameBlob, isWin, symbol, mode, opponentName }) {
+  if (document.fonts && document.fonts.ready) {
+    try { await document.fonts.ready; } catch {}
+  }
+
+  const card = document.createElement('canvas');
+  card.width = 1200;
+  card.height = 675;
+  const ctx = card.getContext('2d');
+  const accent = isWin ? '#13ef95' : '#ff2bd6';
+  const secondary = isWin ? '#00d9ff' : '#ff7a00';
+  const cleanSymbol = String(symbol || 'MEME').replace(/[^a-z0-9_$.-]/gi, '').slice(0, 16) || 'MEME';
+  const result = isWin ? 'VICTORY' : 'REVENGE RUN';
+
+  const bg = ctx.createLinearGradient(0, 0, 1200, 675);
+  bg.addColorStop(0, '#020607');
+  bg.addColorStop(0.45, '#071816');
+  bg.addColorStop(1, '#160018');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, 1200, 675);
+
+  ctx.save();
+  ctx.globalAlpha = 0.22;
+  ctx.strokeStyle = '#13ef95';
+  ctx.lineWidth = 2;
+  for (let y = 72; y < 675; y += 52) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(1200, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#ff2bd6';
+  for (let x = -120; x < 1320; x += 170) {
+    ctx.beginPath();
+    ctx.moveTo(x, 675);
+    ctx.lineTo(x + 260, 0);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  const frameX = 52;
+  const frameY = 74;
+  const frameW = 710;
+  const frameH = 520;
+  drawRoundRectPath(ctx, frameX, frameY, frameW, frameH, 42);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.72)';
+  ctx.fill();
+  ctx.save();
+  drawRoundRectPath(ctx, frameX, frameY, frameW, frameH, 42);
+  ctx.clip();
+  if (frameBlob) {
+    try {
+      const frameImage = await loadImageFromBlob(frameBlob);
+      drawCoverImage(ctx, frameImage, frameX, frameY, frameW, frameH);
+    } catch {
+      ctx.fillStyle = '#05090d';
+      ctx.fillRect(frameX, frameY, frameW, frameH);
+    }
+  } else {
+    ctx.fillStyle = '#05090d';
+    ctx.fillRect(frameX, frameY, frameW, frameH);
+  }
+  ctx.restore();
+  drawRoundRectPath(ctx, frameX, frameY, frameW, frameH, 42);
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = accent;
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 22;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 42px Shojumaru, Georgia, serif';
+  ctx.fillText('STICKLASH', 820, 112);
+
+  ctx.fillStyle = accent;
+  ctx.font = '900 82px Shojumaru, Georgia, serif';
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 24;
+  ctx.fillText(result, 820, 205);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 30px "Press Start 2P", monospace';
+  ctx.fillText(`vs $${cleanSymbol}`, 826, 272);
+
+  ctx.fillStyle = secondary;
+  ctx.font = '700 22px "Press Start 2P", monospace';
+  const modeLabel = mode === 'pvp' ? `PVP: ${String(opponentName || 'RIVAL').slice(0, 18).toUpperCase()}` : 'LIVE MEME TOKEN BATTLE';
+  ctx.fillText(modeLabel, 826, 328);
+
+  drawRoundRectPath(ctx, 816, 372, 310, 98, 22);
+  ctx.fillStyle = 'rgba(19, 239, 149, 0.12)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(19, 239, 149, 0.75)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#f8f8f8';
+  ctx.font = '700 22px "Press Start 2P", monospace';
+  ctx.fillText('@sticklashfun', 846, 432);
+
+  ctx.fillStyle = '#00d9ff';
+  ctx.font = '700 24px "Press Start 2P", monospace';
+  ctx.fillText('sticklash.fun', 826, 546);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.68)';
+  ctx.font = '600 18px "Press Start 2P", monospace';
+  ctx.fillText('CAPTURED FROM THE ARENA', 826, 594);
+
+  return canvasToBlobSafe(card, 'image/png');
+}
+
+function queueVictoryShareCapture(context = {}) {
+  if (window._lastVictoryShareCardUrl) {
+    URL.revokeObjectURL(window._lastVictoryShareCardUrl);
+    window._lastVictoryShareCardUrl = null;
+  }
+
+  const normalized = {
+    isWin: context.isWin !== false,
+    symbol: context.symbol || window.lastOpponentSymbol || 'MEME',
+    mode: context.mode || (window.isMultiplayerMatch ? 'pvp' : 'solo'),
+    opponentName: context.opponentName || window.opponentProfile?.name || '',
+  };
+
+  window._lastVictoryShare = null;
+  window._lastVictorySharePromise = (async () => {
+    const frameBlob = await captureGameFrameBlob();
+    const cardBlob = await composeVictoryShareCard({ ...normalized, frameBlob });
+    const objectUrl = URL.createObjectURL(cardBlob);
+    const payload = {
+      ...normalized,
+      frameBlob,
+      blob: cardBlob,
+      objectUrl,
+      fileName: 'sticklash-battle.png',
+      createdAt: Date.now(),
+      hosted: null,
+    };
+    window._lastVictoryScreenshotBlob = frameBlob;
+    window._lastVictoryShareCardBlob = cardBlob;
+    window._lastVictoryShareCardUrl = objectUrl;
+    window._lastVictoryShare = payload;
+    return payload;
+  })().catch(err => {
+    console.warn('[Share] Victory capture pipeline failed:', err?.message || err);
+    window._lastVictoryShare = null;
+    return null;
+  });
+
+  return window._lastVictorySharePromise;
+}
+
+async function ensureVictorySharePayload() {
+  if (window._lastVictoryShare?.blob) return window._lastVictoryShare;
+  if (window._lastVictorySharePromise) {
+    const pending = await window._lastVictorySharePromise;
+    if (pending?.blob) return pending;
+  }
+  return queueVictoryShareCapture({
+    isWin: window._lastVictoryIsWin !== false,
+    symbol: window.lastOpponentSymbol || 'MEME',
+  });
+}
+
+function buildVictoryShareText({ symbol, isWin, mode, opponentName }) {
+  const cleanSymbol = String(symbol || 'MEME').replace(/[^a-z0-9_$.-]/gi, '').slice(0, 16) || 'MEME';
+  if (mode === 'pvp') {
+    const rival = String(opponentName || 'a rival').toUpperCase();
+    return randomChoice(isWin ? [
+      `I just SMASHED ${rival} in real-time PvP inside the $SMF StickLash arena.`,
+      `${rival} got sent to the shadow realm in StickLash PvP.`,
+      `Clean combo. Clean KO. ${rival} just felt the StickLash.`
+    ] : [
+      `${rival} clipped me in StickLash PvP. I need a rematch.`,
+      `Got lashed by ${rival} in the $SMF arena. Running it back.`,
+      `${rival} won this round. The dojo remembers.`
+    ]);
+  }
+
+  return randomChoice(isWin ? [
+    `I just SMASHED $${cleanSymbol} in the $SMF StickLash arena.`,
+    `Just sent $${cleanSymbol} to the shadow realm in StickLash.`,
+    `My stickman just bodied $${cleanSymbol} live in the arena.`
+  ] : [
+    `$${cleanSymbol} just wrecked me in the $SMF StickLash arena.`,
+    `Got lashed by $${cleanSymbol}. I need a rematch.`,
+    `$${cleanSymbol}'s chart hit too hard and knocked me out.`
+  ]);
+}
+
+function buildTweetIntentUrl(text, url) {
+  const params = new URLSearchParams({
+    text,
+    url,
+    hashtags: 'Solana,MemeFighter,SMF',
+    via: 'sticklashfun',
+  });
+  return `https://twitter.com/intent/tweet?${params.toString()}`;
+}
+
+async function uploadVictoryShareCard(payload) {
+  if (!payload?.blob) return null;
+  if (payload.hosted?.shareUrl) return payload.hosted;
+
+  try {
+    const imageData = await blobToDataUrl(payload.blob);
+    const res = await fetch('/api/share-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        imageData,
+        result: payload.isWin ? 'win' : 'loss',
+        symbol: payload.symbol || 'MEME',
+        mode: payload.mode || 'solo',
+      }),
+    });
+    if (!res.ok) throw new Error(`Share card upload failed: ${res.status}`);
+    payload.hosted = await res.json();
+    return payload.hosted;
+  } catch (err) {
+    console.warn('[Share] Public share-card upload failed:', err?.message || err);
+    return null;
+  }
+}
+
+function showShareFallbackPanel({ payload, tweetUrl, shareUrl, imageUrl }) {
+  const old = document.getElementById('share-fallback-panel');
+  if (old) old.remove();
+
+  const panel = document.createElement('div');
+  panel.id = 'share-fallback-panel';
+  panel.style.cssText = [
+    'position:fixed',
+    'left:50%',
+    'bottom:22px',
+    'transform:translateX(-50%)',
+    'width:min(92vw,520px)',
+    'z-index:6000',
+    'padding:14px',
+    'border:2px solid var(--neon-green)',
+    'border-radius:20px',
+    'background:rgba(3,8,10,0.96)',
+    'box-shadow:0 0 28px rgba(19,239,149,0.42)',
+    'color:#fff',
+    'font-family:var(--font-print, "Press Start 2P", monospace)',
+    'font-size:10px',
+    'line-height:1.4',
+  ].join(';');
+
+  const preview = payload?.objectUrl || imageUrl || '';
+  panel.innerHTML = `
+    <div style="display:flex;gap:12px;align-items:center;">
+      <img src="${preview}" alt="StickLash battle share card" style="width:132px;aspect-ratio:16/9;object-fit:cover;border-radius:12px;border:1px solid var(--neon-blue);">
+      <div style="flex:1;min-width:0;">
+        <div style="color:var(--neon-green);font-size:12px;margin-bottom:6px;">BATTLE CARD READY</div>
+        <div style="opacity:.76;margin-bottom:10px;">X web composer cannot attach local files. Use native share when available, or post this public card link.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button data-share-open-x style="cursor:pointer;border:0;border-radius:999px;padding:9px 11px;background:var(--neon-pink);color:#000;font:inherit;">OPEN X</button>
+          <button data-share-download style="cursor:pointer;border:0;border-radius:999px;padding:9px 11px;background:var(--neon-blue);color:#000;font:inherit;">PNG</button>
+          <button data-share-copy style="cursor:pointer;border:1px solid var(--neon-green);border-radius:999px;padding:8px 10px;background:transparent;color:var(--neon-green);font:inherit;">COPY LINK</button>
+          <button data-share-close style="cursor:pointer;border:0;border-radius:999px;padding:9px 11px;background:#222;color:#fff;font:inherit;">CLOSE</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  panel.querySelector('[data-share-open-x]')?.addEventListener('click', () => {
+    window.open(tweetUrl, '_blank', 'noopener,noreferrer');
+  });
+  panel.querySelector('[data-share-download]')?.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.href = payload?.objectUrl || imageUrl || '';
+    link.download = payload?.fileName || 'sticklash-battle.png';
+    link.click();
+  });
+  panel.querySelector('[data-share-copy]')?.addEventListener('click', async event => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      event.currentTarget.textContent = 'COPIED';
+    } catch {
+      event.currentTarget.textContent = 'COPY FAILED';
+    }
+  });
+  panel.querySelector('[data-share-close]')?.addEventListener('click', () => panel.remove());
+
+  document.body.appendChild(panel);
+}
+
+window.captureVictory = async function(result = 'player') {
+  const isWin = result === 'player' || result === 'P1' || result === 1 || result === true;
+  window._lastVictoryIsWin = isWin;
+  return queueVictoryShareCapture({
+    isWin,
+    symbol: window.lastOpponentSymbol || 'MEME',
+    mode: window.isMultiplayerMatch ? 'pvp' : 'solo',
+  });
+};
+
 window.showVictoryOverlay = function(winnerNum, token, loserToken) {
   const overlay = document.getElementById('victory-overlay');
   const winText = document.getElementById('victory-text');
@@ -2825,31 +3251,14 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
     window.lastOpponentSymbol = 'MEME';
   }
 
-  // Capture the canvas screenshot NOW — before the overlay covers it
-  window._lastVictoryScreenshot = null;
-  const gameCanvas = document.getElementById('game');
-  if (gameCanvas) {
-    // Try native capture first (fast, but fails if canvas is tainted by cross-origin images)
-    let nativeCaptured = false;
-    try {
-      window._lastVictoryScreenshot = gameCanvas.toDataURL('image/png');
-      nativeCaptured = true;
-    } catch(_) {
-      // Canvas tainted by cross-origin token images — fall through to html2canvas
-    }
-    // If native failed, use html2canvas (works despite tainted canvas)
-    if (!nativeCaptured && typeof html2canvas !== 'undefined') {
-      html2canvas(gameCanvas, { useCORS: true, allowTaint: false, scale: 1 })
-        .then(c => {
-          window._lastVictoryScreenshot = c.toDataURL('image/png');
-          console.log('[Victory] Screenshot captured via html2canvas');
-        })
-        .catch(err => console.warn('[Victory] Screenshot failed:', err.message));
-    }
-  }
-
   // Store win/loss state for shareVictory
   window._lastVictoryIsWin = isPlayer;
+  queueVictoryShareCapture({
+    isWin: isPlayer,
+    symbol: window.lastOpponentSymbol || 'MEME',
+    mode: window.isMultiplayerMatch ? 'pvp' : 'solo',
+    opponentName: window.opponentProfile?.name || '',
+  });
 
   // ── 3-second delay before overlay appears ───────────────────────────
   // This lets the player see the final KO frame on the stage
@@ -2922,76 +3331,44 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
 };
 
 window.shareVictory = async function() {
-  const symbol   = window.lastOpponentSymbol || 'MEME';
-  const isWin    = window._lastVictoryIsWin !== false; // default true for safety
-  const origin   = window.location.origin;
+  const payload = await ensureVictorySharePayload();
+  const isWin = payload?.isWin !== false;
+  const symbol = payload?.symbol || window.lastOpponentSymbol || 'MEME';
+  const mode = payload?.mode || (window.isMultiplayerMatch ? 'pvp' : 'solo');
+  const opponentName = payload?.opponentName || window.opponentProfile?.name || '';
+  const canonicalUrl = getCanonicalShareUrl('/');
+  const text = buildVictoryShareText({ symbol, isWin, mode, opponentName });
+  const shareTitle = mode === 'pvp'
+    ? (isWin ? `I won a StickLash PvP fight` : `I need a StickLash rematch`)
+    : (isWin ? `I beat $${symbol} in StickLash` : `$${symbol} beat me in StickLash`);
 
-  // Adaptive randomized copy keeping original format/CTA/tags
-  const winVariations = [
-    `I just SMASHED $${symbol} in the $SMF Stick Fight Arena! 🥊🔥\n\nWho's next? Play at ${origin}\n\n#Solana #MemeFighter #SMF`,
-    `Just sent $${symbol} to the absolute shadow realm in $SMF! 💀🥊\n\nBring on the next challenger! Play at ${origin}\n\n#Solana #MemeFighter #SMF`,
-    `My stickman just completely BODIED $${symbol} live in the arena! 👊⚡\n\nWho wants some? Play at ${origin}\n\n#Solana #MemeFighter #SMF`
-  ];
-
-  const loseVariations = [
-    `$${symbol} just SMASHED me in the $SMF Stick Fight Arena! 🥊💀\n\nCan anyone stop them? Play at ${origin}\n\n#Solana #MemeFighter #SMF`,
-    `Got absolutely bodied by $${symbol} in the $SMF arena! 💸🪦\n\nI need a rematch! Play at ${origin}\n\n#Solana #MemeFighter #SMF`,
-    `$${symbol}'s chart was pumping too hard, they knocked me OUT! 🥊📈\n\nWho can take them down? Play at ${origin}\n\n#Solana #MemeFighter #SMF`
-  ];
-
-  let text = '';
-  if (window.isMultiplayerMatch) {
-    const oppName = window.opponentProfile?.name || 'an opponent';
-    const oppText = oppName.toUpperCase();
-    const winPvPVariations = [
-      `I just SMASHED ${oppText} in real-time PvP inside the $SMF Stick Fight Arena! 🥊🔥\n\nWho wants the smoke next? Challenge me at ${origin}\n\n#Solana #MemeFighter #PvP`,
-      `Just sent ${oppText} to the absolute shadow realm in $SMF PvP! 💀🥊\n\nWho's next to get bodied? Play at ${origin}\n\n#Solana #MemeFighter #PvP`,
-      `My custom stickman just completely BODIED ${oppText} live in the $SMF PvP arena! 👊⚡\n\nCome and get some: ${origin}\n\n#Solana #MemeFighter #PvP`
-    ];
-
-    const losePvPVariations = [
-      `${oppText} just SMASHED me in the $SMF PvP Stick Fight Arena! 🥊💀\n\nI need a rematch right now! Play at ${origin}\n\n#Solana #MemeFighter #PvP`,
-      `Got absolutely bodied by ${oppText} in the $SMF PvP arena! 💸🪦\n\nGoing back in for revenge! Play at ${origin}\n\n#Solana #MemeFighter #PvP`,
-      `${oppText} caught me with a clean combo in $SMF PvP! 🥊📈\n\nWho can take them down? Play at ${origin}\n\n#Solana #MemeFighter #PvP`
-    ];
-    
-    text = isWin
-      ? winPvPVariations[Math.floor(Math.random() * winPvPVariations.length)]
-      : losePvPVariations[Math.floor(Math.random() * losePvPVariations.length)];
-  } else {
-    text = isWin 
-      ? winVariations[Math.floor(Math.random() * winVariations.length)]
-      : loseVariations[Math.floor(Math.random() * loseVariations.length)];
+  if (!payload?.blob) {
+    const tweetUrl = buildTweetIntentUrl(text, canonicalUrl);
+    showShareFallbackPanel({ payload: null, tweetUrl, shareUrl: canonicalUrl, imageUrl: '' });
+    return;
   }
 
-  // Try Web Share API with image (works on mobile Chrome/Safari)
-  const screenshot = window._lastVictoryScreenshot;
-  if (navigator.share && screenshot) {
+  const file = new File([payload.blob], payload.fileName || 'sticklash-battle.png', { type: 'image/png' });
+  const canShareFiles = Boolean(navigator.canShare && navigator.canShare({ files: [file] }));
+  if (navigator.share && canShareFiles) {
     try {
-      // Convert dataURL to File blob
-      const res  = await fetch(screenshot);
-      const blob = await res.blob();
-      const file = new File([blob], 'sticklash-battle.png', { type: 'image/png' });
-      
-      const oppName = window.opponentProfile?.name || 'opponent';
-      const shareTitle = window.isMultiplayerMatch 
-        ? (isWin ? `I beat ${oppName} in PvP!` : `${oppName} beat me in PvP!`)
-        : (isWin ? `I beat $${symbol}!` : `$${symbol} wrecked me!`);
-
       await navigator.share({
         title: shareTitle,
         text,
+        url: canonicalUrl,
         files: [file],
       });
       return;
     } catch (e) {
-      console.warn('[Share] Web Share with image failed, falling back:', e);
+      console.warn('[Share] Native image share failed, falling back:', e?.message || e);
     }
   }
 
-  // Fallback: Twitter intent (desktop) — image can't be attached via web intent
-  // but tweet copy is adaptive and link drives traffic
-  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+  const hosted = await uploadVictoryShareCard(payload);
+  const shareUrl = hosted?.shareUrl || canonicalUrl;
+  const imageUrl = hosted?.imageUrl || payload.objectUrl;
+  const tweetUrl = buildTweetIntentUrl(text, shareUrl);
+  showShareFallbackPanel({ payload, tweetUrl, shareUrl, imageUrl });
 };
 
 window.showMultiplayer = function() {
@@ -3344,7 +3721,7 @@ window.rematchFight = async function() {
 // ─────────────────────────────────────────────
 // Developer Live Boost Simulator Helper API
 // ─────────────────────────────────────────────
-window.boostTarget = 'p2';
+window.boostTarget = 'p1';
 window.setBoostTarget = function(target) {
   window.boostTarget = target;
   const btnP1 = document.getElementById('btn-target-p1');
@@ -3395,10 +3772,57 @@ window.triggerSimulatedBoost = function(tierId) {
   window.liveBoostSystem.triggerTier(tierId, tokenData, window.boostTarget);
 };
 
-window.toggleBoostMenu = function() {
+function isBoostMenuVisible(menu) {
+  return !!menu && menu.style.display !== 'none' && !!menu.style.display;
+}
+
+window.hideBoostMenu = function() {
   const menu = document.getElementById('boost-menu');
   if (menu) {
-    const isHidden = menu.style.display === 'none' || !menu.style.display;
-    menu.style.display = isHidden ? 'block' : 'none';
+    menu.style.display = 'none';
+    menu.setAttribute('aria-hidden', 'true');
   }
 };
+
+window.showBoostMenu = function() {
+  const menu = document.getElementById('boost-menu');
+  if (menu) {
+    menu.style.display = 'block';
+    menu.setAttribute('aria-hidden', 'false');
+    window.setBoostTarget('p1');
+  }
+};
+
+window.toggleBoostMenu = function() {
+  const menu = document.getElementById('boost-menu');
+  if (!menu) return;
+  if (isBoostMenuVisible(menu)) {
+    window.hideBoostMenu();
+  } else {
+    window.showBoostMenu();
+  }
+};
+
+function dismissBoostMenuFromOutside(event) {
+  const menu = document.getElementById('boost-menu');
+  if (!isBoostMenuVisible(menu)) return;
+
+  const toggle = document.getElementById('btn-boost-hack');
+  const target = event.target;
+  if ((menu && menu.contains(target)) || (toggle && toggle.contains(target))) return;
+
+  window.hideBoostMenu();
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+document.addEventListener('pointerdown', dismissBoostMenuFromOutside, true);
+document.addEventListener('touchstart', dismissBoostMenuFromOutside, { capture: true, passive: false });
+
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'Escape') return;
+  const menu = document.getElementById('boost-menu');
+  if (!isBoostMenuVisible(menu)) return;
+  window.hideBoostMenu();
+  event.preventDefault();
+});

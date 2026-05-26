@@ -1,10 +1,20 @@
 // Shareable fight links - generate unique shareable URLs
+const CANONICAL_SHARE_ORIGIN = 'https://sticklash.fun';
+
+function getShareBaseUrl() {
+  const configured = window.__SMF_PUBLIC_ORIGIN || window.__SMF_SHARE_ORIGIN;
+  if (configured) {
+    try { return new URL(configured).origin; } catch {}
+  }
+  return CANONICAL_SHARE_ORIGIN;
+}
+
 export function generateShareableFightLink(playerToken, opponentToken) {
   // Create unique fight ID from timestamps
   const fightId = Date.now().toString(36);
   
   // Build shareable URL with fight data
-  const baseUrl = window.location.origin;
+  const baseUrl = getShareBaseUrl();
   const shareUrl = `${baseUrl}/?fight=${fightId}&p1=${playerToken || 'player'}&p2=${opponentToken}`;
   
   return { fightId, shareUrl };
@@ -12,7 +22,7 @@ export function generateShareableFightLink(playerToken, opponentToken) {
 
 // Update UI to show share link after victory
 export function showShareableLink(fightId) {
-  const shareLink = `${window.location.origin}/?fight=${fightId}`;
+  const shareLink = `${getShareBaseUrl()}/?fight=${fightId}`;
   const statusDiv = document.getElementById('status');
   
   if (statusDiv) {

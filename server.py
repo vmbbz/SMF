@@ -7,6 +7,7 @@ import asyncio
 import base64
 import binascii
 import hashlib
+import html
 import json
 import os
 import random
@@ -69,6 +70,9 @@ def safe_print(*args, **kwargs):
 # ─────────────────────────────────────────────
 
 ROOT = Path(__file__).parent
+PUBLIC_ORIGIN = "https://sticklash.fun"
+SHARE_CARD_DIR = ROOT / "public" / "share-cards"
+MAX_SHARE_CARD_BYTES = 5 * 1024 * 1024
 
 # ─────────────────────────────────────────────
 # Redis / Room Manager lifecycle
@@ -482,6 +486,19 @@ def _wallet_auth_domain(request: Request) -> str:
             return parsed.netloc
     parsed_req = urlparse(str(request.base_url))
     return parsed_req.netloc or "sticklash.fun"
+
+
+def _public_base_url(request: Request) -> str:
+    base = os.environ.get("BASE_URL", "").strip().rstrip("/")
+    if base:
+        return base
+    parsed_req = urlparse(str(request.base_url))
+    host = (parsed_req.hostname or "").lower()
+    if host in {"localhost", "127.0.0.1"} or parsed_req.scheme in {"capacitor", "file"}:
+        return PUBLIC_ORIGIN
+    if parsed_req.scheme and parsed_req.netloc:
+        return f"{parsed_req.scheme}://{parsed_req.netloc}".rstrip("/")
+    return PUBLIC_ORIGIN
 
 
 def _wallet_auth_message(request: Request, wallet: str, nonce: str, issued_at_unix: int, expires_at_unix: int) -> str:
@@ -1700,6 +1717,130 @@ async def android_assetlinks() -> Response:
         }
     ]
     return Response(content=json.dumps(payload, indent=2), media_type="application/json")
+
+
+def _share_card_paths(share_id: str) -> tuple[Path, Path]:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,48}", share_id or ""):
+        raise HTTPException(status_code=404, detail="Share card not found")
+    return SHARE_CARD_DIR / f"{share_id}.png", SHARE_CARD_DIR / f"{share_id}.json"
+
+
+@post("/api/share-card")
+async def create_share_card(data: dict[str, Any], request: Request) -> dict[str, str]:
+    """Store a generated battle card so X can crawl a public image URL."""
+    image_data = str(data.get("imageData", "")).strip()
+    match = re.fullmatch(r"data:image/png;base64,([A-Za-z0-9+/=]+)", image_data)
+    if not match:
+        raise HTTPException(status_code=400, detail="imageData must be a PNG data URL")
+
+    try:
+        raw = base64.b64decode(match.group(1), validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid image data")
+
+    if not raw or len(raw) > MAX_SHARE_CARD_BYTES:
+        raise HTTPException(status_code=413, detail="Share card image is too large")
+
+    share_id = secrets.token_urlsafe(12)
+    image_path, meta_path = _share_card_paths(share_id)
+    SHARE_CARD_DIR.mkdir(parents=True, exist_ok=True)
+    image_path.write_bytes(raw)
+
+    symbol = re.sub(r"[^A-Za-z0-9_$.-]", "", str(data.get("symbol", "MEME")))[:16] or "MEME"
+    result = "win" if str(data.get("result", "win")).lower() == "win" else "loss"
+    mode = "pvp" if str(data.get("mode", "solo")).lower() == "pvp" else "solo"
+    meta_path.write_text(
+        json.dumps(
+            {
+                "symbol": symbol,
+                "result": result,
+                "mode": mode,
+                "created_at": int(time.time()),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    base = _public_base_url(request)
+    return {
+        "shareId": share_id,
+        "shareUrl": f"{base}/share/{share_id}",
+        "imageUrl": f"{base}/api/share-card/{share_id}",
+    }
+
+
+@get("/api/share-card/{share_id:str}")
+async def get_share_card_image(share_id: str) -> Response:
+    image_path, _ = _share_card_paths(share_id)
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Share card not found")
+    return Response(
+        content=image_path.read_bytes(),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
+
+
+@get("/share/{share_id:str}")
+async def share_card_page(share_id: str, request: Request) -> Response:
+    image_path, meta_path = _share_card_paths(share_id)
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Share card not found")
+
+    meta: dict[str, Any] = {}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+
+    base = _public_base_url(request)
+    symbol = html.escape(str(meta.get("symbol") or "MEME"))
+    result = str(meta.get("result") or "win")
+    title = f"StickLash Battle Card - ${symbol}"
+    description = (
+        f"A StickLash fighter just won against ${symbol}."
+        if result == "win"
+        else f"${symbol} just forced a StickLash rematch."
+    )
+    page_url = f"{base}/share/{share_id}"
+    image_url = f"{base}/api/share-card/{share_id}"
+    safe_title = html.escape(title)
+    safe_description = html.escape(description)
+    html_doc = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{safe_title}</title>
+  <link rel="canonical" href="{page_url}">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{safe_title}">
+  <meta property="og:description" content="{safe_description}">
+  <meta property="og:url" content="{page_url}">
+  <meta property="og:image" content="{image_url}">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@sticklashfun">
+  <meta name="twitter:title" content="{safe_title}">
+  <meta name="twitter:description" content="{safe_description}">
+  <meta name="twitter:image" content="{image_url}">
+  <meta name="twitter:image:alt" content="StickLash battle result card">
+  <style>
+    body {{ margin:0; min-height:100vh; display:grid; place-items:center; background:#020607; color:#fff; font-family:Arial,sans-serif; }}
+    main {{ width:min(92vw,960px); text-align:center; }}
+    img {{ width:100%; border-radius:24px; border:2px solid #13ef95; box-shadow:0 0 32px rgba(19,239,149,.35); }}
+    a {{ display:inline-block; margin-top:18px; padding:14px 20px; border-radius:999px; background:#13ef95; color:#020607; font-weight:800; text-decoration:none; }}
+  </style>
+</head>
+<body>
+  <main>
+    <img src="{image_url}" alt="StickLash battle result card">
+    <a href="{base}/">Enter StickLash</a>
+  </main>
+</body>
+</html>"""
+    return Response(content=html_doc, media_type="text/html")
 
 
 # ─────────────────────────────────────────────
@@ -3715,6 +3856,9 @@ app = Litestar(
         health,
         favicon,
         android_assetlinks,
+        create_share_card,
+        get_share_card_image,
+        share_card_page,
         index_route,
         room_route,
         leaderboard_page,

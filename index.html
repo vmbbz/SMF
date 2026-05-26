@@ -877,6 +877,33 @@
       border-color: rgba(255, 136, 0, 0.65);
     }
 
+    #boost-menu {
+      box-sizing: border-box;
+    }
+
+    .boost-menu-close {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-family: var(--font-print);
+      font-size: 12px;
+      line-height: 1;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .boost-menu-close:hover {
+      border-color: var(--neon-pink);
+      box-shadow: 0 0 14px rgba(255, 0, 255, 0.35);
+    }
+
     @media (max-width: 1024px) {
       .screen {
         position: fixed !important;
@@ -996,6 +1023,19 @@
 
       #mic-toggle-btn {
         bottom: 134px;
+      }
+
+      #boost-menu {
+        width: min(320px, calc(100vw - 180px)) !important;
+        bottom: max(54px, calc(env(safe-area-inset-bottom) + 46px)) !important;
+        padding: 10px 12px 8px !important;
+        max-height: calc(100vh - 118px) !important;
+        overflow-y: auto !important;
+        border-radius: 14px !important;
+      }
+
+      #boost-menu .boost-hotkey-tip {
+        display: none !important;
       }
     }
 
@@ -2169,16 +2209,18 @@
   </div>
 
   <!-- Developer Boost Menu -->
-  <div id="boost-menu"
+  <div id="boost-menu" role="dialog" aria-hidden="true" aria-label="Live boost menu"
     style="display:none; position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(10,10,15,0.95); border: 2px solid var(--neon-pink); border-radius: 16px; padding: 10px; width: 320px; text-align: center; box-shadow: 0 0 20px rgba(255,0,255,0.4); font-family: inherit;">
+    <button class="boost-menu-close" type="button" aria-label="Close live boost menu"
+      onclick="if(window.hideBoostMenu) window.hideBoostMenu()">×</button>
     <div style="font-size: 10px; margin-bottom: 10px; color: var(--neon-green); font-weight: bold; letter-spacing: 1px;">⚡ LIVE BOOST ⚡</div>
     
     <div style="font-size: 7px; color: #888; margin-bottom: 4px; text-align: left; font-weight: bold;">1. SELECT TARGET PLAYER:</div>
     <div style="display:flex; justify-content: space-around; margin-bottom: 12px; gap: 8px;">
-      <button onclick="if(window.setBoostTarget) window.setBoostTarget('p2')" id="btn-target-p2" 
-        style="flex:1; background: var(--neon-green); color: #000; border: none; padding: 6px 4px; font-size: 9px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; border: 1px solid transparent; transition: all 0.2s;">P2 (AI/TOKEN)</button>
-      <button onclick="if(window.setBoostTarget) window.setBoostTarget('p1')" id="btn-target-p1" 
-        style="flex:1; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 4px; font-size: 9px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; transition: all 0.2s;">P1 (HUMAN)</button>
+      <button onclick="if(window.setBoostTarget) window.setBoostTarget('p1')" id="btn-target-p1"
+        style="flex:1; background: var(--neon-green); color: #000; border: none; padding: 6px 4px; font-size: 9px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; border: 1px solid transparent; transition: all 0.2s;">P1 (HUMAN)</button>
+      <button onclick="if(window.setBoostTarget) window.setBoostTarget('p2')" id="btn-target-p2"
+        style="flex:1; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 4px; font-size: 9px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; transition: all 0.2s;">P2 (AI/TOKEN)</button>
     </div>
     
     <div style="font-size: 7px; color: #888; margin-bottom: 4px; text-align: left; font-weight: bold;">2. TRIGGER BOOST TIER:</div>
@@ -2193,7 +2235,7 @@
         style="background: rgba(204,0,255,0.1); border: 1px solid #cc00ff; color: #cc00ff; padding: 8px; font-size: 8px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; text-align:left; transition: all 0.2s;">⚡ OVERDRIVE (10 Hadouken Barrage)</button>
     </div>
     
-    <div class="print-font" style="font-size: 8px; color: #555; margin-top: 10px;">Hotkey: Press 'B' key during fight</div>
+    <div class="print-font boost-hotkey-tip" style="font-size: 8px; color: #555; margin-top: 10px;">Hotkey: Press 'B' key during fight</div>
   </div>
 
   <!-- MEME PANEL (Main Menu) -->
@@ -2547,7 +2589,7 @@
     </div>
   </div>
 
-  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script src="./src/loser-card.js"></script>
 
   <script type="module" src="./src/token-power-scaling.js"></script>
@@ -2789,9 +2831,6 @@
     };
   </script>
 
-  <!-- html2canvas for screenshot capture -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
   <script>
     window.winnerFront = true;
     window.toggleCards = () => {
@@ -2819,52 +2858,6 @@
         wc.style.filter = 'brightness(0.3)';
         if (btn) btn.textContent = 'VIEW WINNER 🔄';
       }
-    };
-
-    window.captureVictory = async (winner) => {
-      const status = document.getElementById('status');
-      status.innerHTML = `${winner} WINS!`;
-
-      // Show the premium victory overlay
-      const overlay = document.getElementById('victory-overlay');
-      const winnerName = document.getElementById('winner-name');
-      const winnerLogo = document.getElementById('winner-logo');
-
-      if (winner === 'P1') {
-        winnerName.textContent = 'YOU ABSOLUTELY SMASHED IT!';
-        winnerLogo.src = 'assets/smf-logo.png';
-        winnerLogo.style.borderColor = 'var(--neon-green)';
-        winnerLogo.style.boxShadow = '0 0 30px var(--neon-green)';
-      } else {
-        winnerName.textContent = `$${window.lastOpponentSymbol || 'MEME'} WHOOPED YOU!`;
-        // use opponent logo if available
-        if (window.lastOpponentLogo) winnerLogo.src = window.lastOpponentLogo;
-        winnerLogo.style.borderColor = 'var(--neon-pink)';
-        winnerLogo.style.boxShadow = '0 0 30px var(--neon-pink)';
-
-        // Show BUY link for the opponent
-        const buyBtn = document.getElementById('btn-buy-token');
-        if (buyBtn && window.lastOpponentMint) {
-          buyBtn.style.display = 'flex';
-          buyBtn.textContent = `BUY $${window.lastOpponentSymbol || 'MEME'} 🛒`;
-          buyBtn.onclick = () => window.open(`https://dexscreener.com/solana/${window.lastOpponentMint}`, '_blank');
-        }
-      }
-
-      overlay.classList.remove('hidden');
-
-      // Trigger coin rain
-      if (window.effects) window.effects.addCoinRain();
-    };
-
-    window.shareVictory = async () => {
-      const canvas = document.getElementById('game');
-
-      // Custom text based on win/loss
-      const symbol = window.lastOpponentSymbol || 'MEME';
-      const text = `🥋 I just BATTLED $${symbol} in @StickLash! Solana's most viral fighting game. Join the arena: smf.sticklash.com #Solana #MemeFight`;
-
-      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
     };
 
     window.showMultiplayer = () => {

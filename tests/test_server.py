@@ -56,6 +56,34 @@ def test_health() -> None:
         assert resp.json()["status"] == "ok"
 
 
+def test_share_card_endpoint_serves_public_x_card(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(server, "SHARE_CARD_DIR", tmp_path)
+    monkeypatch.setenv("BASE_URL", "https://sticklash.fun")
+    tiny_png = (
+        "data:image/png;base64,"
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+
+    with TestClient(app=app) as client:
+        resp = client.post(
+            "/api/share-card",
+            json={"imageData": tiny_png, "symbol": "SMF", "result": "win", "mode": "solo"},
+        )
+        assert resp.status_code == 201
+        payload = resp.json()
+        assert payload["shareUrl"].startswith("https://sticklash.fun/share/")
+        assert payload["imageUrl"].startswith("https://sticklash.fun/api/share-card/")
+
+        image_resp = client.get(f"/api/share-card/{payload['shareId']}")
+        assert image_resp.status_code == 200
+        assert image_resp.headers["content-type"].startswith("image/png")
+
+        page_resp = client.get(f"/share/{payload['shareId']}")
+        assert page_resp.status_code == 200
+        assert 'name="twitter:card" content="summary_large_image"' in page_resp.text
+        assert 'name="twitter:image"' in page_resp.text
+
+
 def test_extract_burn_entries_from_parsed_tx() -> None:
     tx = {
         "transaction": {

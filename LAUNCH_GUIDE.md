@@ -70,5 +70,5 @@ To maximize the viral impact of STICKLASH:
 ### Post Schedule
 1. **Launch at 12:01 AM PST**: Start on Product Hunt right as the daily leaderboard resets.
 2. **Promotional Tweet (X)**: Tweet a pre-filled match victory link:
-   > 🥋 I just got completely whipped by $PEPE on @StickLash! High volume boosts are insane. Buy pressure or LMAO WHIPLASH! Fight live: smf.sticklash.com 
+   > 🥋 I just got completely whipped by $PEPE on @StickLash! High volume boosts are insane. Buy pressure or LMAO WHIPLASH! Fight live: https://sticklash.fun
 3. **Engage the Community**: Offer `$SMF` token rewards or live tournament lobbies on Discord to players who post screenshots of their endless streak on Product Hunt comments!

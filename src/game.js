@@ -1735,7 +1735,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
 
     // Timer
     ctx.fillStyle = DG.text;
-    const timerFontSize = isLandscapeHud ? 40 : (isMobileHud ? 38 : 34);
+    const timerFontSize = isLandscapeHud ? 36 : (isMobileHud ? 34 : 32);
     const timerY = barY + barH + (isMobileHud ? 7 : 4);
     ctx.font = `bold ${timerFontSize}px monospace`;
     ctx.textAlign = "center";
