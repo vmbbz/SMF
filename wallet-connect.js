@@ -266,12 +266,27 @@ if (hasNativeMwaBridge()) {
       console.log('[Wallet][MWA] callback intent received:', event?.uri || event);
       refreshNativeWalletConnectionState().catch(() => {});
     });
+    nativeMwaPlugin.addListener('appUrlOpen', (event) => {
+      const incomingUrl = String(event?.url || event?.uri || '').trim();
+      if (incomingUrl) {
+        console.log('[Wallet][MWA] appUrlOpen intent received:', incomingUrl);
+      }
+      refreshNativeWalletConnectionState().catch(() => {});
+    });
     nativeMwaPlugin.addListener('walletResume', () => {
       refreshNativeWalletConnectionState().catch(() => {});
     });
   } catch (e) {
     console.warn('[Wallet][MWA] failed to attach callback listener:', e);
   }
+}
+
+if (hasNativeMwaBridge()) {
+  // Cold start recovery: if Android recreated the process during wallet handoff,
+  // re-sync native wallet state as soon as JS boots.
+  setTimeout(() => {
+    refreshNativeWalletConnectionState().catch(() => {});
+  }, 0);
 }
 
 const WALLET_AUTH_STORAGE_KEY = 'smf_wallet_auth_session';

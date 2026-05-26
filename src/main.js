@@ -939,7 +939,7 @@ async function joinRoom(code) {
         joinError.textContent = detail;
         joinError.classList.remove('hidden');
       }
-      return;
+      return false;
     }
 
     const data = await resp.json();
@@ -951,12 +951,14 @@ async function joinRoom(code) {
     // P2 joins → room is now "selecting" → go straight to controller selection
     showRoomControllerScreen();
     startRoomPolling();
+    return true;
   } catch (err) {
     console.error('[multiplayer] Failed to join room:', err);
     if (joinError) {
       joinError.textContent = 'Network error — could not reach server';
       joinError.classList.remove('hidden');
     }
+    return false;
   } finally {
     if (joinGoBtn) {
       joinGoBtn.classList.remove('loading');
@@ -2721,30 +2723,201 @@ async function initAuth() {
 }
 
 // ─────────────────────────────────────────────
-// URL routing — detect /room/:code or /auth/callback on load
+// URL routing — robust startup + native deep-link intent handling
 // ─────────────────────────────────────────────
-const route = parseRoute();
+const startupRoute = parseRoute();
+let autoJoinRoomInFlight = false;
+let autoJoinRoomCode = '';
+let lastHandledRouteKey = '';
 
-// Initialize auth (may handle callback route)
-initAuth().then(handledRoute => {
-  if (handledRoute) return; // Auth callback was handled
+function getNativeMwaBridge() {
+  return window.Capacitor?.Plugins?.SolanaMwa || null;
+}
+
+function getCapacitorAppBridge() {
+  return window.Capacitor?.Plugins?.App || null;
+}
+
+function routeKey(route) {
+  if (!route || !route.type) return 'home';
+  if (route.type === 'room' && route.code) {
+    return `room:${String(route.code).trim().toLowerCase()}`;
+  }
+  return String(route.type);
+}
+
+function parseRouteFromIncomingUrl(rawUrl) {
+  if (!rawUrl) return null;
+  const urlString = String(rawUrl).trim();
+  if (!urlString) return null;
+  try {
+    const parsed = new URL(urlString, window.location.origin);
+    return parseRoute(parsed.pathname || '/');
+  } catch {
+    return null;
+  }
+}
+
+async function autoJoinRoomFromRoute(code) {
+  const normalizedCode = String(code || '').trim().toLowerCase();
+  if (!normalizedCode) return false;
+
+  const routeId = `room:${normalizedCode}`;
+  if (lastHandledRouteKey === routeId) return true;
+
+  const existingCode = String(localStorage.getItem('sf_roomCode') || '').trim().toLowerCase();
+  const existingPlayerNum = String(localStorage.getItem('sf_playerNum') || '').trim();
+  if (existingCode === normalizedCode && existingPlayerNum === '2') {
+    showRoomControllerScreen();
+    startRoomPolling();
+    lastHandledRouteKey = routeId;
+    return true;
+  }
+
+  if (autoJoinRoomInFlight && autoJoinRoomCode === normalizedCode) return false;
+
+  autoJoinRoomInFlight = true;
+  autoJoinRoomCode = normalizedCode;
+  try {
+    showScreen('joinRoom');
+    if (roomCodeInput) roomCodeInput.value = normalizedCode;
+    if (joinGoBtn) joinGoBtn.disabled = false;
+    const joined = await joinRoom(normalizedCode);
+    if (joined) {
+      lastHandledRouteKey = routeId;
+    }
+    return joined;
+  } finally {
+    autoJoinRoomInFlight = false;
+  }
+}
+
+async function applyResolvedRoute(route, { replaceToRoot = false } = {}) {
+  if (!route || !route.type) return false;
+  const resolvedKey = routeKey(route);
+  const isRepeat = lastHandledRouteKey === resolvedKey;
 
   if (route.type === 'room') {
-    // Auto-join room from URL — show join screen with code pre-filled, then attempt join
-    showScreen('joinRoom');
-    roomCodeInput.value = route.code;
-    joinGoBtn.disabled = false;
-    joinRoom(route.code);
-  } else if (route.type === 'leaderboard') {
+    return await autoJoinRoomFromRoute(route.code);
+  }
+  if (route.type === 'leaderboard') {
     showScreen('leaderboard');
     loadLeaderboard(lbCategory);
-  } else if (route.type === 'multiplayer') {
-    // Direct navigation to /multiplayer (e.g. after auth redirect)
-    showScreen('multiplayer');
-    window.history.replaceState({}, '', '/');
-  } else if (route.type !== 'auth-callback') {
-    showScreen('landing');
+    lastHandledRouteKey = resolvedKey;
+    return true;
   }
+  if (route.type === 'multiplayer') {
+    showScreen('multiplayer');
+    if (replaceToRoot) window.history.replaceState({}, '', '/');
+    lastHandledRouteKey = resolvedKey;
+    return true;
+  }
+  if (route.type === 'auth-callback') {
+    // Server handles callback and redirects before this JS runs.
+    lastHandledRouteKey = resolvedKey;
+    return true;
+  }
+
+  if (!isRepeat) {
+    showScreen('landing');
+    lastHandledRouteKey = resolvedKey;
+  }
+  return true;
+}
+
+async function readNativeLaunchUrl() {
+  const candidates = [];
+  const mwa = getNativeMwaBridge();
+  const app = getCapacitorAppBridge();
+
+  if (mwa && typeof mwa.getLaunchUrl === 'function') {
+    try {
+      const result = await mwa.getLaunchUrl();
+      const url = String(result?.url || '').trim();
+      if (url) candidates.push(url);
+    } catch (err) {
+      console.warn('[routing] Native launch URL read (MWA bridge) failed:', err);
+    }
+  }
+
+  if (app && typeof app.getLaunchUrl === 'function') {
+    try {
+      const result = await app.getLaunchUrl();
+      const url = String(result?.url || '').trim();
+      if (url) candidates.push(url);
+    } catch (err) {
+      console.warn('[routing] Native launch URL read (App bridge) failed:', err);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const route = parseRouteFromIncomingUrl(candidate);
+    if (route && route.type && route.type !== 'home') {
+      return route;
+    }
+  }
+
+  return null;
+}
+
+async function handleIncomingNativeUrl(rawUrl, source = 'native') {
+  const route = parseRouteFromIncomingUrl(rawUrl);
+  if (!route || route.type === 'home') return false;
+
+  const resolvedKey = routeKey(route);
+  if (lastHandledRouteKey === resolvedKey) return true;
+
+  const applied = await applyResolvedRoute(route, { replaceToRoot: route.type === 'multiplayer' });
+  if (applied) {
+    console.log(`[routing] Applied ${route.type} from ${source}`);
+  }
+  return applied;
+}
+
+function attachNativeDeepLinkListeners() {
+  const mwa = getNativeMwaBridge();
+  if (mwa && typeof mwa.addListener === 'function') {
+    try {
+      mwa.addListener('appUrlOpen', (event) => {
+        const url = event?.url || event?.uri;
+        handleIncomingNativeUrl(url, 'mwa.appUrlOpen').catch((err) => {
+          console.warn('[routing] Failed handling MWA appUrlOpen event:', err);
+        });
+      });
+    } catch (err) {
+      console.warn('[routing] Could not attach MWA appUrlOpen listener:', err);
+    }
+  }
+
+  const app = getCapacitorAppBridge();
+  if (app && typeof app.addListener === 'function') {
+    try {
+      app.addListener('appUrlOpen', (event) => {
+        const url = event?.url;
+        handleIncomingNativeUrl(url, 'capacitor.appUrlOpen').catch((err) => {
+          console.warn('[routing] Failed handling Capacitor appUrlOpen event:', err);
+        });
+      });
+    } catch (err) {
+      console.warn('[routing] Could not attach Capacitor appUrlOpen listener:', err);
+    }
+  }
+}
+
+attachNativeDeepLinkListeners();
+
+// Initialize auth, then apply the best available route:
+// 1) Native launch URL (cold start intent), 2) browser pathname fallback.
+initAuth().then(async (handledRoute) => {
+  if (handledRoute) return;
+
+  const nativeRoute = await readNativeLaunchUrl();
+  if (nativeRoute) {
+    await applyResolvedRoute(nativeRoute, { replaceToRoot: nativeRoute.type === 'multiplayer' });
+    return;
+  }
+
+  await applyResolvedRoute(startupRoute, { replaceToRoot: startupRoute.type === 'multiplayer' });
 });
 
 // Expose startFight globally for meme mode

@@ -33,11 +33,13 @@ class SolanaMwaPlugin : Plugin() {
     private lateinit var walletAdapter: MobileWalletAdapter
     private lateinit var prefs: android.content.SharedPreferences
     private var activityResultSender: ActivityResultSender? = null
+    private var senderActivityHash: Int = 0
+    private var lastLaunchUrl: String? = null
 
     override fun load() {
         super.load()
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        activityResultSender = activity?.let { ActivityResultSender(it) }
+        refreshActivityResultSender()
         walletAdapter = MobileWalletAdapter(
             connectionIdentity = ConnectionIdentity(
                 identityUri = Uri.parse(DEFAULT_IDENTITY_URI),
@@ -49,9 +51,11 @@ class SolanaMwaPlugin : Plugin() {
         if (!cachedAuthToken.isNullOrBlank()) {
             walletAdapter.authToken = cachedAuthToken
         }
+        emitIncomingIntent(activity?.intent)
     }
 
     private fun getActivityResultSender(call: PluginCall): ActivityResultSender? {
+        refreshActivityResultSender()
         val sender = activityResultSender
         if (sender == null) {
             call.reject(
@@ -69,20 +73,22 @@ class SolanaMwaPlugin : Plugin() {
 
     override fun handleOnResume() {
         super.handleOnResume()
+        refreshActivityResultSender()
         notifyListeners("walletResume", JSObject(), true)
     }
 
     override fun handleOnNewIntent(intent: Intent) {
         super.handleOnNewIntent(intent)
-        val data = intent.data ?: return
-        if (data.scheme == CALLBACK_SCHEME && data.host == CALLBACK_HOST) {
-            val payload = JSObject()
-            payload.put("uri", data.toString())
-            payload.put("scheme", data.scheme)
-            payload.put("host", data.host)
-            payload.put("path", data.path)
-            notifyListeners("walletCallback", payload, true)
-        }
+        emitIncomingIntent(intent)
+    }
+
+    @PluginMethod
+    fun getLaunchUrl(call: PluginCall) {
+        val out = JSObject()
+        val url = lastLaunchUrl
+        out.put("url", url)
+        out.put("hasUrl", !url.isNullOrBlank())
+        call.resolve(out)
     }
 
     @PluginMethod
@@ -433,6 +439,36 @@ class SolanaMwaPlugin : Plugin() {
         }
 
         return String(encoded, encodedStart, encoded.size - encodedStart)
+    }
+
+    private fun refreshActivityResultSender() {
+        val hostActivity = activity ?: return
+        val currentHash = System.identityHashCode(hostActivity)
+        if (activityResultSender == null || senderActivityHash != currentHash) {
+            activityResultSender = ActivityResultSender(hostActivity)
+            senderActivityHash = currentHash
+        }
+    }
+
+    private fun emitIncomingIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        val uri = data.toString()
+        if (uri.isBlank()) return
+
+        lastLaunchUrl = uri
+
+        val payload = JSObject()
+        payload.put("url", uri)
+        payload.put("uri", uri)
+        payload.put("scheme", data.scheme)
+        payload.put("host", data.host)
+        payload.put("path", data.path)
+        payload.put("query", data.query)
+        notifyListeners("appUrlOpen", payload, true)
+
+        if (data.scheme == CALLBACK_SCHEME && data.host == CALLBACK_HOST) {
+            notifyListeners("walletCallback", payload, true)
+        }
     }
 
     private fun divmod58(number: ByteArray, startAt: Int): Int {

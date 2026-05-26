@@ -7,17 +7,17 @@ export function parseRoute(pathname) {
   if (pathname === undefined) {
     pathname = window.location.pathname;
   }
-  const roomMatch = pathname.match(/^\/room\/([a-z0-9-]+)$/i);
+  const roomMatch = pathname.match(/^\/room\/([a-z0-9-]+)\/?$/i);
   if (roomMatch) {
     return { type: 'room', code: roomMatch[1] };
   }
-  if (pathname === '/auth/callback') {
+  if (pathname === '/auth/callback' || pathname === '/auth/callback/') {
     return { type: 'auth-callback' };
   }
-  if (pathname === '/leaderboard') {
+  if (pathname === '/leaderboard' || pathname === '/leaderboard/') {
     return { type: 'leaderboard' };
   }
-  if (pathname === '/multiplayer') {
+  if (pathname === '/multiplayer' || pathname === '/multiplayer/') {
     return { type: 'multiplayer' };
   }
   return { type: 'home' };
