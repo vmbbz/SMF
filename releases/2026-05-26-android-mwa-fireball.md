@@ -11,6 +11,7 @@ The important release goal is trust and feel:
 - Hadouken projectiles now look like stylized 2D fireball sketches instead of glossy 3D glass balls.
 - Victory sharing now generates a proper battle card and public share-card route instead of localhost-only Twitter links.
 - Live Boost defaults to P1/Human, has a close button, and supports outside-tap dismissal on mobile.
+- Music now uses a custom bamboo-flute icon instead of sharing the home/temple icon.
 
 ## Artifact
 
@@ -21,8 +22,8 @@ The important release goal is trust and feel:
 | Application ID | `com.solanamemefighter.app` |
 | Version name | `1.0` |
 | Version code | `1` |
-| APK size | `88,900,807` bytes |
-| APK SHA-256 | `E7018D733E110B5CB9AB9313945B8BB1620A73BE4DEA959BD510246F4A8F9FAC` |
+| APK size | `88,901,360` bytes |
+| APK SHA-256 | `82D499C2E112D2977B4968C18A273A21E8FA55CAFE137B88BC1891AF5A8AC84C` |
 | APK signing scheme | v2 verified |
 | Signer SHA-256 | `84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76` |
 
@@ -60,6 +61,11 @@ The important release goal is trust and feel:
 - Reduced the match countdown font from the previous oversized bump.
 - Hid the hotkey tip only in compact mobile landscape to preserve tap targets.
 
+### HUD Music Icon
+
+- Replaced the duplicate temple/home icon on the music menu with a custom inline SVG bamboo-flute icon.
+- Synced the icon through source, `www`, and Android packaged assets before building the APK.
+
 ## Verification Performed
 
 - `node --check src/game.js`
@@ -78,6 +84,7 @@ The important release goal is trust and feel:
   - `/api/share-card`
 - APK content check confirmed `assets/public/index.html` contains:
   - `boost-menu-close`
+  - `music-flute-icon`
 
 ## Required Smoke Test
 
@@ -95,6 +102,7 @@ Run this on a real Android phone before announcing publicly:
 10. Open Live Boost in mobile landscape, tap outside the card, and confirm it closes without firing an attack.
 11. Reopen Live Boost and confirm P1/Human is selected by default.
 12. Finish a fight and confirm share creates a battle card instead of a localhost-only X link.
+13. Confirm the HUD music button uses the flute icon while home still uses the temple icon.
 
 ## Known Risks
 
@@ -132,10 +140,11 @@ Highlights:
 - Live Boost close/outside-tap dismissal.
 - Live Boost now defaults safely to P1/Human.
 - Countdown timer reduced from the oversized previous bump.
+- Music menu now uses a custom flute icon instead of duplicating the home temple icon.
 
 APK:
 - stickler-app-release.apk
-- SHA-256: E7018D733E110B5CB9AB9313945B8BB1620A73BE4DEA959BD510246F4A8F9FAC
+- SHA-256: 82D499C2E112D2977B4968C18A273A21E8FA55CAFE137B88BC1891AF5A8AC84C
 - Signer SHA-256: 84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76
 
 Before public blast:
