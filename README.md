@@ -20,7 +20,12 @@
 ---
 
 ### 📲 Download & Play (Android APK)
-🚀 **[Download the Official STICKLASH Release APK (stickler-app-release.apk)](android/app/release/stickler-app-release.apk)** — *Built, V4-signed, and optimized for the Solana Seeker mobile dApp store!*
+🚀 **[Download the Official STICKLASH Release APK (stickler-app-release.apk)](android/app/release/stickler-app-release.apk)** — *Built, v2 release-signed, and optimized for Android Solana wallet play!*
+
+Release notes:
+* [Latest Android release notes](releases/2026-05-26-android-mwa-fireball.md)
+* [Changelog](CHANGELOG.md)
+* [Release process](RELEASE_PROCESS.md)
 
 ---
 
