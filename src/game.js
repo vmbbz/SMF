@@ -1345,8 +1345,10 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     this.p2.draw(ctx);
     if (this.p1.effects) this.p1.effects.update(this._dt, ctx);
     if (this.p2.effects) this.p2.effects.update(this._dt, ctx);
-    this.p1.drawHitboxes(ctx);
-    this.p2.drawHitboxes(ctx);
+    if (window.__SMF_DEBUG_HITBOXES === true) {
+      this.p1.drawHitboxes(ctx);
+      this.p2.drawHitboxes(ctx);
+    }
 
     // Projectiles (drawn between fighters and hit sparks)
     for (const proj of this.projectiles) {
