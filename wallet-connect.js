@@ -219,10 +219,28 @@ function emitWalletGameplayPause(paused, reason = 'wallet_action') {
   }));
 }
 
+function withWalletBridgeTimeout(promise, label = 'Wallet bridge', timeoutMs = 90000) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      const err = new Error(`${label} timed out before returning to StickLash.`);
+      err.code = 'WALLET_BRIDGE_TIMEOUT';
+      reject(err);
+    }, timeoutMs);
+  });
+  return Promise.race([
+    Promise.resolve(promise).finally(() => window.clearTimeout(timeoutId)),
+    timeout
+  ]);
+}
+
 function walletFriendlyErrorMessage(err) {
   const code = String(err?.code || '');
   const message = String(err?.message || err || '');
   const lower = message.toLowerCase();
+  if (code.includes('WALLET_BRIDGE_TIMEOUT') || lower.includes('wallet bridge timed out')) {
+    return 'Wallet approval did not return to StickLash. Switch back to the game and retry; no transaction was sent.';
+  }
   if (code.includes('MWA_NO_WALLET') || lower.includes('no mwa wallet')) {
     return 'No compatible Solana wallet app was detected. Install Phantom or Solflare, then retry.';
   }
@@ -243,8 +261,13 @@ function walletFriendlyErrorMessage(err) {
 
 if (hasNativeMwaBridge()) {
   try {
-    getNativeMwaPlugin().addListener('walletCallback', (event) => {
+    const nativeMwaPlugin = getNativeMwaPlugin();
+    nativeMwaPlugin.addListener('walletCallback', (event) => {
       console.log('[Wallet][MWA] callback intent received:', event?.uri || event);
+      refreshNativeWalletConnectionState().catch(() => {});
+    });
+    nativeMwaPlugin.addListener('walletResume', () => {
+      refreshNativeWalletConnectionState().catch(() => {});
     });
   } catch (e) {
     console.warn('[Wallet][MWA] failed to attach callback listener:', e);
@@ -382,6 +405,37 @@ async function ensureWalletAuthSession(walletAddress, { forceRefresh = false } =
   if (!verifyResp.ok) {
     const err = await verifyResp.text();
     throw new Error(`Wallet auth verify failed (${verifyResp.status}): ${err}`);
+  }
+  const verified = await verifyResp.json();
+  const session = {
+    wallet: walletAddress,
+    token: verified.token,
+    expiresAtUnix: verified.expiresAtUnix
+  };
+  setWalletAuthSession(session);
+  return session.token;
+}
+
+async function ensureWalletAuthSessionFromNativeSignIn(signInResult) {
+  const walletAddress = String(signInResult?.walletAddress || '').trim();
+  const signedMessageBase64 = String(signInResult?.signedMessageBase64 || '').trim();
+  const signature = String(signInResult?.signatureBase64 || signInResult?.signatureBase58 || '').trim();
+  if (!walletAddress || !signedMessageBase64 || !signature) {
+    throw new Error('Native wallet sign-in returned an incomplete SIWS payload.');
+  }
+
+  const verifyResp = await fetch('/api/wallet-auth/verify-siws', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      wallet: walletAddress,
+      signedMessageBase64,
+      signature
+    })
+  });
+  if (!verifyResp.ok) {
+    const err = await verifyResp.text();
+    throw new Error(`Native wallet SIWS verify failed (${verifyResp.status}): ${err}`);
   }
   const verified = await verifyResp.json();
   const session = {
@@ -1093,6 +1147,53 @@ async function refreshConnectedWalletProfile(publicKeyStr, { authenticated = fal
   return profile;
 }
 
+async function refreshNativeWalletConnectionState({ silent = true } = {}) {
+  const nativeMwa = getNativeMwaPlugin();
+  if (!nativeMwa || typeof nativeMwa.getConnectionState !== 'function') return null;
+  try {
+    const state = await nativeMwa.getConnectionState();
+    const walletAddress = String(state?.walletAddress || '').trim();
+    if (!walletAddress) return null;
+    const profile = await refreshConnectedWalletProfile(walletAddress, {
+      authenticated: isSessionValidForWallet(getWalletAuthSession(), walletAddress)
+    });
+    if (profile.walletAuthenticated) {
+      setWalletFlow(
+        'ready',
+        'WALLET READY',
+        'Secure session active. Boost buys and boost spends are unlocked.',
+        'success'
+      );
+    } else {
+      setWalletFlow(
+        'connected_needs_signature',
+        'WALLET CONNECTED',
+        'StickLash recovered your wallet session. Finish the free sign-in to unlock protected boosts.',
+        'warn'
+      );
+    }
+    showWalletConnect();
+    return profile;
+  } catch (err) {
+    if (!silent) console.warn('[Wallet][MWA] state recovery failed:', err);
+    return null;
+  }
+}
+
+if (hasNativeMwaBridge()) {
+  window.addEventListener('focus', () => {
+    const flow = getWalletFlow();
+    if (String(flow.stage || '').startsWith('opening_') || String(flow.stage || '').includes('connect')) {
+      refreshNativeWalletConnectionState().catch(() => {});
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      refreshNativeWalletConnectionState().catch(() => {});
+    }
+  });
+}
+
 window.secureWalletSignIn = async function(options = {}) {
   const { silent = false } = options || {};
   const profile = getProfile();
@@ -1158,6 +1259,18 @@ window.secureWalletSignIn = async function(options = {}) {
 
 // Global hook: connect wallet (Real & Mock-Free)
 window.connectSolanaWallet = async function() {
+  if (window.__smfWalletConnectInFlight) {
+    setWalletFlow(
+      'opening_wallet',
+      'WALLET ALREADY OPEN',
+      'Finish the current Phantom prompt, then return to StickLash.',
+      'warn'
+    );
+    showWalletConnect();
+    return;
+  }
+
+  window.__smfWalletConnectInFlight = true;
   try {
     const nativeMwa = getNativeMwaPlugin();
     let publicKeyStr = '';
@@ -1174,30 +1287,69 @@ window.connectSolanaWallet = async function() {
     showWalletConnect();
 
     if (nativeMwa) {
-      const result = await nativeMwa.connect();
-      publicKeyStr = String(result?.walletAddress || '').trim();
-      if (!publicKeyStr) {
-        throw new Error('Native wallet bridge did not return a wallet address.');
+      const canNativeSignIn = typeof nativeMwa.signIn === 'function';
+      if (canNativeSignIn) {
+        const result = await withWalletBridgeTimeout(
+          nativeMwa.signIn({
+            statement: 'Sign in to StickLash. This proves wallet ownership and does not move tokens.'
+          }),
+          'Phantom sign-in'
+        );
+        publicKeyStr = String(result?.walletAddress || '').trim();
+        if (!publicKeyStr) {
+          throw new Error('Native wallet sign-in did not return a wallet address.');
+        }
+        try {
+          await ensureWalletAuthSessionFromNativeSignIn(result);
+          await refreshConnectedWalletProfile(publicKeyStr, { authenticated: true });
+          setWalletFlow(
+            'ready',
+            'WALLET READY',
+            'Phantom approved StickLash and your secure boost session is active.',
+            'success'
+          );
+        } catch (sessionErr) {
+          console.warn('[Wallet][MWA] SIWS server session failed; falling back to connected-only state:', sessionErr);
+          await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
+          setWalletFlow(
+            'connected_needs_signature',
+            'WALLET CONNECTED',
+            'Phantom approved StickLash. Finish the free security sign-in to unlock protected boosts.',
+            'warn'
+          );
+        }
+      } else {
+        const result = await withWalletBridgeTimeout(nativeMwa.connect(), 'Phantom connect');
+        publicKeyStr = String(result?.walletAddress || '').trim();
+        if (!publicKeyStr) {
+          throw new Error('Native wallet bridge did not return a wallet address.');
+        }
+        await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
+        setWalletFlow(
+          'connected_needs_signature',
+          'WALLET CONNECTED',
+          'One more free signature unlocks protected boosts. This is not a transaction and no tokens move.',
+          'warn'
+        );
       }
       window.showWalletConnectionOptions = false;
     } else if (window.solana) {
       const resp = await window.solana.connect();
       publicKeyStr = resp.publicKey.toString();
       window.showWalletConnectionOptions = false;
+      await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
+      setWalletFlow(
+        'connected_needs_signature',
+        'WALLET CONNECTED',
+        'One more free signature unlocks protected boosts. This is not a transaction and no tokens move.',
+        'warn'
+      );
     } else {
       // No native bridge and no browser wallet.
       window.showWalletConnectionOptions = true;
       showWalletConnect();
       return;
     }
-
-    await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
-    setWalletFlow(
-      'connected_needs_signature',
-      'WALLET CONNECTED',
-      'One more free signature unlocks protected boosts. This is not a transaction and no tokens move.',
-      'warn'
-    );
     
     // Redraw modal
     showWalletConnect();
@@ -1205,7 +1357,13 @@ window.connectSolanaWallet = async function() {
     // Show in-game notification if applicable
     const activeGame = window.currentGame || window.game || window._game;
     if (activeGame && activeGame.showBoostMessage) {
-      activeGame.showBoostMessage("⚡ WALLET CONNECTED. SIGN TO UNLOCK BOOSTS.", "runner");
+      const connectedProfile = getProfile();
+      activeGame.showBoostMessage(
+        connectedProfile.walletAuthenticated
+          ? "⚡ WALLET READY. BOOSTS UNLOCKED."
+          : "⚡ WALLET CONNECTED. SIGN TO UNLOCK BOOSTS.",
+        "runner"
+      );
     }
   } catch (err) {
     console.error('Wallet connection rejected/failed:', err);
@@ -1216,6 +1374,7 @@ window.connectSolanaWallet = async function() {
     }
     alert('⚠️ ' + walletFriendlyErrorMessage(err));
   } finally {
+    window.__smfWalletConnectInFlight = false;
     emitWalletGameplayPause(false, 'wallet_connect');
   }
 };
