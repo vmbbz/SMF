@@ -287,6 +287,22 @@ window.sfx = sfx;
 window.stageMusic = stageMusic;
 sfx.preload().catch(e => console.warn('[SFX] Background preload failed:', e));
 
+const MUSIC_FLUTE_SVG = '<svg class="music-flute-icon" viewBox="0 0 64 64" focusable="false"><path d="M9 39 L43 5 Q47 1 52 6 L58 12 Q63 17 59 21 L25 55 Q21 59 16 54 L10 48 Q5 43 9 39Z" fill="rgba(255, 146, 43, 0.18)" stroke="#ff8a1f" stroke-width="3.5" stroke-linejoin="round"/><path d="M16 42 L46 12" stroke="#ffe1a6" stroke-width="4" stroke-linecap="round"/><path d="M19 48 L52 15" stroke="#f05821" stroke-width="3" stroke-linecap="round" opacity="0.85"/><circle cx="28" cy="32" r="2.7" fill="#08090d" stroke="#ffd072" stroke-width="1.2"/><circle cx="35" cy="25" r="2.7" fill="#08090d" stroke="#ffd072" stroke-width="1.2"/><circle cx="42" cy="18" r="2.7" fill="#08090d" stroke="#ffd072" stroke-width="1.2"/><path d="M10 46 L18 54 M49 7 L58 16" stroke="#13ef95" stroke-width="2.5" stroke-linecap="round" opacity="0.95"/></svg>';
+
+function ensureMusicMenuIcon(btn) {
+  const desktopEl = btn.querySelector('.desktop-text');
+  if (desktopEl && !desktopEl.querySelector('.music-flute-icon')) {
+    desktopEl.innerHTML = `<span class="music-icon-wrap" aria-hidden="true">${MUSIC_FLUTE_SVG}</span> MUSIC`;
+  }
+
+  const mobileEl = btn.querySelector('.mobile-text');
+  if (mobileEl && !mobileEl.querySelector('.music-flute-icon')) {
+    mobileEl.classList.add('music-icon-wrap');
+    mobileEl.setAttribute('aria-hidden', 'true');
+    mobileEl.innerHTML = MUSIC_FLUTE_SVG;
+  }
+}
+
 function getStageTrackCopy(uiState = stageMusic.getState()) {
   const track = uiState.trackName || 'No Track';
   const index = Number.isFinite(uiState.trackIndex) ? uiState.trackIndex + 1 : 0;
@@ -305,10 +321,7 @@ function syncMusicMenuButton(uiState = stageMusic.getState()) {
   const isActive = isFightMusic ? !!uiState.isPlaying : landingActive;
   const stageCopy = getStageTrackCopy(uiState);
 
-  const desktopEl = btn.querySelector('.desktop-text');
-  if (desktopEl) desktopEl.textContent = '⛩️ MUSIC';
-  const mobileEl = btn.querySelector('.mobile-text');
-  if (mobileEl) mobileEl.textContent = '⛩️';
+  ensureMusicMenuIcon(btn);
 
   btn.style.display = 'flex';
   btn.style.borderColor = isActive ? '#ff7a18' : 'rgba(255, 122, 24, 0.48)';

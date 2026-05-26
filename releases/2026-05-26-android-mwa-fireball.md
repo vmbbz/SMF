@@ -22,8 +22,8 @@ The important release goal is trust and feel:
 | Application ID | `com.solanamemefighter.app` |
 | Version name | `1.0` |
 | Version code | `1` |
-| APK size | `88,901,360` bytes |
-| APK SHA-256 | `82D499C2E112D2977B4968C18A273A21E8FA55CAFE137B88BC1891AF5A8AC84C` |
+| APK size | `88,901,793` bytes |
+| APK SHA-256 | `632B8E5CE8755227A9DEE7447006A0167AB89DC381EC92D5ADDB3BEEE40A08F3` |
 | APK signing scheme | v2 verified |
 | Signer SHA-256 | `84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76` |
 
@@ -82,9 +82,13 @@ The important release goal is trust and feel:
   - `boostTarget = 'p1'`
   - `dismissBoostMenuFromOutside`
   - `/api/share-card`
+  - `MUSIC_FLUTE_SVG`
+  - `ensureMusicMenuIcon`
 - APK content check confirmed `assets/public/index.html` contains:
   - `boost-menu-close`
   - `music-flute-icon`
+- APK content check confirmed `assets/public/src/main.js` does not contain:
+  - `⛩️ MUSIC`
 
 ## Required Smoke Test
 
@@ -144,7 +148,7 @@ Highlights:
 
 APK:
 - stickler-app-release.apk
-- SHA-256: 82D499C2E112D2977B4968C18A273A21E8FA55CAFE137B88BC1891AF5A8AC84C
+- SHA-256: 632B8E5CE8755227A9DEE7447006A0167AB89DC381EC92D5ADDB3BEEE40A08F3
 - Signer SHA-256: 84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76
 
 Before public blast:
