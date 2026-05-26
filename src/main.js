@@ -320,12 +320,21 @@ function syncFightMusicControls(uiState = stageMusic.getState()) {
 
 stageMusic.subscribe(syncFightMusicControls);
 
+function syncHomeButtonVisibility() {
+  const btn = document.getElementById('btn-home-return');
+  if (!btn) return;
+  const shouldShow = state !== 'landing';
+  btn.classList.toggle('is-hidden', !shouldShow);
+  btn.style.display = shouldShow ? 'flex' : 'none';
+}
+
 function setFightDockVisible() {
   window.closeMusicMenu?.();
 }
 
 function setLandingAudioButtonVisible() {
   syncMusicMenuButton();
+  syncHomeButtonVisibility();
 }
 
 function hideFightSceneUi() {
@@ -380,6 +389,15 @@ safeListener('btn-music-menu', 'click', (e) => {
   window.toggleMusicMenu();
 });
 
+safeListener('btn-home-return', 'click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  window.closeMusicMenu?.();
+  const overlay = document.getElementById('victory-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  showLanding();
+});
+
 safeListener('btn-stage-music-prev', 'click', (e) => {
   e.preventDefault();
   e.stopPropagation();
@@ -406,7 +424,9 @@ safeListener('btn-stage-music-next', 'click', (e) => {
 
 document.addEventListener('click', (e) => {
   const musicWrap = document.querySelector('.music-menu-wrap');
-  if (!musicWrap || !musicWrap.contains(e.target)) {
+  const musicDropdown = document.getElementById('music-dropdown');
+  const clickIsMusic = (musicWrap && musicWrap.contains(e.target)) || (musicDropdown && musicDropdown.contains(e.target));
+  if (!clickIsMusic) {
     window.closeMusicMenu();
   }
 });
@@ -421,6 +441,7 @@ window.addEventListener('click', () => {
 
 syncLandingBgmButton();
 syncFightMusicControls();
+syncHomeButtonVisibility();
 hideFightSceneUi();
 // Track active adapters for cleanup
 let activeAdapters = [];
@@ -452,6 +473,7 @@ function showScreen(name) {
     stageMusic.stopForMenu();
   }
   setLandingAudioButtonVisible(name === 'landing');
+  syncHomeButtonVisibility();
 
   // Clear keyboard focus indicators from previous screen
   document.querySelectorAll('.kb-focus').forEach(el => el.classList.remove('kb-focus'));
@@ -569,6 +591,7 @@ function showLanding() {
   hideFightSceneUi();
   showScreen('landing');
 }
+window.showLanding = showLanding;
 
 async function startFight() {
   await cleanupAdapters(); // Ensure fresh start
@@ -579,6 +602,7 @@ async function startFight() {
   if (canvas && canvas.classList) canvas.classList.add('active');
   resize();
   setLandingAudioButtonVisible(false);
+  syncHomeButtonVisibility();
   setFightDockVisible(true);
   prepareFightAudio();
 

@@ -741,6 +741,15 @@
       border: 2px solid var(--neon-pink);
       box-shadow: 0 0 10px rgba(255,0,255,0.3);
     }
+
+    .home-btn {
+      border: 2px solid var(--neon-green);
+      box-shadow: 0 0 10px rgba(20,241,149,0.28);
+    }
+
+    .home-btn.is-hidden {
+      display: none !important;
+    }
     
     .bgm-btn {
       border: 2px solid #ff5500;
@@ -780,9 +789,9 @@
 
     .music-dropdown {
       display: none;
-      position: absolute;
+      position: fixed;
       left: 50%;
-      bottom: calc(100% + 10px);
+      bottom: 136px;
       transform: translateX(-50%);
       flex-direction: column;
       gap: 8px;
@@ -795,7 +804,7 @@
         linear-gradient(160deg, rgba(7, 9, 14, 0.98), rgba(14, 8, 5, 0.96));
       box-shadow: 0 16px 34px rgba(0, 0, 0, 0.5), 0 0 18px rgba(255, 85, 0, 0.18);
       backdrop-filter: blur(10px);
-      z-index: 900;
+      z-index: 1800;
       box-sizing: border-box;
     }
 
@@ -868,6 +877,18 @@
         gap: 8px;
       }
 
+      .music-dropdown {
+        top: 50%;
+        bottom: auto;
+        transform: translate(-50%, -50%);
+        width: min(360px, calc(100vw - 40px));
+        max-width: 92vw;
+        padding: 16px;
+        border-radius: 22px;
+        border-width: 2px;
+        box-shadow: 0 20px 55px rgba(0, 0, 0, 0.72), 0 0 28px rgba(255, 85, 0, 0.32);
+      }
+
       /* Weather and Boost buttons as ultra-compact circular glass icons */
       #hud-widgets button.hud-btn {
         width: 44px !important;
@@ -895,15 +916,9 @@
     /* Mobile landscape combat ergonomics */
     @media (max-width: 1024px) and (orientation: landscape) {
       #hud-widgets {
-        top: max(12px, env(safe-area-inset-top));
+        top: max(58px, calc(env(safe-area-inset-top) + 54px));
         transform: translateX(-50%);
         gap: 6px;
-      }
-
-      .music-dropdown {
-        bottom: auto;
-        top: calc(100% + 8px);
-        width: min(250px, calc(100vw - 20px));
       }
 
       #hud-widgets button.hud-btn {
@@ -2096,21 +2111,18 @@
       <span class="profile-fallback-mark">忍</span>
     </button>
 
+    <!-- HOME / EXIT TO LANDING -->
+    <button id="btn-home-return" class="hud-btn home-btn is-hidden" type="button" title="Back Home">
+      <span class="desktop-text">🏠 HOME</span>
+      <span class="mobile-text">🏠</span>
+    </button>
+
     <!-- MUSIC MENU -->
     <div class="music-menu-wrap">
       <button id="btn-music-menu" class="hud-btn bgm-btn" type="button" title="Music Controls">
         <span class="desktop-text">⛩️ MUSIC</span>
         <span class="mobile-text">⛩️</span>
       </button>
-      <div id="music-dropdown" class="music-dropdown" aria-hidden="true">
-        <div class="music-dropdown-title">MUSIC</div>
-        <div id="music-track-label" class="music-dropdown-track">Landing BGM ready</div>
-        <div class="music-dropdown-actions">
-          <button id="btn-stage-music-prev" type="button" aria-label="Previous stage track">⏮</button>
-          <button id="btn-stage-music-toggle" type="button" aria-label="Play or pause music">▶</button>
-          <button id="btn-stage-music-next" type="button" aria-label="Next stage track">⏭</button>
-        </div>
-      </div>
     </div>
 
     <!-- WEATHER TOGGLE -->
@@ -2124,6 +2136,16 @@
       <span class="desktop-text">⚡ BOOST TEST</span>
       <span class="mobile-text">⚡</span>
     </button>
+  </div>
+
+  <div id="music-dropdown" class="music-dropdown" aria-hidden="true">
+    <div class="music-dropdown-title">MUSIC</div>
+    <div id="music-track-label" class="music-dropdown-track">Landing BGM ready</div>
+    <div class="music-dropdown-actions">
+      <button id="btn-stage-music-prev" type="button" aria-label="Previous stage track">⏮</button>
+      <button id="btn-stage-music-toggle" type="button" aria-label="Play or pause music">▶</button>
+      <button id="btn-stage-music-next" type="button" aria-label="Next stage track">⏭</button>
+    </div>
   </div>
 
   <!-- Developer Boost Menu -->
