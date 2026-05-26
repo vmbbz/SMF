@@ -1327,10 +1327,16 @@ function startWaitingInArena(deadline) {
 
     // Countdown timer
     const remaining = Math.max(0, Math.ceil((waitingArenaDeadline * 1000 - Date.now()) / 1000));
-    ctx.font = 'bold 28px monospace';
+    const isMobileWaiting = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
+    const isLandscapeWaiting = isMobileWaiting && window.innerWidth > window.innerHeight;
+    const countdownFont = isLandscapeWaiting ? 40 : (isMobileWaiting ? 38 : 34);
+    ctx.font = `bold ${countdownFont}px monospace`;
     ctx.textAlign = 'center';
     ctx.fillStyle = remaining <= 10 ? (DG.danger || '#f04438') : (DG.text || '#fbfbff');
-    ctx.fillText(`${remaining}s`, w / 2, 40);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.strokeText(`${remaining}s`, w / 2, isMobileWaiting ? 48 : 44);
+    ctx.fillText(`${remaining}s`, w / 2, isMobileWaiting ? 48 : 44);
 
     ctx.font = '12px monospace';
     ctx.fillStyle = DG.slate || '#949498';

@@ -1551,7 +1551,9 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     const w = this.logicalW;
     const p1MaxHealth = this.p1.healthMax || 100;
     const p2MaxHealth = this.p2.healthMax || 100;
-    const timerWidth = 60;
+    const isMobileHud = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || window.matchMedia('(max-width: 1024px)').matches;
+    const isLandscapeHud = isMobileHud && window.innerWidth > window.innerHeight;
+    const timerWidth = isMobileHud ? 78 : 72;
     const margin = 40;
     const gap = 10;
     const barW = (w - margin * 2 - timerWidth - gap * 2) / 2;
@@ -1660,9 +1662,14 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
 
     // Timer
     ctx.fillStyle = DG.text;
-    ctx.font = "bold 28px monospace";
+    const timerFontSize = isLandscapeHud ? 40 : (isMobileHud ? 38 : 34);
+    const timerY = barY + barH + (isMobileHud ? 7 : 4);
+    ctx.font = `bold ${timerFontSize}px monospace`;
     ctx.textAlign = "center";
-    ctx.fillText(Math.ceil(this.roundTimer).toString(), w / 2, barY + barH - 2);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.72)';
+    ctx.strokeText(Math.ceil(this.roundTimer).toString(), w / 2, timerY);
+    ctx.fillText(Math.ceil(this.roundTimer).toString(), w / 2, timerY);
 
     // Round over text
     if (this.roundOver) {
