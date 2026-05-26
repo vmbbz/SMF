@@ -1,7 +1,7 @@
-# Solana Meme Battle ($SMF) - Official Project Plan
+# Solana Meme Battle ($XXX) - Official Project Plan
 
 ## 🥊 The Vision
-**Solana Meme Battle ($SMF)** is a high-fidelity, viral-ready stickman fighting game where the Solana meme ecosystem comes to life as playable fighters. By integrating real-time market data from Dexscreener and Pump.fun, $SMF transforms price charts into interactive combat.
+**Solana Meme Battle ($XXX)** is a high-fidelity, viral-ready stickman fighting game where the Solana meme ecosystem comes to life as playable fighters. By integrating real-time market data from Dexscreener and Pump.fun, $XXX transforms price charts into interactive combat.
 
 ---
 
@@ -54,14 +54,14 @@
 
 ## 📈 Roadmap to Mainnet
 - **Phase 3 (The Pump)**: Endless "Pump Stream" mode where tokens spawn based on live Raydium buys.
-- **Phase 4 (The Arena)**: On-chain ELO system and leaderboard tied to $SMF token holders.
+- **Phase 4 (The Arena)**: On-chain ELO system and leaderboard tied to $XXX token holders.
 - **Phase 5 (Viral Takeover)**: Integrated Telegram Mini-App (TMA) and Solana Seeker mobile APK release.
 
 ---
 
 ## 🎯 "Lash" Logic & Meme Utility
-- **$SMF Utility**: Holding $SMF boosts your "Lash Resistance" and "Damage Multiplier."
-- **Community Branding**: Every win is a billboard for the token. "I just body-slammed $PEPE with $SMF tech."
+- **$XXX Utility**: Holding $XXX boosts your "Lash Resistance" and "Damage Multiplier."
+- **Community Branding**: Every win is a billboard for the token. "I just body-slammed $PEPE with $XXX tech."
 - **Whip-Lash Effects**: Signature particle streaks that match the token's primary color, creating a visual spectacle during market pumps.
 
 **LFG! WOOOOOOOO!** 🥋🚀💥

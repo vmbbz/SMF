@@ -3050,22 +3050,22 @@ function buildVictoryShareText({ symbol, isWin, mode, opponentName }) {
   if (mode === 'pvp') {
     const rival = String(opponentName || 'a rival').toUpperCase();
     return randomChoice(isWin ? [
-      `I just SMASHED ${rival} in real-time PvP inside the $SMF StickLash arena.`,
+      `I just SMASHED ${rival} in real-time PvP inside the $XXX StickLash arena.`,
       `${rival} got sent to the shadow realm in StickLash PvP.`,
       `Clean combo. Clean KO. ${rival} just felt the StickLash.`
     ] : [
       `${rival} clipped me in StickLash PvP. I need a rematch.`,
-      `Got lashed by ${rival} in the $SMF arena. Running it back.`,
+      `Got lashed by ${rival} in the $XXX arena. Running it back.`,
       `${rival} won this round. The dojo remembers.`
     ]);
   }
 
   return randomChoice(isWin ? [
-    `I just SMASHED $${cleanSymbol} in the $SMF StickLash arena.`,
+    `I just SMASHED $${cleanSymbol} in the $XXX StickLash arena.`,
     `Just sent $${cleanSymbol} to the shadow realm in StickLash.`,
     `My stickman just bodied $${cleanSymbol} live in the arena.`
   ] : [
-    `$${cleanSymbol} just wrecked me in the $SMF StickLash arena.`,
+    `$${cleanSymbol} just wrecked me in the $XXX StickLash arena.`,
     `Got lashed by $${cleanSymbol}. I need a rematch.`,
     `$${cleanSymbol}'s chart hit too hard and knocked me out.`
   ]);

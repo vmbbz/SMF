@@ -302,8 +302,8 @@ def _cancel_controller_wait_timer(code: str) -> None:
 
 @asynccontextmanager
 async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
-    """Safe lifespan for $SMF Stick Lash - no required Redis or Postgres"""
-    print("[lifespan] Starting safe mode for $SMF Stick Lash")
+    """Safe lifespan for $XXX Stick Lash - no required Redis or Postgres"""
+    print("[lifespan] Starting safe mode for $XXX Stick Lash")
 
     global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, boost_pg_pool, cleanup_task, matchmaking_task
 
@@ -565,7 +565,7 @@ def _get_boost_payment_token_symbol(mint: str | None = None) -> str:
     configured = os.environ.get("BOOST_PAYMENT_TOKEN_SYMBOL", "").strip()
     if configured:
         return configured
-    return "$SMF"
+    return "$XXX"
 
 
 def _get_solana_rpc() -> str:

@@ -923,7 +923,7 @@ export async function showWalletConnect(options = {}) {
             </div>
             <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
               <span style="color:#aaa;">Token Balance:</span>
-              <span style="color:var(--neon-green); font-weight:bold;">${Number(profile.smfBalance).toLocaleString(undefined, {maximumFractionDigits: 4})} $SMF</span>
+              <span style="color:var(--neon-green); font-weight:bold;">${Number(profile.smfBalance).toLocaleString(undefined, {maximumFractionDigits: 4})} $XXX</span>
             </div>
             ${!profile.walletReadOnly ? `
               <div style="background:rgba(0,0,0,0.22); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px; margin:8px 0;">
@@ -991,7 +991,7 @@ export async function showWalletConnect(options = {}) {
             </button>
           </div>
         ` : `
-          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $SMF tokens to buy premium boost packs.</p>
+          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $XXX tokens to buy premium boost packs.</p>
           <button onclick="window.connectSolanaWallet()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px;">
             ${nativeMwaBridge ? 'CONNECT VIA ANDROID WALLET (MWA)' : 'CONNECT SOLANA WALLET'}
           </button>
@@ -1013,7 +1013,7 @@ export async function showWalletConnect(options = {}) {
         ` : ''}
         
         <p style="font-size: 8px; color: #888; margin-bottom: 8px; line-height: 1.4;">
-          Staking is unsafe. Instead, use connected wallet $SMF tokens to **buy boost packs**! All $SMF spent is **burned forever** 🔥 (Solana Burn Program).
+          Staking is unsafe. Instead, use connected wallet $XXX tokens to **buy boost packs**! All $XXX spent is **burned forever** 🔥 (Solana Burn Program).
         </p>
 
         <!-- PACKAGES -->
@@ -1022,7 +1022,7 @@ export async function showWalletConnect(options = {}) {
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">🔵 Micro Pack (5 Premium Boosts)</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $SMF)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $XXX)</span></div>
             </div>
             <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
               BUY & BURN
@@ -1032,7 +1032,7 @@ export async function showWalletConnect(options = {}) {
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:var(--neon-green);">🔥 Degen Pack (20 Boosts) - BEST VALUE</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $SMF)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $XXX)</span></div>
             </div>
             <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
               BUY & BURN
@@ -1042,7 +1042,7 @@ export async function showWalletConnect(options = {}) {
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">⚡ Chaos Pack (45 Premium Boosts)</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $SMF)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $XXX)</span></div>
             </div>
             <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
               BUY & BURN
@@ -1560,7 +1560,7 @@ window.purchaseBoostPack = async function(packId) {
       throw new Error('Backend returned invalid quote values.');
     }
     if (profile.smfBalance < requiredSmfUi) {
-      throw new Error(`Insufficient $SMF balance. Need ${requiredSmfUi}, have ${profile.smfBalance}.`);
+      throw new Error(`Insufficient $XXX balance. Need ${requiredSmfUi}, have ${profile.smfBalance}.`);
     }
 
     const connection = new Connection(rpcUrl, 'confirmed');
@@ -1580,7 +1580,7 @@ window.purchaseBoostPack = async function(packId) {
       associatedTokenProgramId
     );
     
-    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${requiredSmfUi} $SMF</span>`;
+    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${requiredSmfUi} $XXX</span>`;
     
     // Compile SPL Token Burn Instruction
     // Keys needed:
@@ -1609,7 +1609,7 @@ window.purchaseBoostPack = async function(packId) {
       data
     });
     
-    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${requiredSmfUi} $SMF tokens in wallet...</span>`;
+    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${requiredSmfUi} $XXX tokens in wallet...</span>`;
     
     // Fetch recent blockhash
     const { blockhash } = await connection.getLatestBlockhash('confirmed');

@@ -12,7 +12,7 @@ Spotify is removed from product scope and codebase.
 
 Reason:
 - Compliance and platform complexity overhead is not worth launch risk.
-- Core monetization and trust loop is Solana-native utility: buy boosts, burn $SMF, verify on-chain.
+- Core monetization and trust loop is Solana-native utility: buy boosts, burn $XXX, verify on-chain.
 - Focus creates a clearer story for users, Seeker listing review, and market positioning.
 
 New headline:

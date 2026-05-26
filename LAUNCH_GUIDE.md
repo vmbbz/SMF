@@ -52,7 +52,7 @@ STICKLASH is fully optimized for native publication in the official **Solana Mob
 * Log in using a publisher wallet. Publishing a dApp is done entirely on-chain by minting a **dApp Release NFT** representing your application's cryptographic metadata.
 
 ### Key Listing Specifications
-* **On-Chain Solana Integration**: Leverage our dual-mode Wallet Connect panel. Inside the Solana Seeker dApp Store browser, `window.solana` is natively injected, allowing players to connect Phantom/Backpack/Solflare directly, query live `$SMF` ATA balances, and sign transactions.
+* **On-Chain Solana Integration**: Leverage our dual-mode Wallet Connect panel. Inside the Solana Seeker dApp Store browser, `window.solana` is natively injected, allowing players to connect Phantom/Backpack/Solflare directly, query live `$XXX` ATA balances, and sign transactions.
 * **Target SDK Requirements**: 
   * Targets **SDK 34 (Android 14)** as mandated by the Seeker Mobile Store.
   * Integration of Google's security requirements: HTTPS-only Android Scheme and clear CORS policies inside `server.py` to prevent unauthorized domain access.
@@ -71,4 +71,4 @@ To maximize the viral impact of STICKLASH:
 1. **Launch at 12:01 AM PST**: Start on Product Hunt right as the daily leaderboard resets.
 2. **Promotional Tweet (X)**: Tweet a pre-filled match victory link:
    > 🥋 I just got completely whipped by $PEPE on @StickLash! High volume boosts are insane. Buy pressure or LMAO WHIPLASH! Fight live: https://sticklash.fun
-3. **Engage the Community**: Offer `$SMF` token rewards or live tournament lobbies on Discord to players who post screenshots of their endless streak on Product Hunt comments!
+3. **Engage the Community**: Offer `$XXX` token rewards or live tournament lobbies on Discord to players who post screenshots of their endless streak on Product Hunt comments!
