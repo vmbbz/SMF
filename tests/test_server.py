@@ -224,7 +224,7 @@ def test_index_returns_html() -> None:
         resp = client.get("/")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
-        assert "$XXX-STICKLASH" in resp.text
+        assert "$SMF-STICKLASH" in resp.text
 
 
 def test_room_route_returns_html() -> None:
@@ -232,7 +232,7 @@ def test_room_route_returns_html() -> None:
         resp = client.get("/room/red-tiger-paw")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
-        assert "$XXX-STICKLASH" in resp.text
+        assert "$SMF-STICKLASH" in resp.text
 
 
 def test_room_route_single_word() -> None:

@@ -12,6 +12,8 @@ The important release goal is trust and feel:
 - Victory sharing now generates a proper battle card and public share-card route instead of localhost-only Twitter links.
 - Live Boost defaults to P1/Human, has a close button, and supports outside-tap dismissal on mobile.
 - Music now uses a custom bamboo-flute icon instead of sharing the home/temple icon.
+- Final launch branding restores visible `$SMF` copy after the prerelease `$XXX` mask.
+- Native APK market data now has multi-origin API fallback for Render/domain transition resilience.
 
 ## Artifact
 
@@ -22,8 +24,8 @@ The important release goal is trust and feel:
 | Application ID | `com.solanamemefighter.app` |
 | Version name | `1.0` |
 | Version code | `1` |
-| APK size | `88,901,793` bytes |
-| APK SHA-256 | `632B8E5CE8755227A9DEE7447006A0167AB89DC381EC92D5ADDB3BEEE40A08F3` |
+| APK size | `88,907,792` bytes |
+| APK SHA-256 | `391BEC3E1D7C17D9CF03DD98AEE5AF5A20F8795874DC7F6DAB2DCB389D49600A` |
 | APK signing scheme | v2 verified |
 | Signer SHA-256 | `84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76` |
 
@@ -43,6 +45,9 @@ The important release goal is trust and feel:
 - Replaced radial-gradient sphere Hadouken rendering with flat 2D cel-style fireball art.
 - Added tapered flame shape, inner hot lick, ember dashes, and sketch speed strokes.
 - Kept projectile gameplay unchanged: speed, collision, hitbox, damage, and boost consume logic are untouched.
+- Restored the original Solana logo as the fighter fallback image.
+- Repaired the intended image routing: P1 profile photos drive P1 fighter/headbar/user menu, P2 token logos drive AI fighter/headbar/cards, and token cover/banner art drives the stage background when available.
+- Added DexScreener header/openGraph cover capture on token detail refresh for richer stage backgrounds.
 
 ### Victory Share / Social
 
@@ -66,12 +71,25 @@ The important release goal is trust and feel:
 - Replaced the duplicate temple/home icon on the music menu with a custom inline SVG bamboo-flute icon.
 - Synced the icon through source, `www`, and Android packaged assets before building the APK.
 
+### Final Branding / Native Market Feed
+
+- Restored `$SMF` in wallet copy, boost burn messages, share text, docs, manifest, server logs, and tests.
+- Added an `$SMF-STICKLASH` application metadata marker while preserving the intentional `sticklashfun` browser title.
+- Added native WebView API origin fallbacks for:
+  - `https://sticklash.fun`
+  - `https://www.sticklash.fun`
+  - `https://smf-lzf3.onrender.com`
+- Routed token trending, graduate scan, token detail, and next-fight fetches through the shared fallback helper.
+
 ## Verification Performed
 
-- `node --check src/game.js`
+- `node --check src/api-endpoints.js`
+- `node --check src/solscan-trending.js`
+- `node --check src/token-utils.js`
 - `node --check src/main.js`
+- `node --check wallet-connect.js`
 - `python -m py_compile server.py`
-- `uv run pytest tests/test_server.py::test_health tests/test_server.py::test_share_card_endpoint_serves_public_x_card -q`
+- `uv run pytest tests/test_server.py::test_health tests/test_server.py::test_index_returns_html tests/test_server.py::test_room_route_returns_html tests/test_auth.py::TestMultiplayerRoute::test_multiplayer_serves_html tests/test_server.py::test_share_card_endpoint_serves_public_x_card -q`
 - `gradlew assembleRelease`
 - `apksigner verify --verbose --print-certs android/app/release/stickler-app-release.apk`
 - APK content check confirmed `assets/public/src/game.js` contains:
@@ -87,9 +105,22 @@ The important release goal is trust and feel:
 - APK content check confirmed `assets/public/index.html` contains:
   - `boost-menu-close`
   - `music-flute-icon`
-- APK content check confirmed `assets/public/src/main.js` does not contain:
-  - `⛩️ MUSIC`
-
+  - `$SMF-STICKLASH`
+- APK content check confirmed these packaged files contain `$SMF` and do not contain `$XXX`:
+  - `assets/public/index.html`
+  - `assets/public/wallet-connect.js`
+  - `assets/public/src/main.js`
+  - `assets/public/manifest.json`
+- APK content check confirmed image hardening is packaged:
+  - `assets/public/src/image-utils.js`
+  - `assets/public/src/trending-strip.js` uses `proxiedImageUrl`
+  - `assets/public/src/fighter.js` uses `loadGameImage` and `SOLANA_DEFAULT_HEAD_IMAGE`
+  - `assets/public/src/loser-card.js` uses `smfProxiedImageUrl`
+- Real-device APK screenshot confirmed:
+  - P2 fighter head renders the token logo.
+  - P2 health-bar avatar renders the token logo.
+  - Stage background uses token banner/cover art when available.
+  - P1 falls back to the restored Solana logo when no user photo is set.
 ## Required Smoke Test
 
 Run this on a real Android phone before announcing publicly:
@@ -107,6 +138,8 @@ Run this on a real Android phone before announcing publicly:
 11. Reopen Live Boost and confirm P1/Human is selected by default.
 12. Finish a fight and confirm share creates a battle card instead of a localhost-only X link.
 13. Confirm the HUD music button uses the flute icon while home still uses the temple icon.
+14. Confirm wallet/boost/share copy says `$SMF`, not `$XXX`.
+15. Confirm APK Live Market and game-mode token selection load data on the current production domain.
 
 ## Known Risks
 
@@ -132,7 +165,7 @@ android-v1.0-2026-05-26-mwa-fireball
 Body:
 
 ```text
-This Android release refreshes StickLash with hardened Solana Mobile Wallet Adapter return handling, native Sign-In with Solana verification, a 2D sketch-style Hadouken fireball visual pass, victory sharing fixes, and mobile landscape boost UX polish.
+This Android release refreshes StickLash with hardened Solana Mobile Wallet Adapter return handling, native Sign-In with Solana verification, a 2D sketch-style Hadouken fireball visual pass, victory sharing fixes, mobile landscape boost UX polish, final $SMF branding, and native APK market-feed resilience.
 
 Highlights:
 - Native Android MWA SIWS sign-in path.
@@ -145,10 +178,12 @@ Highlights:
 - Live Boost now defaults safely to P1/Human.
 - Countdown timer reduced from the oversized previous bump.
 - Music menu now uses a custom flute icon instead of duplicating the home temple icon.
+- Final public branding restored from $XXX back to $SMF.
+- Native APK market fetches now try sticklash.fun, www.sticklash.fun, and the Render service origin.
 
 APK:
 - stickler-app-release.apk
-- SHA-256: 632B8E5CE8755227A9DEE7447006A0167AB89DC381EC92D5ADDB3BEEE40A08F3
+- SHA-256: 391BEC3E1D7C17D9CF03DD98AEE5AF5A20F8795874DC7F6DAB2DCB389D49600A
 - Signer SHA-256: 84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76
 
 Before public blast:

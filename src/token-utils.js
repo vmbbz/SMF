@@ -1,7 +1,10 @@
-import { API_ROUTES, apiUrl, tokenDetailsPath } from './api-endpoints.js';
+import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
+import { getSolscanTrending, getPumpFunGraduates } from './solscan-trending.js';
 
 const CACHE_KEY = 'smf_token_cache';
 const CACHE_TTL = 60000;
+const TRENDING_CACHE_KEY = 'smf_trending_tokens_cache';
+const TRENDING_CACHE_TTL = 180000;
 
 export function getCachedToken(mint) {
   const cache = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
@@ -18,38 +21,98 @@ export function setCachedToken(mint, data) {
   localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
 }
 
-async function getTrendingTokens(count = 8) {
+function getCachedTrendingTokens() {
   try {
-    const primary = await fetch(apiUrl(`${API_ROUTES.TRENDING}?count=${count}`));
-    if (primary.ok) {
-      const tokens = await primary.json();
-      return Array.isArray(tokens) ? tokens : [];
-    }
-
-    const fallback = await fetch(apiUrl(`${API_ROUTES.LEGACY_TRENDING}?count=${count}`));
-    if (!fallback.ok) return [];
-    const tokens = await fallback.json();
-    return Array.isArray(tokens) ? tokens : [];
-  } catch (e) {
-    console.error("Trending fetch failed:", e);
+    const payload = JSON.parse(localStorage.getItem(TRENDING_CACHE_KEY) || 'null');
+    if (!payload || !Array.isArray(payload.tokens)) return [];
+    if (Date.now() - Number(payload.timestamp || 0) > TRENDING_CACHE_TTL) return [];
+    return payload.tokens;
+  } catch {
     return [];
   }
 }
 
+function setCachedTrendingTokens(tokens) {
+  try {
+    localStorage.setItem(
+      TRENDING_CACHE_KEY,
+      JSON.stringify({ tokens: Array.isArray(tokens) ? tokens : [], timestamp: Date.now() })
+    );
+  } catch {}
+}
+
+function buildFallbackTokenFromMint(mint) {
+  const raw = String(mint || '').trim();
+  const short = raw.length >= 6 ? raw.slice(0, 6).toUpperCase() : 'MEME';
+  return {
+    mint: raw,
+    symbol: short,
+    name: `Token ${short}`,
+    logoURI: 'assets/smf-logo.png',
+    marketCap: 0,
+    volume24h: 0,
+    priceChange24h: 0,
+    liquidity: 0,
+    price: 0,
+    holders: 'N/A',
+    dexscreenerUrl: raw ? `https://dexscreener.com/solana/${raw}` : '',
+  };
+}
+
+async function getTrendingTokens(count = 8) {
+  try {
+    const primary = await getSolscanTrending(count);
+    if (Array.isArray(primary) && primary.length > 0) {
+      setCachedTrendingTokens(primary);
+      return primary;
+    }
+
+    // If trending is empty/rate-limited, fall back to grads.
+    const grads = await getPumpFunGraduates(count);
+    if (Array.isArray(grads) && grads.length > 0) {
+      setCachedTrendingTokens(grads);
+      return grads;
+    }
+
+    // Last resort: return recent cached feed so gameplay can still start.
+    return getCachedTrendingTokens().slice(0, count);
+  } catch (e) {
+    console.error("Trending fetch failed:", e);
+    return getCachedTrendingTokens().slice(0, count);
+  }
+}
+
 async function getTokenByMint(mint) {
+  const cleanMint = String(mint || '').trim();
+  if (!cleanMint) return null;
+
   const cached = getCachedToken(mint);
   if (cached) return cached;
 
   try {
-    const res = await fetch(tokenDetailsPath(mint));
-    const data = await res.json();
-    if (!data || !data.mint) throw new Error('Token not found');
+    let data = null;
+
+    data = await fetchApiJson([
+      `${API_ROUTES.TOKEN_DETAILS}/${encodeURIComponent(cleanMint)}`,
+      `/api/token/${encodeURIComponent(cleanMint)}`,
+    ]);
+
+    if (!data || !data.mint) {
+      // If details endpoint blips, salvage from cached/live list by mint match.
+      const inMemoryCandidates = getCachedTrendingTokens();
+      const matched = inMemoryCandidates.find(t => String(t?.mint || '') === cleanMint);
+      if (matched) data = matched;
+    }
+
+    if (!data || !data.mint) {
+      data = buildFallbackTokenFromMint(cleanMint);
+    }
     
-    setCachedToken(mint, data);
+    setCachedToken(cleanMint, data);
     return data;
   } catch (e) {
     console.error("Failed to fetch token by mint:", e);
-    return null;
+    return buildFallbackTokenFromMint(cleanMint);
   }
 }
 

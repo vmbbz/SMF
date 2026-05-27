@@ -9,7 +9,7 @@
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="MIT License">
 </div>
 
-# $XXX — STICKLASH 🥊⚡
+# $SMF — STICKLASH 🥊⚡
 
 > **The world's first Solana meme-token fighting game.**
 > Real on-chain data powers your opponent's health, damage, and speed. Fight trending tokens live from Pump.fun and Birdeye. Every match is different because the blockchain never stops.

@@ -13,7 +13,8 @@ import { PeerConnection, RemoteInputAdapter } from './webrtc.js';
 import { PredictionManager } from './prediction.js';
 import { generatePersonality } from './token-utils.js';
 import { StageMusicManager } from './stage-music.js';
-import { API_ROUTES, apiUrl } from './api-endpoints.js';
+import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
+import { getTokenCoverSource, getTokenImageSource, loadGameImage } from './image-utils.js';
 
 window.generatePersonality = generatePersonality;
 
@@ -201,6 +202,85 @@ async function enrichTokenData(mint) {
   return null;
 }
 window.enrichTokenData = enrichTokenData;
+
+function hasUsableTokenImage(token) {
+  const source = getTokenImageSource(token, '');
+  return Boolean(source && source !== 'assets/smf-logo.png');
+}
+
+function hasUsableTokenCover(token) {
+  return Boolean(getTokenCoverSource(token, ''));
+}
+
+function mergeTokenImageFields(baseToken = {}, detailToken = {}) {
+  const merged = { ...detailToken, ...baseToken };
+  const image =
+    baseToken.logoURI ||
+    baseToken.logoUri ||
+    baseToken.logo ||
+    baseToken.image ||
+    baseToken.icon ||
+    detailToken.logoURI ||
+    detailToken.logoUri ||
+    detailToken.logo ||
+    detailToken.image ||
+    detailToken.icon ||
+    detailToken.info?.imageUrl ||
+    detailToken.pairs?.[0]?.info?.imageUrl ||
+    '';
+
+  if (image) {
+    merged.logoURI = image;
+    merged.image = merged.image || image;
+    merged.icon = merged.icon || image;
+  }
+
+  const cover =
+    baseToken.coverImage ||
+    baseToken.headerImage ||
+    baseToken.bannerImage ||
+    baseToken.banner ||
+    baseToken.header ||
+    baseToken.openGraphImage ||
+    baseToken.openGraph ||
+    detailToken.coverImage ||
+    detailToken.headerImage ||
+    detailToken.bannerImage ||
+    detailToken.banner ||
+    detailToken.header ||
+    detailToken.openGraphImage ||
+    detailToken.openGraph ||
+    detailToken.info?.header ||
+    detailToken.info?.openGraph ||
+    detailToken.pairs?.[0]?.info?.header ||
+    detailToken.pairs?.[0]?.info?.openGraph ||
+    '';
+
+  if (cover) {
+    merged.coverImage = cover;
+    merged.headerImage = merged.headerImage || cover;
+  }
+  return merged;
+}
+
+async function hydrateOpponentVisualToken(token) {
+  if (!token || !token.mint) return token;
+  if (hasUsableTokenImage(token) && hasUsableTokenCover(token)) return token;
+
+  try {
+    const detail = await fetchApiJson([
+      `${API_ROUTES.TOKEN_DETAILS}/${encodeURIComponent(token.mint)}`,
+      `/api/token/${encodeURIComponent(token.mint)}`,
+    ]);
+    if (detail && detail.mint) {
+      return mergeTokenImageFields(token, detail);
+    }
+  } catch (e) {
+    console.warn('[loadOpponent] Token visual hydration failed:', e);
+  }
+
+  return token;
+}
 
 // Global null-safe helpers for meme-first UI
 const safeAddEventListener = (id, event, handler) => {
@@ -724,6 +804,7 @@ window.loadOpponent = async function(token, forceRestart = false) {
   }
 
   const opponent = game.p2;
+  token = await hydrateOpponentVisualToken(token);
 
   // 4. Apply token market stats
   try {
@@ -1514,10 +1595,9 @@ async function startMultiplayerFight(_roomData) {
             const localFighter = myNum === 1 ? game.p1 : game.p2;
             if (localFighter) {
               if (profile.avatar) {
-                const img = new Image();
-                img.crossOrigin = 'anonymous';
-                img.onload = () => { localFighter.headImage = img; };
-                img.src = profile.avatar;
+                loadGameImage(profile.avatar)
+                  .then(img => { localFighter.headImage = img; })
+                  .catch(e => console.warn('[Multiplayer] Failed to load local profile avatar image:', e));
               }
               if (profile.name) {
                 if (myNum === 1) game.p1Label = profile.name;
@@ -1537,10 +1617,9 @@ async function startMultiplayerFight(_roomData) {
         const remoteFighter = myNum === 1 ? game.p2 : game.p1;
         if (remoteFighter) {
           if (profile.avatar) {
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => { remoteFighter.headImage = img; };
-            img.src = profile.avatar;
+            loadGameImage(profile.avatar)
+              .then(img => { remoteFighter.headImage = img; })
+              .catch(e => console.warn('[Multiplayer] Failed to load remote profile avatar image:', e));
           }
           if (profile.name) {
             if (myNum === 1) game.p2Label = profile.name;
@@ -3223,22 +3302,22 @@ function buildVictoryShareText({ symbol, isWin, mode, opponentName }) {
   if (mode === 'pvp') {
     const rival = String(opponentName || 'a rival').toUpperCase();
     return randomChoice(isWin ? [
-      `I just SMASHED ${rival} in real-time PvP inside the $XXX StickLash arena.`,
+      `I just SMASHED ${rival} in real-time PvP inside the $SMF StickLash arena.`,
       `${rival} got sent to the shadow realm in StickLash PvP.`,
       `Clean combo. Clean KO. ${rival} just felt the StickLash.`
     ] : [
       `${rival} clipped me in StickLash PvP. I need a rematch.`,
-      `Got lashed by ${rival} in the $XXX arena. Running it back.`,
+      `Got lashed by ${rival} in the $SMF arena. Running it back.`,
       `${rival} won this round. The dojo remembers.`
     ]);
   }
 
   return randomChoice(isWin ? [
-    `I just SMASHED $${cleanSymbol} in the $XXX StickLash arena.`,
+    `I just SMASHED $${cleanSymbol} in the $SMF StickLash arena.`,
     `Just sent $${cleanSymbol} to the shadow realm in StickLash.`,
     `My stickman just bodied $${cleanSymbol} live in the arena.`
   ] : [
-    `$${cleanSymbol} just wrecked me in the $XXX StickLash arena.`,
+    `$${cleanSymbol} just wrecked me in the $SMF StickLash arena.`,
     `Got lashed by $${cleanSymbol}. I need a rematch.`,
     `$${cleanSymbol}'s chart hit too hard and knocked me out.`
   ]);
@@ -3617,16 +3696,10 @@ window.nextFight = async function() {
   // Priority 3: fetch fresh trending as last resort
   if (!nextToken) {
     try {
-      const primary = await fetch(apiUrl(`${API_ROUTES.TRENDING}?count=12`));
-      let fresh = [];
-      if (primary.ok) {
-        fresh = await primary.json();
-      } else {
-        const fallback = await fetch(apiUrl(`${API_ROUTES.LEGACY_TRENDING}?count=12`));
-        if (fallback.ok) {
-          fresh = await fallback.json();
-        }
-      }
+      const fresh = await fetchApiJson([
+        `${API_ROUTES.TRENDING}?count=12`,
+        `${API_ROUTES.LEGACY_TRENDING}?count=12`,
+      ]);
       if (Array.isArray(fresh) && fresh.length > 0) {
         window.pumpQueue = fresh.slice(1);
         nextToken = fresh[0];

@@ -3,6 +3,7 @@ import { calculateFighterPower } from "./token-power-scaling.js";
 import { Fighter, HADOUKEN_DATA } from "./fighter.js";
 import { DG } from "./ui.js";
 import { LiveBoostSystem } from "./live-boost-system.js";
+import { loadGameImage } from "./image-utils.js";
 
 // ─────────────────────────────────────────────
 // Projectile constants
@@ -100,11 +101,9 @@ export class Game {
           this.p1Label = profile.name;
         }
         if (profile.avatar && this.p1) {
-          if (!this.p1.headImage) {
-            this.p1.headImage = new Image();
-          }
-          this.p1.headImage.crossOrigin = 'anonymous';
-          this.p1.headImage.src = profile.avatar;
+          loadGameImage(profile.avatar)
+            .then(img => { this.p1.headImage = img; })
+            .catch(e => console.warn('[Game] Failed to refresh P1 profile avatar:', e));
         }
       }
     });

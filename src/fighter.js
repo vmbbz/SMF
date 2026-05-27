@@ -1,5 +1,6 @@
 import { Actions } from "./input.js";
 import { calculateFighterPower } from "./token-power-scaling.js";
+import { getTokenCoverSource, getTokenImageSource, loadGameImage } from "./image-utils.js";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -92,6 +93,8 @@ const HADOUKEN_COOLDOWN = 1.5; // seconds
 
 export { HADOUKEN_DATA };
 
+const SOLANA_DEFAULT_HEAD_IMAGE = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
+
 // ─────────────────────────────────────────────
 // Fighter
 // ─────────────────────────────────────────────
@@ -153,7 +156,7 @@ export class Fighter {
     this.personality = null;
     this.headImage = new Image();
     this.headImage.crossOrigin = 'anonymous';
-    this.headImage.src = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
+    this.headImage.src = SOLANA_DEFAULT_HEAD_IMAGE;
     
     // Load custom profile avatar from localStorage for P1 (Human Player) if available
     if (playerNum === 1) {
@@ -162,9 +165,9 @@ export class Fighter {
         if (profileStr) {
           const profile = JSON.parse(profileStr);
           if (profile && profile.avatar) {
-            this.headImage = new Image();
-            this.headImage.crossOrigin = 'anonymous';
-            this.headImage.src = profile.avatar;
+            loadGameImage(profile.avatar)
+              .then(img => { this.headImage = img; })
+              .catch(e => console.warn('[Fighter] Failed to load P1 profile avatar:', e));
           }
         }
       } catch (e) {
@@ -181,36 +184,27 @@ export class Fighter {
     this.tokenData = tokenData;
     this.personality = generatePersonality(tokenData);
 
-    const SOLANA_FALLBACK = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
-
-    const proxyUrl = (url) => {
-      if (!url) return null;
-      if (url.startsWith('data:')) return url;
-      if (url.startsWith('http://localhost') || url.startsWith('http://127.0.0.1')) return url;
-      if (url.startsWith('http://') || url.startsWith('https://')) {
-        const base = window.Capacitor ? 'https://sticklash.fun' : '';
-        return `${base}/api/proxy/image?url=${encodeURIComponent(url)}&t=${Date.now()}`;
-      }
-      return url;
-    };
+    const primaryLogo = getTokenImageSource(tokenData, SOLANA_DEFAULT_HEAD_IMAGE);
 
     /** Load an image with crossOrigin set BEFORE src, returns promise<boolean> */
     const tryLoad = (url) => new Promise((resolve) => {
       if (!url) return resolve(false);
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => { this.headImage = img; resolve(true); };
-      img.onerror = () => resolve(false);
-      img.src = url;
+      loadGameImage(url, { cacheBust: true })
+        .then(img => { this.headImage = img; resolve(true); })
+        .catch(() => resolve(false));
     });
 
     /** Collect all candidate URLs in priority order */
     const candidates = [];
-    if (tokenData.logoURI) candidates.push(proxyUrl(tokenData.logoURI));
+    if (primaryLogo) candidates.push(primaryLogo);
+    if (tokenData.logoURI && tokenData.logoURI !== primaryLogo) candidates.push(tokenData.logoURI);
+    if (tokenData.logoUri && tokenData.logoUri !== primaryLogo) candidates.push(tokenData.logoUri);
+    if (tokenData.logo && tokenData.logo !== primaryLogo) candidates.push(tokenData.logo);
     // Alternative: some tokens have logoURI on extensions or other fields
     if (tokenData.extensions?.website) { /* skip, not an image */ }
-    if (tokenData.image) candidates.push(proxyUrl(tokenData.image));
-    candidates.push(proxyUrl(SOLANA_FALLBACK));
+    if (tokenData.image && tokenData.image !== primaryLogo) candidates.push(tokenData.image);
+    if (tokenData.icon && tokenData.icon !== primaryLogo) candidates.push(tokenData.icon);
+    candidates.push(SOLANA_DEFAULT_HEAD_IMAGE);
 
     let loaded = false;
 
@@ -226,19 +220,15 @@ export class Fighter {
     }
 
     if (!loaded) {
-      // Absolute last resort — load without proxy (won't help canvas untaint but at least renders)
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = SOLANA_FALLBACK;
-      await new Promise(r => { img.onload = r; img.onerror = r; });
-      this.headImage = img;
+      // Absolute last resort: restore the original Solana logo fallback.
+      this.headImage = await loadGameImage(SOLANA_DEFAULT_HEAD_IMAGE).catch(() => this.headImage);
     }
 
     // Also retry after 3s in background if we fell back to default
     // (handles case where token image server was slow on first load)
-    if (tokenData.logoURI && this.headImage.src.includes('So111111111111')) {
+    if (primaryLogo && this.headImage.src.includes('So111111111111')) {
       setTimeout(async () => {
-        const retryUrl = proxyUrl(tokenData.logoURI);
+        const retryUrl = primaryLogo;
         if (retryUrl) {
           const ok = await tryLoad(retryUrl);
           if (ok) console.log('[Fighter] Head image retry succeeded');
@@ -246,17 +236,9 @@ export class Fighter {
       }, 3000);
     }
 
-    if (tokenData.coverImage) {
-      this.headerImage = new Image();
-      this.headerImage.crossOrigin = 'anonymous';
-      this.headerImage.src = proxyUrl(tokenData.coverImage);
-      await new Promise(resolve => {
-        this.headerImage.onload = () => resolve();
-        this.headerImage.onerror = () => {
-          this.headerImage = null;
-          resolve();
-        };
-      });
+    const coverImage = getTokenCoverSource(tokenData, '');
+    if (coverImage) {
+      this.headerImage = await loadGameImage(coverImage, { cacheBust: true }).catch(() => null);
     }
   }
 

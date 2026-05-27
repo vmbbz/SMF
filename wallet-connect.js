@@ -1,6 +1,7 @@
 // wallet-connect.js
 // Redesigned User Profile, 100% Mock-Free Solana Wallet, & Premium Boost Store Modal
 import { tokenDetailsPath } from './src/api-endpoints.js';
+import { loadGameImage, proxiedImageUrl } from './src/image-utils.js';
 
 // Initialize user profile in localStorage on module load
 export function getProfile() {
@@ -892,7 +893,8 @@ export async function showWalletConnect(options = {}) {
   }
 
   // Generate profile avatar HTML
-  const avatarSrc = profile.avatar || 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="%2314f195" fill-opacity="0.1" stroke="%2314f195" stroke-width="2"/><path d="M50 30a12 12 0 1 0 0 24 12 12 0 1 0 0-24zm0 28c-18 0-30 10-30 20v4h60v-4c0-10-12-20-30-20z" fill="%2314f195"/></svg>';
+  const fallbackAvatar = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="%2314f195" fill-opacity="0.1" stroke="%2314f195" stroke-width="2"/><path d="M50 30a12 12 0 1 0 0 24 12 12 0 1 0 0-24zm0 28c-18 0-30 10-30 20v4h60v-4c0-10-12-20-30-20z" fill="%2314f195"/></svg>';
+  const avatarSrc = profile.avatar ? proxiedImageUrl(profile.avatar) : fallbackAvatar;
   modal.innerHTML = `
     <div style="color: white; font-family: var(--font-display, 'Shojumaru', 'Press Start 2P', sans-serif); text-align: center; max-height: 80vh; overflow-y: auto; padding-right: 5px;">
       
@@ -902,7 +904,7 @@ export async function showWalletConnect(options = {}) {
       <!-- PROFILE SECTION -->
       <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 16px; margin-bottom: 12px;">
         <div class="profile-avatar-upload" onclick="document.getElementById('avatar-file-input').click()">
-          <img id="profile-modal-pic" src="${avatarSrc}" alt="Avatar">
+          <img id="profile-modal-pic" src="${avatarSrc}" alt="Avatar" onerror="this.onerror=null;this.src='${fallbackAvatar}'">
           <div class="overlay-text">CHANGE</div>
         </div>
         <input type="file" id="avatar-file-input" accept="image/*" style="display: none;">
@@ -938,7 +940,7 @@ export async function showWalletConnect(options = {}) {
             </div>
             <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
               <span style="color:#aaa;">Token Balance:</span>
-              <span style="color:var(--neon-green); font-weight:bold;">${Number(profile.smfBalance).toLocaleString(undefined, {maximumFractionDigits: 4})} $XXX</span>
+              <span style="color:var(--neon-green); font-weight:bold;">${Number(profile.smfBalance).toLocaleString(undefined, {maximumFractionDigits: 4})} $SMF</span>
             </div>
             ${!profile.walletReadOnly ? `
               <div style="background:rgba(0,0,0,0.22); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px; margin:8px 0;">
@@ -1006,7 +1008,7 @@ export async function showWalletConnect(options = {}) {
             </button>
           </div>
         ` : `
-          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $XXX tokens to buy premium boost packs.</p>
+          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $SMF tokens to buy premium boost packs.</p>
           <button onclick="window.connectSolanaWallet()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px;">
             ${nativeMwaBridge ? 'CONNECT VIA ANDROID WALLET (MWA)' : 'CONNECT SOLANA WALLET'}
           </button>
@@ -1028,7 +1030,7 @@ export async function showWalletConnect(options = {}) {
         ` : ''}
         
         <p style="font-size: 8px; color: #888; margin-bottom: 8px; line-height: 1.4;">
-          Staking is unsafe. Instead, use connected wallet $XXX tokens to **buy boost packs**! All $XXX spent is **burned forever** 🔥 (Solana Burn Program).
+          Staking is unsafe. Instead, use connected wallet $SMF tokens to **buy boost packs**! All $SMF spent is **burned forever** 🔥 (Solana Burn Program).
         </p>
 
         <!-- PACKAGES -->
@@ -1037,7 +1039,7 @@ export async function showWalletConnect(options = {}) {
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">🔵 Micro Pack (5 Premium Boosts)</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $XXX)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $SMF)</span></div>
             </div>
             <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
               BUY & BURN
@@ -1047,7 +1049,7 @@ export async function showWalletConnect(options = {}) {
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:var(--neon-green);">🔥 Degen Pack (20 Boosts) - BEST VALUE</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $XXX)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $SMF)</span></div>
             </div>
             <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
               BUY & BURN
@@ -1057,7 +1059,7 @@ export async function showWalletConnect(options = {}) {
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">⚡ Chaos Pack (45 Premium Boosts)</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $XXX)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $SMF)</span></div>
             </div>
             <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
               BUY & BURN
@@ -1094,8 +1096,9 @@ export async function showWalletConnect(options = {}) {
           // Notify active game P1
           const activeGame = window.currentGame || window.game || window._game;
           if (activeGame && activeGame.p1) {
-            activeGame.p1.headImage = new Image();
-            activeGame.p1.headImage.src = compressedBase64;
+            loadGameImage(compressedBase64)
+              .then(img => { activeGame.p1.headImage = img; })
+              .catch(err => console.warn('[Profile] Failed to update active game avatar:', err));
           }
 
           console.log('[Profile] Compressed Base64 profile photo updated successfully.');
@@ -1575,7 +1578,7 @@ window.purchaseBoostPack = async function(packId) {
       throw new Error('Backend returned invalid quote values.');
     }
     if (profile.smfBalance < requiredSmfUi) {
-      throw new Error(`Insufficient $XXX balance. Need ${requiredSmfUi}, have ${profile.smfBalance}.`);
+      throw new Error(`Insufficient $SMF balance. Need ${requiredSmfUi}, have ${profile.smfBalance}.`);
     }
 
     const connection = new Connection(rpcUrl, 'confirmed');
@@ -1595,7 +1598,7 @@ window.purchaseBoostPack = async function(packId) {
       associatedTokenProgramId
     );
     
-    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${requiredSmfUi} $XXX</span>`;
+    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${requiredSmfUi} $SMF</span>`;
     
     // Compile SPL Token Burn Instruction
     // Keys needed:
@@ -1624,7 +1627,7 @@ window.purchaseBoostPack = async function(packId) {
       data
     });
     
-    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${requiredSmfUi} $XXX tokens in wallet...</span>`;
+    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${requiredSmfUi} $SMF tokens in wallet...</span>`;
     
     // Fetch recent blockhash
     const { blockhash } = await connection.getLatestBlockhash('confirmed');

@@ -5,6 +5,7 @@
   <meta charset="UTF-8">
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="application-name" content="$SMF-STICKLASH">
   <title>sticklashfun</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
   <link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
@@ -2172,7 +2173,7 @@
       </ul>
 
       <h3 class="shojumaru-title" style="color: var(--neon-pink); font-size: 16px;"><strong>🌐 ON-CHAIN WALLET CONNECTION</strong></h3>
-      <p><strong>Securely connect your Solana wallet to read live balances, buy boost packs, and burn $XXX on-chain for premium in-game utility.</strong></p>
+      <p><strong>Securely connect your Solana wallet to read live balances, buy boost packs, and burn $SMF on-chain for premium in-game utility.</strong></p>
     </div>
 
     <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 10px;">
@@ -2281,7 +2282,7 @@
   <!-- MEME PANEL (Main Menu) -->
   <div id="landing" class="screen meme-panel">
     <div style="text-align:center;margin-bottom:30px;">
-      <img id="landing-logo" src="assets/smf-logo.png" alt="$XXX"
+      <img id="landing-logo" src="assets/smf-logo.png" alt="$SMF"
         style="height:140px;margin-bottom:20px;max-width:95%;filter: drop-shadow(0 0 15px var(--neon-green));transition: filter 0.3s ease, transform 0.2s ease;">
       <div class="shojumaru-title"
         style="font-size:36px;color:#fff;font-weight:bold;letter-spacing:2px;text-shadow: 0 0 10px var(--neon-pink);">
@@ -2640,6 +2641,7 @@
     import { getTrendingTokens, getTokenByMint, generatePersonality } from './src/token-utils.js';
     import { Effects } from './src/effects.js';
     import { getProfile, showWalletConnect, hideWalletConnect } from './wallet-connect.js';
+    import { proxiedImageUrl } from './src/image-utils.js';
 
     // Global exports
     window.getTrendingTokens = getTrendingTokens;
@@ -2659,8 +2661,15 @@
       profileBtn.replaceChildren();
       if (avatar) {
         const img = document.createElement('img');
-        img.src = avatar;
+        img.src = proxiedImageUrl(avatar);
         img.alt = name;
+        img.onerror = () => {
+          img.remove();
+          const fallback = document.createElement('span');
+          fallback.className = 'profile-fallback-mark';
+          fallback.textContent = '忍';
+          profileBtn.appendChild(fallback);
+        };
         profileBtn.appendChild(img);
       } else {
         const fallback = document.createElement('span');
@@ -2844,7 +2853,7 @@
         window.trendingStrip.init();
       }
       window.syncHudUserProfile();
-      console.log('%c✅ $XXX STICK LASH FULLY LOADED — READY TO FIGHT', 'color:#ff00ff;font-size:18px');
+      console.log('%c✅ $SMF STICK LASH FULLY LOADED — READY TO FIGHT', 'color:#ff00ff;font-size:18px');
     });
   </script>
 

@@ -140,6 +140,13 @@ class BirdeyeService:
                             img = info.get("imageUrl")
                             if img:
                                 item["icon"] = img
+                        info = p.get("info") or {}
+                        cover = info.get("header") or info.get("openGraph")
+                        if cover:
+                            item["coverImage"] = cover
+                            item["headerImage"] = cover
+                        if info.get("openGraph"):
+                            item["openGraphImage"] = info.get("openGraph")
             except Exception as e:
                 print(f"[DexScreener] Augment failed for {mint}: {e}")
 
@@ -160,6 +167,15 @@ class BirdeyeService:
             "symbol":        item.get("symbol") or "MEME",
             "name":          item.get("name") or item.get("symbol") or "Unknown",
             "logoURI":       item.get("logoURI") or item.get("icon"),
+            "coverImage":    (
+                item.get("coverImage") or
+                item.get("headerImage") or
+                item.get("bannerImage") or
+                item.get("banner") or
+                item.get("header") or
+                item.get("openGraphImage") or
+                item.get("openGraph")
+            ),
             # Birdeye trending uses 'marketcap' (lowercase), overview uses 'mc'
             "marketCap":     item.get("mc") or item.get("marketCap") or item.get("marketcap") or item.get("fdv") or 0,
             # Birdeye trending uses 'volume24hUSD', overview uses 'v24hUSD'

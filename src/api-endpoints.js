@@ -1,5 +1,10 @@
 // Centralized API route builder for web + Android WebView reliability.
 const DEFAULT_NATIVE_API_ORIGIN = 'https://www.sticklash.fun';
+const NATIVE_API_ORIGIN_FALLBACKS = [
+  'https://sticklash.fun',
+  'https://www.sticklash.fun',
+  'https://smf-lzf3.onrender.com',
+];
 
 function normalizeOrigin(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -42,10 +47,49 @@ export function getApiBaseOrigin() {
   return isNativeWebView() ? getNativeApiOrigin() : '';
 }
 
+export function getApiBaseOrigins() {
+  const primary = getApiBaseOrigin();
+  if (!primary) return [''];
+
+  const origins = [primary, ...NATIVE_API_ORIGIN_FALLBACKS]
+    .map(normalizeOrigin)
+    .filter(Boolean);
+  return [...new Set(origins)];
+}
+
 export function apiUrl(path) {
   const normalizedPath = String(path || '').startsWith('/') ? String(path) : `/${path}`;
   const base = getApiBaseOrigin();
   return base ? `${base}${normalizedPath}` : normalizedPath;
+}
+
+export function apiUrlCandidates(path) {
+  const normalizedPath = String(path || '').startsWith('/') ? String(path) : `/${path}`;
+  return getApiBaseOrigins().map(base => (base ? `${base}${normalizedPath}` : normalizedPath));
+}
+
+export async function fetchFirstOk(paths, init) {
+  const pathList = Array.isArray(paths) ? paths : [paths];
+  const failures = [];
+
+  for (const path of pathList) {
+    for (const url of apiUrlCandidates(path)) {
+      try {
+        const response = await fetch(url, init);
+        if (response.ok) return response;
+        failures.push(`${url} -> HTTP ${response.status}`);
+      } catch (error) {
+        failures.push(`${url} -> ${error?.message || error}`);
+      }
+    }
+  }
+
+  throw new Error(failures.join(' | ') || 'No API endpoint responded');
+}
+
+export async function fetchApiJson(paths, init) {
+  const response = await fetchFirstOk(paths, init);
+  return response.json();
 }
 
 export const API_ROUTES = Object.freeze({

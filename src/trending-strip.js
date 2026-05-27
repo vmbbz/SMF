@@ -1,4 +1,5 @@
 import { getSolscanTrending, getPumpFunGraduates } from './solscan-trending.js';
+import { proxiedImageUrl } from './image-utils.js';
 
 export class TrendingStrip {
   constructor(containerId) {
@@ -343,9 +344,10 @@ export class TrendingStrip {
       const chg = Number(token.priceChange24h) || 0;
       const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(1) + '%';
       const chgColor = chg >= 0 ? '#00ff9d' : '#ff2244';
+      const logoSrc = proxiedImageUrl(token.logoURI || token.image || token.icon || 'assets/smf-logo.png');
       return `
       <div class="token-pill" onclick="window.fightToken && window.fightToken('${token.mint}')">
-        <img src="${token.logoURI || 'assets/smf-logo.png'}" alt="${token.symbol}" onerror="this.src='assets/smf-logo.png'">
+        <img src="${logoSrc}" alt="${token.symbol}" onerror="this.onerror=null;this.src='assets/smf-logo.png'">
         <span class="symbol">$${token.symbol}</span>
         <span class="power" style="color:${chgColor}">${chgStr}</span>
       </div>`;
