@@ -3843,7 +3843,16 @@ async def get_elo(user_id: str, request: Request) -> dict[str, Any]:
 # ─────────────────────────────────────────────
 
 cors_config = CORSConfig(
-    allow_origins=["https://localhost", "http://localhost", "capacitor://localhost", "https://sticklash.fun"],
+    allow_origins=[
+        "https://localhost",
+        "http://localhost",
+        "https://localhost:8080",
+        "http://localhost:8080",
+        "capacitor://localhost",
+        "https://sticklash.fun",
+        "https://www.sticklash.fun",
+    ],
+    allow_origin_regex=r"^https?://localhost(?::\d+)?$|^capacitor://localhost$|^https://([a-z0-9-]+\.)?sticklash\.fun$|^https://smf-lzf3\.onrender\.com$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

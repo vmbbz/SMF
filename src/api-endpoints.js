@@ -1,5 +1,5 @@
 // Centralized API route builder for web + Android WebView reliability.
-const DEFAULT_NATIVE_API_ORIGIN = 'https://sticklash.fun';
+const DEFAULT_NATIVE_API_ORIGIN = 'https://www.sticklash.fun';
 
 function normalizeOrigin(value) {
   return String(value || '').trim().replace(/\/+$/, '');
@@ -21,8 +21,21 @@ function getNativeApiOrigin() {
 function isNativeWebView() {
   if (typeof window === 'undefined') return false;
   if (window.Capacitor) return true;
+  const host = String(window.location?.hostname || '').toLowerCase();
   const protocol = String(window.location?.protocol || '').toLowerCase();
-  return protocol === 'capacitor:';
+  const port = String(window.location?.port || '').toLowerCase();
+  const ua = String(window.navigator?.userAgent || '').toLowerCase();
+  if (protocol === 'capacitor:') return true;
+
+  if (host === 'localhost' || host === '127.0.0.1') {
+    // Keep local dev servers treated as web, but treat other localhost runtimes
+    // (Capacitor embedded local server) as native for API origin routing.
+    const localDevPorts = new Set(['3000', '4173', '5173', '5174', '4200', '8081']);
+    if (localDevPorts.has(port)) return false;
+    return true;
+  }
+
+  return ua.includes('capacitor') || ua.includes('; wv') || ua.includes(' version/4.0 ');
 }
 
 export function getApiBaseOrigin() {
