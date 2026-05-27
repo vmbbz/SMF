@@ -158,46 +158,56 @@ function extractNameFromTelegram(url) {
 
 async function enrichTokenData(mint) {
   try {
-    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`);
-    const data = await res.json();
-    if (data.pairs && data.pairs.length > 0) {
-      const pair = data.pairs.sort((a, b) => (b.liquidity?.usd || 0) - (a.liquidity?.usd || 0))[0];
-      const info = pair.info || {};
-      
-      let name = pair.baseToken.name;
-      let symbol = pair.baseToken.symbol;
-      
-      // RESTORED: website -> twitter -> telegram priority
-      if (info.links && info.links.length > 0) {
-        const website = info.links.find(link => !link.type);
-        if (website && website.url) {
-          const websiteName = extractNameFromUrl(website.url);
-          if (websiteName && websiteName.length > 2) name = websiteName;
-        }
-        
-        if (name === symbol || !name) {
-          const twitter = info.links.find(link => link.type === 'twitter');
-          if (twitter && twitter.url) {
-            const twitterName = extractNameFromTwitter(twitter.url);
-            if (twitterName && twitterName.length > 2) name = twitterName;
-          }
-        }
-        
-        if (name === symbol || !name) {
-          const telegram = info.links.find(link => link.type === 'telegram');
-          if (telegram && telegram.url) {
-            const telegramName = extractNameFromTelegram(telegram.url);
-            if (telegramName && telegramName.length > 2) name = telegramName;
-          }
-        }
-      }
-      
-      return {
-        ...pair,
-        extractedName: name,
-        extractedSymbol: symbol
-      };
+    const detail = await fetchApiJson([
+      `${API_ROUTES.TOKEN_DETAILS}/${encodeURIComponent(mint)}`,
+      `/api/token/${encodeURIComponent(mint)}`,
+    ]);
+    if (!detail) return null;
+
+    let name = detail.name;
+    let symbol = detail.symbol;
+    const websites = Array.isArray(detail.websites) ? detail.websites : [];
+    const socials = Array.isArray(detail.socials) ? detail.socials : [];
+    const links = Array.isArray(detail.links) ? detail.links : [];
+
+    // RESTORED: website -> twitter -> telegram priority, now via our backend
+    // token-detail proxy so the browser/APK never calls DexScreener directly.
+    const website = [...websites, ...links].find(link => link?.url && !link.type);
+    if (website?.url) {
+      const websiteName = extractNameFromUrl(website.url);
+      if (websiteName && websiteName.length > 2) name = websiteName;
     }
+
+    if (name === symbol || !name) {
+      const twitter = [...socials, ...links].find(link => link?.type === 'twitter');
+      if (twitter?.url) {
+        const twitterName = extractNameFromTwitter(twitter.url);
+        if (twitterName && twitterName.length > 2) name = twitterName;
+      }
+    }
+
+    if (name === symbol || !name) {
+      const telegram = [...socials, ...links].find(link => link?.type === 'telegram');
+      if (telegram?.url) {
+        const telegramName = extractNameFromTelegram(telegram.url);
+        if (telegramName && telegramName.length > 2) name = telegramName;
+      }
+    }
+
+    return {
+      ...detail,
+      baseToken: { name: detail.name, symbol: detail.symbol, address: detail.mint },
+      info: {
+        imageUrl: detail.logoURI,
+        header: detail.headerImage || detail.coverImage,
+        openGraph: detail.openGraphImage,
+        websites,
+        socials,
+        links,
+      },
+      extractedName: name,
+      extractedSymbol: symbol,
+    };
   } catch (e) { console.error('Enrichment engine error:', e); }
   return null;
 }
@@ -1543,12 +1553,26 @@ async function startMultiplayerFight(_roomData) {
       }
     }
 
-    game = new Game(canvas, myInput, opInput, sfx, { p1Label, p2Label, stageMusic });
+    game = new Game(canvas, myInput, opInput, sfx, {
+      p1Label,
+      p2Label,
+      stageMusic,
+      authoritativeMultiplayer: true,
+    });
     game.start();
 
     window._game = game;
     window.game = game;
     window.currentGame = game;
+
+    if (window.virtualJoystick) {
+      const alreadyAdded = localInput.adapters && localInput.adapters.includes(window.virtualJoystick);
+      if (!alreadyAdded) {
+        localInput.addAdapter(window.virtualJoystick);
+        console.log(`[Joystick] Virtual joystick registered with multiplayer P${myNum} input`);
+      }
+      window.virtualJoystick._registered = true;
+    }
 
     for (const adapter of activeAdapters) {
       if (adapter.setGameRef) adapter.setGameRef(game);
@@ -1644,7 +1668,13 @@ async function startMultiplayerFight(_roomData) {
     }
 
     await Promise.all(readyPromises);
-    if (game) game.showFightAlert();
+    if (game && !game.authoritativeMultiplayer) {
+      game.showFightAlert();
+    } else if (game) {
+      game.waitingForProviders = false;
+      game.waitingForIntro = false;
+      game.fightAlert = 0;
+    }
   } catch (err) {
     console.error('[multiplayer] Failed to bootstrap fight:', err);
   } finally {

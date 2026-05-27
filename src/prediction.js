@@ -30,6 +30,7 @@ export class PredictionManager {
 
     // Last confirmed input sequence the server processed for us
     this.lastConfirmedSeq = -1;
+    this.lastSnapshotTick = -1;
 
     // Visual smoothing offsets (pixels, decayed each frame)
     this.smoothP1 = { dx: 0, dy: 0 };
@@ -67,12 +68,26 @@ export class PredictionManager {
    * and performs rollback + replay when needed.
    */
   applyServerState(snapshot) {
-    // Don't process during pre-fight phases
-    if (this.game.waitingForProviders || this.game.fightAlert > 0) return;
-
     const confirmedSeq = this.playerNum === 1
       ? (snapshot.p1_input_seq || 0)
       : (snapshot.p2_input_seq || 0);
+
+    if (this.game.authoritativeMultiplayer) {
+      const snapshotTick = Number(snapshot.tick ?? -1);
+      if (snapshotTick >= 0 && snapshotTick <= this.lastSnapshotTick) return;
+      if (snapshotTick >= 0) this.lastSnapshotTick = snapshotTick;
+      if (confirmedSeq > 0) this.lastConfirmedSeq = confirmedSeq;
+      if (this.game.applyAuthoritativeSnapshot) {
+        this.game.applyAuthoritativeSnapshot(snapshot);
+      }
+      if (confirmedSeq > 0) {
+        this.inputBuffer = this.inputBuffer.filter(i => i.seq > confirmedSeq);
+      }
+      return;
+    }
+
+    // Don't process during pre-fight phases
+    if (this.game.waitingForProviders || this.game.fightAlert > 0) return;
 
     // Ignore stale snapshots
     if (confirmedSeq > 0 && confirmedSeq <= this.lastConfirmedSeq) return;

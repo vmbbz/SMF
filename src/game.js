@@ -68,7 +68,7 @@ export class Game {
     p1Input,
     p2Input,
     sfx = null,
-    { p1Label = "P1", p2Label = "P2", stageMusic = null } = {},
+    { p1Label = "P1", p2Label = "P2", stageMusic = null, authoritativeMultiplayer = false } = {},
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
@@ -79,6 +79,7 @@ export class Game {
     this.stageMusic = stageMusic;
     this.p1Label = p1Label;
     this.p2Label = p2Label;
+    this.authoritativeMultiplayer = authoritativeMultiplayer;
 
     // Load custom profile name from localStorage for P1 if available
     try {
@@ -307,6 +308,74 @@ export class Game {
     requestAnimationFrame((t) => this._loop(t));
   }
 
+  applyAuthoritativeSnapshot(snapshot) {
+    if (!snapshot || !snapshot.p1 || !snapshot.p2) return;
+
+    this.waitingForProviders = false;
+    this.waitingForIntro = false;
+    this.fightAlert = 0;
+
+    const roundTimer = Number(snapshot.round_timer);
+    if (Number.isFinite(roundTimer)) {
+      this.roundTimer = roundTimer;
+    }
+    if (snapshot.round_over) {
+      this.roundOver = true;
+    }
+
+    this.p1.fromSnapshot(this._mapServerFighterSnapshot(snapshot.p1, snapshot));
+    this.p2.fromSnapshot(this._mapServerFighterSnapshot(snapshot.p2, snapshot));
+
+    this.p1.floorY = this.floorY;
+    this.p2.floorY = this.floorY;
+
+    this.projectiles = Array.isArray(snapshot.projectiles)
+      ? snapshot.projectiles.map(projectile => this._mapServerProjectileSnapshot(projectile, snapshot))
+      : [];
+  }
+
+  _serverMapping(snapshot) {
+    const serverWidth = Number(snapshot.stage_width) || 800;
+    const serverHeight = Number(snapshot.stage_height) || 400;
+    const serverFloor = Number(snapshot.floor_y) || (serverHeight - 160);
+    const serverLeft = serverWidth * STAGE_MARGIN;
+    const serverRight = serverWidth * (1 - STAGE_MARGIN);
+    const localLeft = this.stageLeft;
+    const localRight = this.stageRight;
+    const xScale = (localRight - localLeft) / Math.max(1, serverRight - serverLeft);
+
+    return {
+      serverLeft,
+      serverFloor,
+      localLeft,
+      localFloor: this.floorY,
+      xScale,
+      yScale: xScale,
+    };
+  }
+
+  _mapServerFighterSnapshot(fighterSnapshot, snapshot) {
+    const m = this._serverMapping(snapshot);
+    const mapped = { ...fighterSnapshot };
+    mapped.x = m.localLeft + (Number(fighterSnapshot.x || 0) - m.serverLeft) * m.xScale;
+    mapped.y = m.localFloor - (m.serverFloor - Number(fighterSnapshot.y || 0)) * m.yScale;
+    mapped.vx = Number(fighterSnapshot.vx || 0) * m.xScale;
+    mapped.vy = Number(fighterSnapshot.vy || 0) * m.yScale;
+    return mapped;
+  }
+
+  _mapServerProjectileSnapshot(projectileSnapshot, snapshot) {
+    const m = this._serverMapping(snapshot);
+    return {
+      x: m.localLeft + (Number(projectileSnapshot.x || 0) - m.serverLeft) * m.xScale,
+      y: m.localFloor - (m.serverFloor - Number(projectileSnapshot.y || 0)) * m.yScale,
+      vx: Number(projectileSnapshot.vx || 0) * m.xScale,
+      owner: projectileSnapshot.owner,
+      active: projectileSnapshot.active !== false,
+      animTimer: 0,
+    };
+  }
+
   _isP1ReadyForHadouken() {
     return (
       this.p1.state !== "attack" &&
@@ -352,6 +421,10 @@ export class Game {
   }
 
   _update(dt) {
+    if (this.authoritativeMultiplayer) {
+      return;
+    }
+
     // Waiting for providers or showing fight alert — no game logic
     // Intro sequence — walk in and show stats
     if (this.waitingForIntro) {

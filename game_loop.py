@@ -97,6 +97,9 @@ def _build_snapshot(room: RoomLoop) -> dict[str, Any]:
     return {
         "type": "state",
         "tick": room.tick_count,
+        "stage_width": room.engine.width,
+        "stage_height": room.engine.height,
+        "floor_y": room.engine.floor_y,
         "round_timer": round(room.engine.round_timer, 1),
         "round_over": room.engine.round_over,
         "p1": _serialize_fighter(room.engine.p1),

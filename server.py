@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, List, Dict, Optional
 from urllib.parse import urlparse
 from birdeye_service import birdeye_service
+from dexscreener_service import dexscreener_service
 
 import asyncpg  # type: ignore[import-untyped]
 import httpx
@@ -375,9 +376,6 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
             matchmaking_task = None
             print("[mode] Running in-memory mode - no multiplayer features")
 
-        # Start Birdeye background cache warmer (works regardless of Redis/PG)
-        birdeye_service.start_background_warmer()
-
         if oidc_config.configured:
             print(f"[auth] OIDC configured: issuer={oidc_config.issuer}")
         else:
@@ -386,7 +384,6 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         yield
 
     finally:
-        birdeye_service.stop_background_warmer()
         # SAFE SHUTDOWN - only stop what was created
         if matchmaking_task is not None:
             await matchmaking_task.stop()
@@ -401,6 +398,7 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         if redis_pool is not None:
             await redis_pool.aclose()
             print("[redis] Connection closed")
+        await dexscreener_service.close()
         print("[lifespan] Shutdown complete")
 
 
@@ -631,7 +629,7 @@ async def _compute_pack_quote(pack_id: str) -> dict[str, Any]:
     if fixed_payment_price is not None:
         payment_price = fixed_payment_price
     else:
-        token = await birdeye_service.get_cached_token(mint, mark_hot=False)
+        token = await dexscreener_service.get_cached_token(mint)
         payment_price = _as_decimal((token or {}).get("price"), _get_boost_payment_price_fallback(mint))
     if payment_price <= 0:
         raise ValueError("Could not determine boost payment token price")
@@ -2477,9 +2475,9 @@ async def api_market_graduates(count: int = 8) -> List[Dict[str, Any]]:
 
 @get(MARKET_TOKEN_ROUTE)
 async def api_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
-    # mark_hot=True: this endpoint is called by live fights for boost detection.
-    # Hot tokens get a 90s TTL (vs 300s for cold) and are prioritised by the warmer.
-    return await birdeye_service.get_cached_token(mint, mark_hot=True)
+    # Token details are gameplay hot-path data. Keep Birdeye reserved for
+    # discovery lists; DexScreener handles per-token logo/banner/price refreshes.
+    return await dexscreener_service.get_cached_token(mint)
 
 def _assert_legacy_market_endpoint_allowed() -> None:
     if ALLOW_LEGACY_MARKET_ENDPOINTS:

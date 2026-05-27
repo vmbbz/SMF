@@ -84,6 +84,21 @@ def test_share_card_endpoint_serves_public_x_card(monkeypatch, tmp_path) -> None
         assert 'name="twitter:image"' in page_resp.text
 
 
+def test_market_token_details_uses_dexscreener_not_birdeye(monkeypatch) -> None:
+    dex_fetch = AsyncMock(return_value={"mint": "mint1", "symbol": "SMF", "source": "dexscreener"})
+    bird_fetch = AsyncMock(side_effect=AssertionError("Birdeye token detail path should not be called"))
+    monkeypatch.setattr(server.dexscreener_service, "get_cached_token", dex_fetch)
+    monkeypatch.setattr(server.birdeye_service, "get_cached_token", bird_fetch)
+
+    with TestClient(app=app) as client:
+        resp = client.get("/api/marketfeed/v2/token-scan/mint1")
+
+    assert resp.status_code == 200
+    assert resp.json()["source"] == "dexscreener"
+    dex_fetch.assert_awaited_once_with("mint1")
+    bird_fetch.assert_not_called()
+
+
 def test_extract_burn_entries_from_parsed_tx() -> None:
     tx = {
         "transaction": {
