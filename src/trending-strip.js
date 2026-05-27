@@ -7,6 +7,8 @@ export class TrendingStrip {
     this.tokens = [];
     this.refreshTimer = null;
     this.loading = false;
+    this.fallbackNotice = '';
+    this.cacheKey = `smf_trending_cache_${containerId}`;
   }
 
   async init() {
@@ -29,12 +31,54 @@ export class TrendingStrip {
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     if (this.loading) return;
     this.loading = true;
+    this.fallbackNotice = '';
     try {
-      this.tokens = this.isGraduatesOnly
+      const primaryTokens = this.isGraduatesOnly
         ? await getPumpFunGraduates(12)
         : await getSolscanTrending(12);
+
+      let nextTokens = Array.isArray(primaryTokens) ? primaryTokens : [];
+
+      // Graduates can legitimately be empty for stretches; don't leave the strip blank.
+      if (this.isGraduatesOnly && nextTokens.length === 0) {
+        const trendingFallback = await getSolscanTrending(12);
+        if (Array.isArray(trendingFallback) && trendingFallback.length > 0) {
+          nextTokens = trendingFallback;
+          this.fallbackNotice = 'NO NEW GRADS - SHOWING TRENDING';
+        } else {
+          this.fallbackNotice = 'NO NEW GRADS YET';
+        }
+      }
+
+      if (nextTokens.length > 0) {
+        this.tokens = nextTokens;
+        try {
+          localStorage.setItem(this.cacheKey, JSON.stringify({ t: Date.now(), tokens: nextTokens }));
+        } catch (_) {}
+      } else {
+        let cached = null;
+        try {
+          cached = JSON.parse(localStorage.getItem(this.cacheKey) || 'null');
+        } catch (_) {}
+        if (cached && Array.isArray(cached.tokens) && cached.tokens.length > 0) {
+          this.tokens = cached.tokens;
+          this.fallbackNotice = this.fallbackNotice || 'OFFLINE - SHOWING LAST FEED';
+        } else {
+          this.tokens = [];
+        }
+      }
     } catch (err) {
       console.warn('[trending-strip] Failed to load tokens:', err);
+      let cached = null;
+      try {
+        cached = JSON.parse(localStorage.getItem(this.cacheKey) || 'null');
+      } catch (_) {}
+      if (cached && Array.isArray(cached.tokens) && cached.tokens.length > 0) {
+        this.tokens = cached.tokens;
+        this.fallbackNotice = 'NETWORK GLITCH - SHOWING LAST FEED';
+      } else {
+        this.tokens = [];
+      }
     } finally {
       this.loading = false;
       this.renderTokens();
@@ -291,7 +335,7 @@ export class TrendingStrip {
     if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS';
 
     if (this.tokens.length === 0) {
-      inner.innerHTML = `<span class="market-loading-text">Loading market stream...</span>`;
+      inner.innerHTML = `<span class="market-loading-text">Market feed unavailable - tap button to retry</span>`;
       return;
     }
 
@@ -308,7 +352,10 @@ export class TrendingStrip {
     }).join('');
 
     // Duplicate list for continuous infinite marquee
-    inner.innerHTML = itemsHtml + itemsHtml;
+    const note = this.fallbackNotice
+      ? `<span class="market-loading-text" style="margin-right:12px;opacity:.9;">${this.fallbackNotice}</span>`
+      : '';
+    inner.innerHTML = note + itemsHtml + itemsHtml;
   }
 }
 
