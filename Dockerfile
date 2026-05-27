@@ -13,6 +13,7 @@ RUN uv sync --frozen --no-dev
 COPY server.py .
 COPY auth.py .
 COPY birdeye_service.py .
+COPY dexscreener_service.py .
 COPY characters.py .
 COPY elo.py .
 COPY game_loop.py .
