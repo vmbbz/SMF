@@ -1696,7 +1696,13 @@ async def health() -> dict:
 
 @get("/favicon.ico")
 async def favicon() -> Response:
-    # Return empty 204 to prevent 404 errors
+    favicon_path = ROOT / "assets" / "favicon.ico"
+    if favicon_path.exists():
+        return Response(
+            content=favicon_path.read_bytes(),
+            media_type="image/x-icon",
+            headers={"Cache-Control": "public, max-age=604800"},
+        )
     return Response(content="", status_code=204)
 
 
