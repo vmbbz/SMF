@@ -11,7 +11,7 @@ import { parseRoute } from './router.js';
 import { isAuthConfigured, login, logout, handleCallback, checkAuth, isLoggedIn, getUser, updateUsername } from './auth.js';
 import { PeerConnection, RemoteInputAdapter } from './webrtc.js';
 import { PredictionManager } from './prediction.js';
-import { generatePersonality } from './token-utils.js';
+import { generatePersonality, getTokenByMint } from './token-utils.js';
 import { StageMusicManager } from './stage-music.js';
 import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
 import { getTokenCoverSource, getTokenImageSource, loadGameImage } from './image-utils.js';
@@ -887,6 +887,12 @@ window.resetAndFight = async function(token) {
   // Reset joystick registration so the new game's p1Input gets it
   if (window.virtualJoystick) window.virtualJoystick._registered = false;
 
+  const victoryOverlay = document.getElementById('victory-overlay');
+  if (victoryOverlay) {
+    victoryOverlay.classList.add('hidden');
+    victoryOverlay.style.display = '';
+  }
+
   // Stop RAF loop + live boost
   if (game) {
     game.running = false;
@@ -919,6 +925,252 @@ window.resetAndFight = async function(token) {
   if (window._showMobileControls) window._showMobileControls();
   await window.loadOpponent(token, true);
 };
+
+let tokenSwitchInFlight = false;
+let tokenSwitchConfirmPromise = null;
+let tokenSwitchConfirmResolve = null;
+
+function getActiveFightGame() {
+  return game || window.currentGame || window.game || window._game || null;
+}
+
+function ensureTokenSwitchConfirmModal() {
+  let modal = document.getElementById('token-switch-confirm');
+  if (modal) return modal;
+
+  const style = document.createElement('style');
+  style.id = 'token-switch-confirm-style';
+  style.textContent = `
+    #token-switch-confirm {
+      position: fixed;
+      inset: 0;
+      z-index: 2600;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background:
+        radial-gradient(circle at 50% 42%, rgba(255, 0, 255, 0.18), transparent 36%),
+        rgba(0, 0, 0, 0.58);
+      backdrop-filter: blur(5px);
+    }
+    #token-switch-confirm.active { display: flex; }
+    .token-switch-card {
+      width: min(420px, calc(100vw - 28px));
+      border: 2px solid var(--neon-pink);
+      border-radius: 22px;
+      padding: 22px;
+      background: linear-gradient(145deg, rgba(7, 8, 14, 0.96), rgba(18, 4, 24, 0.96));
+      box-shadow: 0 0 28px rgba(255, 0, 255, 0.5), inset 0 0 24px rgba(0, 255, 157, 0.08);
+      text-align: center;
+      color: #fff;
+      font-family: var(--font-display, 'Shojumaru', system-ui, sans-serif);
+    }
+    .token-switch-kicker {
+      color: var(--neon-blue);
+      font-family: var(--font-print, 'Press Start 2P', monospace);
+      font-size: 10px;
+      line-height: 1.45;
+      letter-spacing: 0.04em;
+      margin-bottom: 12px;
+    }
+    .token-switch-title {
+      color: var(--neon-green);
+      font-size: 22px;
+      line-height: 1.15;
+      text-shadow: 0 0 14px rgba(0, 255, 157, 0.72);
+      margin-bottom: 10px;
+    }
+    .token-switch-body {
+      color: rgba(255, 255, 255, 0.82);
+      font-family: var(--font-print, 'Press Start 2P', monospace);
+      font-size: 9px;
+      line-height: 1.65;
+      margin: 0 auto 18px;
+      max-width: 32em;
+    }
+    .token-switch-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .token-switch-actions button {
+      min-width: 142px;
+      min-height: 44px;
+      border: 0;
+      border-radius: 999px;
+      cursor: pointer;
+      font-family: var(--font-print, 'Press Start 2P', monospace);
+      font-size: 9px;
+      line-height: 1.25;
+      padding: 12px 14px;
+      transition: transform 0.16s ease, filter 0.16s ease;
+    }
+    .token-switch-actions button:hover { transform: translateY(-1px) scale(1.03); }
+    .token-switch-confirm-btn {
+      background: linear-gradient(135deg, var(--neon-green), var(--neon-blue));
+      color: #020408;
+      box-shadow: 0 0 18px rgba(0, 255, 157, 0.42);
+    }
+    .token-switch-cancel-btn {
+      background: rgba(255, 255, 255, 0.09);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    }
+    @media (max-width: 720px) and (orientation: landscape) {
+      .token-switch-card {
+        width: min(520px, calc(100vw - 90px));
+        padding: 16px 18px;
+      }
+      .token-switch-title { font-size: 18px; }
+      .token-switch-body { font-size: 8px; margin-bottom: 12px; }
+      .token-switch-actions button { min-height: 38px; padding: 9px 12px; }
+    }
+  `;
+  document.head.appendChild(style);
+
+  modal = document.createElement('div');
+  modal.id = 'token-switch-confirm';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'token-switch-title');
+  modal.innerHTML = `
+    <div class="token-switch-card">
+      <div class="token-switch-kicker">LIVE MARKET CHALLENGE</div>
+      <div class="token-switch-title" id="token-switch-title">End this match?</div>
+      <p class="token-switch-body" id="token-switch-body">
+        This will stop the current fight, clear the arena, and load the new opponent cleanly.
+      </p>
+      <div class="token-switch-actions">
+        <button class="token-switch-confirm-btn" type="button" data-token-switch-confirm>END + LOAD</button>
+        <button class="token-switch-cancel-btn" type="button" data-token-switch-cancel>KEEP FIGHTING</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.addEventListener('click', (event) => {
+    const target = event.target;
+    if (target === modal || target.closest('[data-token-switch-cancel]')) {
+      finishTokenSwitchConfirm(false);
+    } else if (target.closest('[data-token-switch-confirm]')) {
+      finishTokenSwitchConfirm(true);
+    }
+  });
+
+  return modal;
+}
+
+function finishTokenSwitchConfirm(confirmed) {
+  const modal = document.getElementById('token-switch-confirm');
+  if (modal) modal.classList.remove('active');
+
+  window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
+    detail: { paused: false, reason: 'token_switch_confirm' }
+  }));
+
+  if (tokenSwitchConfirmResolve) tokenSwitchConfirmResolve(Boolean(confirmed));
+  tokenSwitchConfirmResolve = null;
+  tokenSwitchConfirmPromise = null;
+}
+
+function confirmTokenSwitch(token) {
+  if (tokenSwitchConfirmPromise) return tokenSwitchConfirmPromise;
+
+  const modal = ensureTokenSwitchConfirmModal();
+  const symbol = String(token?.symbol || token?.name || token?.mint || 'NEW TOKEN').toUpperCase();
+  const body = modal.querySelector('#token-switch-body');
+  if (body) {
+    body.textContent = `Switch to $${symbol}? This ends the current match and reloads the arena with fresh token art, stats, health bars, and stage assets.`;
+  }
+
+  window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
+    detail: { paused: true, reason: 'token_switch_confirm' }
+  }));
+
+  modal.classList.add('active');
+  const confirmButton = modal.querySelector('[data-token-switch-confirm]');
+  if (confirmButton) confirmButton.focus({ preventScroll: true });
+
+  tokenSwitchConfirmPromise = new Promise(resolve => {
+    tokenSwitchConfirmResolve = resolve;
+  });
+  return tokenSwitchConfirmPromise;
+}
+
+async function resolveTokenForFight(tokenOrMint) {
+  if (tokenOrMint && typeof tokenOrMint === 'object') return tokenOrMint;
+  const mint = String(tokenOrMint || '').trim();
+  if (!mint) throw new Error('Missing token mint');
+  const loader = typeof window.getTokenByMint === 'function' ? window.getTokenByMint : getTokenByMint;
+  const token = await loader(mint);
+  if (!token) throw new Error('Token not found');
+  return token;
+}
+
+function stopManualTokenRotation() {
+  if (window._cancelEndlessCountdown) window._cancelEndlessCountdown();
+  if (window.endlessSession) window.endlessSession.active = false;
+}
+
+function leaveMultiplayerForTokenSwitch() {
+  if (!window.isMultiplayerMatch) return;
+  if (peerConnection) {
+    try { peerConnection.close(); } catch (_) {}
+    peerConnection = null;
+  }
+  stopRoomPolling();
+  stopWaitingInArena();
+  stopMatchmakingPoll();
+  localStorage.removeItem('sf_roomCode');
+  localStorage.removeItem('sf_playerId');
+  localStorage.removeItem('sf_playerNum');
+  window.isMultiplayerMatch = false;
+}
+
+window.requestTokenFight = async function(tokenOrMint, options = {}) {
+  if (tokenSwitchInFlight) return;
+  tokenSwitchInFlight = true;
+
+  try {
+    const activeGame = getActiveFightGame();
+    const inFightScene = state === 'fighting' && activeGame;
+    const needsConfirm = inFightScene && activeGame.running && !activeGame.roundOver && !options.skipConfirm;
+
+    const token = await resolveTokenForFight(tokenOrMint);
+
+    if (needsConfirm) {
+      const confirmed = await confirmTokenSwitch(token);
+      if (!confirmed) return;
+    }
+
+    stopManualTokenRotation();
+
+    if (inFightScene) {
+      leaveMultiplayerForTokenSwitch();
+      await window.resetAndFight(token);
+      return;
+    }
+
+    const status = document.getElementById('status');
+    if (status) status.innerHTML = `Fighting <strong>$${token.symbol || 'MEME'}</strong>!`;
+    const landingPanel = document.getElementById('landing');
+    if (landingPanel) landingPanel.classList.add('hidden');
+    const fightCanvas = document.getElementById('game');
+    if (fightCanvas) fightCanvas.classList.add('active');
+    if (window._showMobileControls) window._showMobileControls();
+    await window.loadOpponent(token, true);
+  } catch (err) {
+    console.warn('[token-switch] Failed to start token fight:', err);
+    const status = document.getElementById('status');
+    if (status) status.innerHTML = 'Token not found 😢';
+  } finally {
+    tokenSwitchInFlight = false;
+  }
+};
+
+window.fightToken = (tokenOrMint, options = {}) => window.requestTokenFight(tokenOrMint, options);
 
 
 // ─────────────────────────────────────────────
@@ -3032,21 +3284,26 @@ initAuth().then(async (handledRoute) => {
 // Expose startFight globally for meme mode
 window.startFight = startFight;
 
-window.toggleWeather = function() {
-  if (window.effects) window.effects.toggleWeather();
+function syncWeatherButton() {
   const btn = document.getElementById('btn-weather');
-  if (btn) {
-    const modes = { 'rain': '🌧️ RAIN', 'wind': '💨 WIND', 'snow': '❄️ SNOW', 'clear': '☀️ CLEAR' };
-    const mobileIcons = { 'rain': '🌧️', 'wind': '💨', 'snow': '❄️', 'clear': '☀️' };
-    const curr = window.effects.weatherModes[window.effects.currentWeather];
-    const text = modes[curr] || 'WEATHER';
-    const icon = mobileIcons[curr] || '🌧️';
-    btn.innerHTML = `
+  if (!btn || !window.effects) return;
+  const modes = { 'rain': '🌧️ RAIN', 'wind': '💨 WIND', 'snow': '❄️ SNOW', 'clear': '☀️ CLEAR' };
+  const mobileIcons = { 'rain': '🌧️', 'wind': '💨', 'snow': '❄️', 'clear': '☀️' };
+  const curr = window.effects.weatherModes[window.effects.currentWeather];
+  const text = modes[curr] || 'WEATHER';
+  const icon = mobileIcons[curr] || '💨';
+  btn.innerHTML = `
       <span class="desktop-text">${text}</span>
       <span class="mobile-text">${icon}</span>
     `;
-  }
+}
+
+window.toggleWeather = function() {
+  if (window.effects) window.effects.toggleWeather();
+  syncWeatherButton();
 };
+window.syncWeatherButton = syncWeatherButton;
+syncWeatherButton();
 
 // ─────────────────────────────────────────────
 // Premium Victory & Social (Phase 3)

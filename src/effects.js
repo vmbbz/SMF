@@ -4,7 +4,7 @@ export class Effects {
     this.particles = [];
     this.pumpLines = [];
     this.weatherModes = ['rain', 'wind', 'snow', 'clear'];
-    this.currentWeather = 0;
+    this.currentWeather = 1;
     this.weatherParticles = [];
     this._initWeather();
   }

@@ -1430,25 +1430,29 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     ctx.shadowBlur = 0; // Reset shadow
     ctx.globalAlpha = 1;
 
-    // Neon Ropes (Phase 3)
+    // Short neon corner stubs. These used to be tall 300px posts, but they
+    // competed with fighter silhouettes and token stage art during play.
     ctx.save();
     ctx.lineWidth = 4;
     ctx.shadowBlur = 15;
+    ctx.lineCap = 'round';
+    const postHeight = Math.max(34, Math.min(58, h * 0.08));
+    const postTop = floorY - postHeight;
     
-    // Left Rope
+    // Left corner stub
     ctx.strokeStyle = DG.primary;
     ctx.shadowColor = DG.primary;
     ctx.globalAlpha = 0.6 + Math.sin(performance.now() / 100) * 0.2;
     ctx.beginPath();
-    ctx.moveTo(this.stageLeft, floorY - 300);
+    ctx.moveTo(this.stageLeft, postTop);
     ctx.lineTo(this.stageLeft, floorY);
     ctx.stroke();
 
-    // Right Rope
+    // Right corner stub
     ctx.strokeStyle = DG.secondary;
     ctx.shadowColor = DG.secondary;
     ctx.beginPath();
-    ctx.moveTo(this.stageRight, floorY - 300);
+    ctx.moveTo(this.stageRight, postTop);
     ctx.lineTo(this.stageRight, floorY);
     ctx.stroke();
     ctx.restore();
