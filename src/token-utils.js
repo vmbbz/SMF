@@ -1,4 +1,4 @@
-import { API_ROUTES, tokenDetailsPath } from './api-endpoints.js';
+import { API_ROUTES, apiUrl, tokenDetailsPath } from './api-endpoints.js';
 
 const CACHE_KEY = 'smf_token_cache';
 const CACHE_TTL = 60000;
@@ -20,9 +20,16 @@ export function setCachedToken(mint, data) {
 
 async function getTrendingTokens(count = 8) {
   try {
-    const res = await fetch(`${API_ROUTES.TRENDING}?count=${count}`);
-    const tokens = await res.json();
-    return tokens;
+    const primary = await fetch(apiUrl(`${API_ROUTES.TRENDING}?count=${count}`));
+    if (primary.ok) {
+      const tokens = await primary.json();
+      return Array.isArray(tokens) ? tokens : [];
+    }
+
+    const fallback = await fetch(apiUrl(`${API_ROUTES.LEGACY_TRENDING}?count=${count}`));
+    if (!fallback.ok) return [];
+    const tokens = await fallback.json();
+    return Array.isArray(tokens) ? tokens : [];
   } catch (e) {
     console.error("Trending fetch failed:", e);
     return [];
