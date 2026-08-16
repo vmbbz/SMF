@@ -20,7 +20,9 @@
 ---
 
 ### 📲 Download & Play (Android APK)
-🚀 **[Download the Official STICKLASH Release APK (stickler-app-release.apk)](android/app/release/stickler-app-release.apk)** — *Built, v2 release-signed, and optimized for Android Solana wallet play!*
+🚀 **[Download the STICKLASH Android Preview APK](https://github.com/vmbbz/SMF/releases/download/android-v1.0-2026-08-16-social-cleanup-preview/sticklash-android-preview-2026-08-16.apk)** — *Debug-signed preview build for Android Solana wallet play; not Play/production-signed.*
+
+[SHA-256 checksum](https://github.com/vmbbz/SMF/releases/download/android-v1.0-2026-08-16-social-cleanup-preview/sticklash-android-preview-2026-08-16.apk.sha256)
 
 Release notes:
 * [Latest Android release notes](releases/2026-05-26-android-mwa-fireball.md)
