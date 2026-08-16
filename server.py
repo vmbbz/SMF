@@ -1825,7 +1825,7 @@ async def share_card_page(share_id: str, request: Request) -> Response:
   <meta property="og:url" content="{page_url}">
   <meta property="og:image" content="{image_url}">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:site" content="@sticklashfun">
+  <meta name="twitter:site" content="[@]">
   <meta name="twitter:title" content="{safe_title}">
   <meta name="twitter:description" content="{safe_description}">
   <meta name="twitter:image" content="{image_url}">

@@ -3518,7 +3518,7 @@ async function composeVictoryShareCard({ frameBlob, isWin, symbol, mode, opponen
 
   ctx.fillStyle = '#f8f8f8';
   ctx.font = '700 22px "Press Start 2P", monospace';
-  ctx.fillText('@sticklashfun', 846, 432);
+  ctx.fillText('[@]', 846, 432);
 
   ctx.fillStyle = '#00d9ff';
   ctx.font = '700 24px "Press Start 2P", monospace';
@@ -3615,7 +3615,6 @@ function buildTweetIntentUrl(text, url) {
     text,
     url,
     hashtags: 'Solana,MemeFighter,SMF',
-    via: 'sticklashfun',
   });
   return `https://twitter.com/intent/tweet?${params.toString()}`;
 }
