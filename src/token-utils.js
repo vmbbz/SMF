@@ -45,14 +45,30 @@ export function isEvmAddress(address) {
   return /^0x[a-fA-F0-9]{40}$/.test(String(address || '').trim());
 }
 
+export function getTokenSymbol(token, fallback = 'MEME') {
+  if (!token) return fallback;
+  const sym = token.symbol || token.tokenSymbol || token.baseToken?.symbol || token.extractedSymbol;
+  if (sym && sym !== 'BASE' && sym !== 'Unknown') {
+    return String(sym).toUpperCase();
+  }
+  if (token.name && token.name !== 'Unknown' && token.name !== 'Base Token') {
+    return String(token.name).toUpperCase();
+  }
+  if (token.mint || token.address) {
+    const raw = String(token.mint || token.address);
+    return raw.length >= 6 ? raw.slice(0, 6).toUpperCase() : fallback;
+  }
+  return fallback;
+}
+
 function buildFallbackTokenFromMint(mint) {
   const raw = String(mint || '').trim();
   const isEvm = isEvmAddress(raw);
-  const short = isEvm ? `${raw.slice(0, 6)}...${raw.slice(-4)}` : (raw.length >= 6 ? raw.slice(0, 6).toUpperCase() : 'MEME');
+  const short = raw.length >= 6 ? raw.slice(0, 6).toUpperCase() : 'MEME';
   return {
     mint: raw,
     address: raw,
-    symbol: isEvm ? 'BASE' : short,
+    symbol: short,
     name: isEvm ? `Base Token (${short})` : `Token ${short}`,
     logoURI: 'assets/smf-logo.png',
     chainId: isEvm ? 'base' : 'solana',

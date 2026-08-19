@@ -1,5 +1,6 @@
 import { getSolscanTrending, getPumpFunGraduates } from './solscan-trending.js';
-import { proxiedImageUrl } from './image-utils.js';
+import { proxiedImageUrl, getTokenImageSource } from './image-utils.js';
+import { getTokenSymbol } from './token-utils.js';
 
 export class TrendingStrip {
   constructor(containerId) {
@@ -341,14 +342,17 @@ export class TrendingStrip {
     }
 
     const itemsHtml = this.tokens.map(token => {
-      const chg = Number(token.priceChange24h) || 0;
+      const chg = Number(token.priceChange24h || token.priceChange?.h24) || 0;
       const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(1) + '%';
       const chgColor = chg >= 0 ? '#00ff9d' : '#ff2244';
-      const logoSrc = proxiedImageUrl(token.logoURI || token.image || token.icon || 'assets/smf-logo.png');
+      const rawLogo = getTokenImageSource(token, 'assets/smf-logo.png');
+      const logoSrc = proxiedImageUrl(rawLogo);
+      const symbol = getTokenSymbol(token, 'MEME');
+      const mint = token.mint || token.address || token.baseToken?.address || '';
       return `
-      <div class="token-pill" onclick="window.requestTokenFight ? window.requestTokenFight('${token.mint}') : window.fightToken && window.fightToken('${token.mint}')">
-        <img src="${logoSrc}" alt="${token.symbol}" onerror="this.onerror=null;this.src='assets/smf-logo.png'">
-        <span class="symbol">$${token.symbol}</span>
+      <div class="token-pill" onclick="window.requestTokenFight ? window.requestTokenFight('${mint}') : window.fightToken && window.fightToken('${mint}')">
+        <img src="${logoSrc}" alt="${symbol}" onerror="this.onerror=null;this.src='assets/smf-logo.png'">
+        <span class="symbol">$${symbol}</span>
         <span class="power" style="color:${chgColor}">${chgStr}</span>
       </div>`;
     }).join('');
