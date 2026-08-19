@@ -26,7 +26,7 @@
       --font-display: 'Shojumaru', 'Press Start 2P', sans-serif;
       --font-print: 'Press Start 2P', system-ui, sans-serif;
       --neon-green: #00ff9d;
-      --neon-pink: #0000FF;
+      --neon-pink: #ff2bd6;
       --neon-blue: #00A3FF;
 
       /* DG System Mapping */
@@ -325,11 +325,37 @@
       font-weight: 900;
       font-style: italic;
       color: var(--neon-pink);
-      text-shadow: 0 0 40px var(--neon-pink), 0 0 10px #fff;
+      text-shadow: 0 0 30px var(--neon-pink), 0 0 60px #ff007f, 0 0 90px rgba(255, 43, 214, 0.8), 0 0 15px #ffffff;
       margin-top: -50px;
       margin-bottom: 20px;
       letter-spacing: -5px;
       animation: punchIn 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @media (max-width: 600px) {
+      .ko-text {
+        font-size: 72px !important;
+        margin-top: -24px !important;
+        margin-bottom: 12px !important;
+        letter-spacing: -2px !important;
+        text-shadow: 0 0 20px var(--neon-pink), 0 0 40px #ff007f, 0 0 10px #ffffff !important;
+      }
+
+      #help-modal {
+        width: 95% !important;
+        height: 88vh !important;
+        padding: 16px 14px !important;
+        border-radius: 18px !important;
+      }
+
+      #help-modal h2 {
+        font-size: 18px !important;
+      }
+
+      #victory-overlay {
+        padding: 14px 10px !important;
+        border-radius: 18px !important;
+      }
     }
 
     #victory-token-info {
@@ -2137,69 +2163,68 @@
   </div>
 
   <!-- HELP MODAL -->
-  <div id="help-modal" class="screen hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1); width: 90%; max-width: 600px; height: 80vh; background: rgba(10, 10, 15, 0.96); border: 2px solid var(--neon-green); box-shadow: 0 0 30px var(--neon-green); border-radius: 24px; z-index: 2000; padding: 30px; display: flex; flex-direction: column; color: #fff; font-family: var(--font-display); overflow: hidden; transition: all 0.3s ease; box-sizing: border-box;">
+  <div id="help-modal" class="screen hidden" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) scale(1); width: 90%; max-width: 600px; height: 80vh; max-height: 720px; background: rgba(10, 10, 15, 0.96); border: 2px solid var(--neon-green); box-shadow: 0 0 30px var(--neon-green), 0 20px 50px rgba(0,0,0,0.9); border-radius: 24px; z-index: 2000; padding: 24px 28px; display: flex; flex-direction: column; color: #fff; font-family: var(--font-display); overflow: hidden; transition: all 0.3s ease; box-sizing: border-box;">
     <!-- Header -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-      <h2 class="shojumaru-title" style="margin: 0; color: #fff; font-size: 24px; text-shadow: 0 0 10px var(--neon-green);">STICKLASH GUIDE 🥋</h2>
-      <span onclick="closeHelpModal()" style="cursor: pointer; font-size: 28px; color: var(--neon-pink); font-weight: bold; text-shadow: 0 0 10px var(--neon-pink); line-height: 1;">&times;</span>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid rgba(0, 255, 157, 0.2); padding-bottom: 12px;">
+      <h2 class="shojumaru-title" style="margin: 0; color: #fff; font-size: 22px; text-shadow: 0 0 10px var(--neon-green); letter-spacing: 1px;">STICKLASH GUIDE 🥋</h2>
+      <span onclick="closeHelpModal()" style="cursor: pointer; font-size: 28px; color: var(--neon-pink); font-weight: bold; text-shadow: 0 0 10px var(--neon-pink); line-height: 1; padding: 0 4px;" title="Close">&times;</span>
     </div>
 
     <!-- Scrollable content -->
-    <div class="print-font" style="flex: 1; overflow-y: auto; padding-right: 10px; line-height: 1.6; font-size: 14px; box-sizing: border-box;">
+    <div class="print-font" style="flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-right: 8px; line-height: 1.6; font-size: 13px; box-sizing: border-box;">
       <!-- Video Trailer -->
-      <video src="assets/STICKLASH-Promo.mp4" controls autoplay muted loop playsinline style="width: 100%; border-radius: 12px; border: 2px solid var(--neon-green); box-shadow: 0 0 15px var(--neon-green); margin-bottom: 20px;"></video>
+      <video src="assets/STICKLASH-Promo.mp4" controls autoplay muted loop playsinline style="width: 100%; border-radius: 14px; border: 2px solid var(--neon-green); box-shadow: 0 0 15px rgba(0, 255, 157, 0.3); margin-bottom: 18px;"></video>
       
-      <p style="font-size: 16px; font-weight: bold; text-align: center; color: var(--neon-blue); margin-bottom: 20px; text-shadow: 0 0 8px var(--neon-blue);">
-        <strong>THE WORLD'S FIRST SOLANA MEME-TOKEN FIGHTING GAME!</strong>
+      <p style="font-size: 15px; font-weight: bold; text-align: center; color: var(--neon-blue); margin-bottom: 18px; text-shadow: 0 0 8px var(--neon-blue); letter-spacing: 0.5px;">
+        <strong>REAL-TIME MEME-TOKEN FIGHTING ARENA</strong>
       </p>
 
-      <div style="background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
-        <h3 class="shojumaru-title" style="color: var(--neon-pink); margin-top: 0; font-size: 16px;"><strong>🔥 REAL-TIME PRICE BOOSTS: "LMAO WHIPLASH!"</strong></h3>
-        <p><strong>Your opponent's strength, speed, and health are dictated by live Birdeye market metrics! When a token pumps in real-time, timed boosts fire:</strong></p>
-        <ul>
-          <li><strong>🟠 RUNNER (+20%): 3-hit dash combo + brief stun</strong></li>
-          <li><strong>🔴 SPIKE (+45%): 5-hit combo + P1 levitated 1.5s</strong></li>
-          <li><strong>🟣 OVERDRIVE (+100%): 10 Hadoukens + P1 levitated 3s</strong></li>
+      <div style="background: rgba(255, 255, 255, 0.04); padding: 16px; border-radius: 14px; border: 1px solid rgba(255,43,214,0.3); margin-bottom: 18px; box-shadow: inset 0 0 15px rgba(255,43,214,0.05);">
+        <h3 class="shojumaru-title" style="color: var(--neon-pink); margin-top: 0; font-size: 15px; text-shadow: 0 0 8px var(--neon-pink);"><strong>⚡ REAL-TIME MARKET BOOSTS</strong></h3>
+        <p style="margin-bottom: 10px; color: #e0e0e0;"><strong>Fighter stats and combat momentum adapt to live token market metrics. When market volume surges, dynamic arena triggers activate:</strong></p>
+        <ul style="margin-left: 18px; margin-bottom: 12px;">
+          <li style="margin-bottom: 4px;"><strong>🟠 RUNNER (+20%): 3-hit dash combo & brief stun</strong></li>
+          <li style="margin-bottom: 4px;"><strong>🔴 SPIKE (+45%): 5-hit combo & 1.5s aerial lift</strong></li>
+          <li style="margin-bottom: 4px;"><strong>🟣 OVERDRIVE (+100%): 10-projectile Hadouken barrage & 3s aerial lock</strong></li>
         </ul>
-        <p style="color: #ffcc00; margin-bottom: 0;"><strong>⚠️ STRATEGY: You MUST use Live Boosts to survive against pumping high-volume opponent tokens. Otherwise, LMAO WHIPLASH!</strong></p>
+        <p style="color: #ffcc00; margin-bottom: 0; line-height: 1.4;"><strong>⚠️ STRATEGY: Use Live Boosts strategically to counter high-volume pumping tokens and turn the tide of battle.</strong></p>
       </div>
 
-      <h3 class="shojumaru-title" style="color: var(--neon-blue); font-size: 16px;"><strong>🎮 MOVE LIST & CONTROLS</strong></h3>
-      <ul>
-        <li><strong>👊 PUNCHES: LP (Light Punch), HP (Heavy Punch)</strong></li>
-        <li><strong>🦵 KICKS: LK (Light Kick), HK (Heavy Kick)</strong></li>
-        <li><strong>⚡ SPECIAL: Pulse SP for Hadouken projectiles!</strong></li>
-        <li><strong>🛡️ BLOCK: Hold BACK (away from opponent) to block attacks</strong></li>
-        <li><strong>🌀 JOYSTICK: Left side analog controls all movement (Jump/Crouch)</strong></li>
+      <h3 class="shojumaru-title" style="color: var(--neon-blue); font-size: 15px; margin-top: 14px; margin-bottom: 10px; text-shadow: 0 0 8px var(--neon-blue);"><strong>🎮 MOVE LIST & CONTROLS</strong></h3>
+      <ul style="margin-left: 18px; margin-bottom: 18px;">
+        <li style="margin-bottom: 4px;"><strong>👊 PUNCHES: LP (Light Punch) & HP (Heavy Punch)</strong></li>
+        <li style="margin-bottom: 4px;"><strong>🦵 KICKS: LK (Light Kick) & HK (Heavy Kick)</strong></li>
+        <li style="margin-bottom: 4px;"><strong>⚡ SPECIAL: Tap SP to launch Hadouken energy projectiles</strong></li>
+        <li style="margin-bottom: 4px;"><strong>🛡️ BLOCK: Hold BACK (away from opponent) to guard incoming attacks</strong></li>
+        <li style="margin-bottom: 4px;"><strong>🌀 MOVEMENT: Touch joystick or Directional Keys (Jump / Crouch / Advance)</strong></li>
       </ul>
 
-      <h3 class="shojumaru-title" style="color: var(--neon-pink); font-size: 16px;"><strong>🌐 ON-CHAIN WALLET CONNECTION</strong></h3>
-      <p><strong>Securely connect your Solana wallet to read live balances, buy boost packs, and burn $SMF on-chain for premium in-game utility.</strong></p>
+      <h3 class="shojumaru-title" style="color: var(--neon-pink); font-size: 15px; margin-top: 14px; margin-bottom: 10px; text-shadow: 0 0 8px var(--neon-pink);"><strong>🌐 ON-CHAIN WALLET UTILITY</strong></h3>
+      <p style="color: #e0e0e0; margin-bottom: 18px;"><strong>Connect your EVM or Solana wallet to track live balances, acquire boost packs, and unlock premium in-game utility.</strong></p>
     </div>
 
-    <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 10px;">
+    <div style="margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 10px;">
       <button id="btn-help-socials" class="premium-btn print-font" onclick="toggleHelpSocials()" style="font-size: 10px; padding: 10px 14px; margin: 0; letter-spacing: 1px;">
         SOCIALS ▾
       </button>
       <div id="help-socials-panel" class="print-font help-socials-panel" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 10px 12px; text-align: left;">
         <span style="color: var(--neon-blue); font-weight: bold;">[@]</span>
         <div style="margin-top: 6px; color: #c7c7c7; font-size: 10px;">
-          Follow for live updates, match clips, and alpha drops.
+          Follow for live updates, match clips, and announcement drops.
         </div>
       </div>
-      <div class="print-font" style="margin-top: 10px; background: linear-gradient(135deg, rgba(0,255,157,0.08), rgba(255,0,255,0.08)); border: 1px solid rgba(0,255,157,0.28); border-radius: 12px; padding: 12px; text-align: left; box-shadow: inset 0 0 18px rgba(0,255,157,0.04);">
-        <div class="shojumaru-title" style="color: var(--neon-green); font-size: 13px; margin-bottom: 8px; text-shadow: 0 0 8px rgba(0,255,157,0.55);">
-          Timeline: Past 7 Days To Launch
+      <div class="print-font" style="margin-top: 10px; background: linear-gradient(135deg, rgba(0,255,157,0.08), rgba(255,43,214,0.08)); border: 1px solid rgba(0,255,157,0.28); border-radius: 12px; padding: 12px; text-align: left; box-shadow: inset 0 0 18px rgba(0,255,157,0.04);">
+        <div class="shojumaru-title" style="color: var(--neon-green); font-size: 12px; margin-bottom: 8px; text-shadow: 0 0 8px rgba(0,255,157,0.55);">
+          DEVELOPMENT ROADMAP & ECOSYSTEM
         </div>
         <ul style="margin: 0 0 8px 18px; padding: 0; color: #e9fff7; font-size: 9px; line-height: 1.65;">
-          <li>Detox app, stress reliever.</li>
-          <li>Became a meme utility.</li>
-          <li>APK release.</li>
-          <li>Token launch.</li>
-          <li>Dreams of Seeker Store.</li>
+          <li>Arcade combat engine & real-time market data integration</li>
+          <li>Cross-platform web & mobile APK support</li>
+          <li>Utility token integration & on-chain boost ledger</li>
+          <li>Ecosystem growth & Seeker Store marketplace deployment</li>
         </ul>
         <div style="color: #c7c7c7; font-size: 9px; line-height: 1.55;">
-          All fees go to buybacks and continued game development: Seeker Store, Google Play, and Product Hunt.
+          All fees support continued game development, infrastructure, and platform deployment.
         </div>
       </div>
       <audio id="help-socials-audio" src="assets/help-socials-hype.mp3" preload="auto"></audio>

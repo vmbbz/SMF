@@ -3729,7 +3729,10 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
 
   const isPlayer = winnerNum === 1;
   winText.textContent = isPlayer ? 'YOU WIN!' : 'K.O.';
-  winText.style.color = isPlayer ? 'var(--neon-blue)' : 'var(--neon-pink)';
+  winText.style.color = isPlayer ? 'var(--neon-green)' : 'var(--neon-pink)';
+  winText.style.textShadow = isPlayer 
+    ? '0 0 30px var(--neon-green), 0 0 60px #00d9ff, 0 0 15px #ffffff' 
+    : '0 0 30px var(--neon-pink), 0 0 60px #ff007f, 0 0 15px #ffffff';
   
   winText.style.transform = 'scale(1)';
   winText.style.fontSize = ''; 
