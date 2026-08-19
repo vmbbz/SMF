@@ -93,7 +93,7 @@ const HADOUKEN_COOLDOWN = 1.5; // seconds
 
 export { HADOUKEN_DATA };
 
-const DEFAULT_HEAD_IMAGE = 'assets/smf-logo.png';
+const DEFAULT_HEAD_IMAGE = 'assets/base-logo.png';
 const SOLANA_DEFAULT_HEAD_IMAGE = DEFAULT_HEAD_IMAGE; // Backward compat alias
 
 // ─────────────────────────────────────────────

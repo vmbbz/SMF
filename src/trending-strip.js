@@ -345,13 +345,13 @@ export class TrendingStrip {
       const chg = Number(token.priceChange24h || token.priceChange?.h24) || 0;
       const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(1) + '%';
       const chgColor = chg >= 0 ? '#00ff9d' : '#ff2244';
-      const rawLogo = getTokenImageSource(token, 'assets/smf-logo.png');
+      const rawLogo = getTokenImageSource(token, 'assets/base-logo.png');
       const logoSrc = proxiedImageUrl(rawLogo);
       const symbol = getTokenSymbol(token, 'MEME');
       const mint = token.mint || token.address || token.baseToken?.address || '';
       return `
       <div class="token-pill" onclick="window.requestTokenFight ? window.requestTokenFight('${mint}') : window.fightToken && window.fightToken('${mint}')">
-        <img src="${logoSrc}" alt="${symbol}" onerror="this.onerror=null;this.src='assets/smf-logo.png'">
+        <img src="${logoSrc}" alt="${symbol}" onerror="this.onerror=null;this.src='assets/base-logo.png'">
         <span class="symbol">$${symbol}</span>
         <span class="power" style="color:${chgColor}">${chgStr}</span>
       </div>`;

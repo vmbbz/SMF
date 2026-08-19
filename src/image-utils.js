@@ -26,14 +26,14 @@ export function isLocalImageUrl(value) {
 
 export function proxiedImageUrl(value, { cacheBust = false } = {}) {
   const url = normalizeImageUrl(value);
-  if (!url) return 'assets/smf-logo.png';
+  if (!url) return 'assets/base-logo.png';
   if (!isRemoteImageUrl(url)) return url;
 
   const proxyPath = `/api/proxy/image?url=${encodeURIComponent(url)}${cacheBust ? `&t=${Date.now()}` : ''}`;
   return apiUrl(proxyPath);
 }
 
-export function getTokenImageSource(token, fallback = 'assets/smf-logo.png') {
+export function getTokenImageSource(token, fallback = 'assets/base-logo.png') {
   if (!token) return fallback;
   return (
     token.logoURI ||
@@ -83,7 +83,7 @@ export function loadImage(src, { crossOrigin = true } = {}) {
 
 export async function loadGameImage(value, options = {}) {
   const url = normalizeImageUrl(value);
-  if (!url) return loadImage('assets/smf-logo.png', { crossOrigin: false });
+  if (!url) return loadImage('assets/base-logo.png', { crossOrigin: false });
 
   if (!isRemoteImageUrl(url)) {
     return loadImage(url, { crossOrigin: false });

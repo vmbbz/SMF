@@ -62,7 +62,7 @@ window.switchRichTab = function(tabIndex) {
   const isWinner = window.isRichWinner;
   const mainColor = isWinner ? 'var(--neon-green)' : 'var(--neon-pink)';
   const badgeText = isWinner ? 'WINNER' : 'LOSER';
-  const rawLogo = token.logoURI || token.image || token.icon || 'assets/smf-logo.png';
+  const rawLogo = token.logoURI || token.image || token.icon || 'assets/base-logo.png';
   const tokenLogo = window.smfProxiedImageUrl
     ? window.smfProxiedImageUrl(rawLogo)
     : rawLogo;
@@ -71,7 +71,7 @@ window.switchRichTab = function(tabIndex) {
     // ABOUT TAB
     content.innerHTML = `
       <div class="about-tab" style="animation: punchIn 0.3s ease;">
-        <img src="${tokenLogo}" class="banner" style="width:80px;height:80px;border-radius:50%;border:2px solid ${mainColor};margin-bottom:10px;object-fit:cover;" onerror="this.onerror=null;this.src='assets/smf-logo.png'">
+        <img src="${tokenLogo}" class="banner" style="width:80px;height:80px;border-radius:50%;border:2px solid ${mainColor};margin-bottom:10px;object-fit:cover;" onerror="this.onerror=null;this.src='assets/base-logo.png'">
         <h2 style="font-size:18px;font-weight:900;color:#fff;margin-bottom:10px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">$${(token.symbol || 'MEME').toUpperCase()} <span class="loser-badge" style="background:${mainColor};color:#000;font-size:9px;padding:2px 6px;border-radius:4px;vertical-align:middle;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">${badgeText}</span></h2>
         
         <div class="power-rating" style="font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif);font-size:11px;color:var(--neon-blue);margin-bottom:15px;background:rgba(0,212,255,0.1);padding:6px;border-radius:6px;border:1px dashed var(--neon-blue);">
