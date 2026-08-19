@@ -336,6 +336,8 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                     socket_timeout=5.0,
                     socket_connect_timeout=5.0
                 )
+                # Explicitly type-narrow: from_url returns Redis, not bool
+                assert not isinstance(redis_pool, bool)
                 # Test connection
                 await redis_pool.ping()
                 print("[redis] Connected successfully")
