@@ -24,7 +24,7 @@ _LIST_TTL = 180    # 3 min cache for trending/graduated lists
 _GRAD_MIN_LIQUIDITY = 10_000  # $10k USD minimum liquidity to be a "grad"
 
 
-def _normalize_pair(pair: dict[str, Any]) -> dict[str, Any]:
+def _normalize_pair(pair: dict[str, Any], fallback_icon: str | None = None) -> dict[str, Any]:
     """Convert a DexScreener pair object into the token shape the app expects."""
     base = pair.get("baseToken") or {}
     info = pair.get("info") or {}
@@ -40,12 +40,20 @@ def _normalize_pair(pair: dict[str, Any]) -> dict[str, Any]:
         or info.get("bannerImage")
     )
 
+    image_url = (
+        info.get("imageUrl")
+        or info.get("openGraph")
+        or fallback_icon
+    )
+
     return {
         "mint":           address,
         "address":        address,
         "symbol":         base.get("symbol") or "MEME",
         "name":           base.get("name") or base.get("symbol") or "Unknown",
-        "logoURI":        info.get("imageUrl"),
+        "logoURI":        image_url,
+        "icon":           image_url,
+        "image":          image_url,
         "coverImage":     cover,
         "headerImage":    cover,
         "marketCap":      float(pair.get("marketCap") or pair.get("fdv") or 0),
@@ -62,7 +70,7 @@ def _normalize_pair(pair: dict[str, Any]) -> dict[str, Any]:
 
 class BirdeyeService:
     """
-    Token-list discovery service — now Base chain via DexScreener.
+    Token-list discovery service — DexScreener backed.
 
     Keeps the same public interface as the old Birdeye-backed class so
     server.py routes (/api/marketfeed/v2/trending-scan etc.) work unchanged.
@@ -93,77 +101,143 @@ class BirdeyeService:
         return await dexscreener_service.get_cached_token(mint)
 
     # ─────────────────────────────────────────────
-    # Trending — top Base pairs by volume (3-min cache)
+    # Trending — top market pairs by volume & boosts (3-min cache)
     # ─────────────────────────────────────────────
     async def fetch_trending_tokens(self, limit: int = 12) -> list[dict[str, Any]]:
         return await self._get_list("trending", limit)
 
     async def _refresh_trending(self, limit: int = 12) -> list[dict[str, Any]]:
-        """Fetch top Base pairs from DexScreener boosted/trending endpoint."""
-        try:
-            # DexScreener's token profiles / trending for Base
-            resp = await self._client.get(
-                "/token-profiles/latest/v1",
-                params={"chainId": "base"},
-            )
-            if resp.is_success:
-                profiles = resp.json() if isinstance(resp.json(), list) else []
-                # profiles gives us token addresses; fetch pair details next
-                addresses = [p.get("tokenAddress") for p in profiles if p.get("tokenAddress")]
-                if addresses:
-                    tokens = await self._batch_fetch_pairs(addresses[:limit])
-                    if tokens:
-                        return tokens
+        """Fetch top boosted & trending tokens from DexScreener."""
+        tokens: list[dict[str, Any]] = []
+        seen: set[str] = set()
 
-            # Fallback: search for active Base pairs
-            return await self._search_base_pairs(limit, min_liquidity=5_000)
+        # 1. Top boosted tokens from DexScreener
+        try:
+            resp = await self._client.get("/token-boosts/top/v1")
+            if resp.is_success and isinstance(resp.json(), list):
+                for item in resp.json():
+                    addr = item.get("tokenAddress")
+                    icon = item.get("icon")
+                    if addr and addr not in seen:
+                        token_pair = await self._fetch_single_token_pair(addr, fallback_icon=icon)
+                        if token_pair and token_pair.get("symbol") and token_pair["symbol"] != "BASE":
+                            seen.add(addr)
+                            tokens.append(token_pair)
+                            if len(tokens) >= limit:
+                                break
         except Exception as exc:
-            print(f"[Discovery] Trending fetch error: {exc}")
-            cached = self.list_cache.get("trending")
-            return cached[0][:limit] if cached else []
+            print(f"[Discovery] DexScreener boosts error: {exc}")
+
+        # 2. Token profiles latest
+        if len(tokens) < limit:
+            try:
+                resp = await self._client.get("/token-profiles/latest/v1")
+                if resp.is_success and isinstance(resp.json(), list):
+                    for p in resp.json():
+                        addr = p.get("tokenAddress")
+                        icon = p.get("icon")
+                        if addr and addr not in seen:
+                            token_pair = await self._fetch_single_token_pair(addr, fallback_icon=icon)
+                            if token_pair and token_pair.get("symbol") and token_pair["symbol"] != "BASE":
+                                seen.add(addr)
+                                tokens.append(token_pair)
+                                if len(tokens) >= limit:
+                                    break
+            except Exception as exc:
+                print(f"[Discovery] Token profiles error: {exc}")
+
+        # 3. Fallback: Search top popular meme queries
+        if len(tokens) < limit:
+            fallback_memes = await self._search_meme_queries(limit - len(tokens), exclude=seen)
+            tokens.extend(fallback_memes)
+
+        if tokens:
+            return tokens[:limit]
+
+        cached = self.list_cache.get("trending")
+        return cached[0][:limit] if cached else []
 
     # ─────────────────────────────────────────────
-    # Graduated — Base tokens with solid liquidity (analogous to pump.fun grads)
+    # Top Memes (formerly Graduated) — high-volume meme tokens with solid liquidity
     # ─────────────────────────────────────────────
     async def fetch_graduated_tokens(self, limit: int = 8) -> list[dict[str, Any]]:
         return await self._get_list("graduated", limit)
 
     async def _refresh_graduated(self, limit: int = 8) -> list[dict[str, Any]]:
-        """Base 'graduates': pairs with >$10k liquidity, sorted by volume."""
+        """Top Memes: High-volume meme tokens with rich logos and market stats."""
         try:
-            tokens = await self._search_base_pairs(limit, min_liquidity=_GRAD_MIN_LIQUIDITY)
-            return tokens
+            memes = await self._search_meme_queries(limit)
+            if memes:
+                return memes[:limit]
+            return await self._search_base_pairs(limit, min_liquidity=_GRAD_MIN_LIQUIDITY)
         except Exception as exc:
-            print(f"[Discovery] Graduated fetch error: {exc}")
+            print(f"[Discovery] Top Memes fetch error: {exc}")
             cached = self.list_cache.get("graduated")
             return cached[0][:limit] if cached else []
 
     # ─────────────────────────────────────────────
     # Shared helpers
     # ─────────────────────────────────────────────
+    async def _search_meme_queries(
+        self, limit: int, exclude: set[str] | None = None
+    ) -> list[dict[str, Any]]:
+        """Search top popular meme queries across Base & multichain DEXes."""
+        results: list[dict[str, Any]] = []
+        seen = set(exclude) if exclude else set()
+        queries = ["brett", "toshi", "virtual", "clanker", "pepe", "degen", "bonk", "wif", "spx", "aerodrome"]
+
+        for q in queries:
+            if len(results) >= limit:
+                break
+            try:
+                resp = await self._client.get("/latest/dex/search", params={"q": q})
+                if not resp.is_success:
+                    continue
+                pairs = (resp.json() or {}).get("pairs") or []
+                valid_pairs = [
+                    p for p in pairs
+                    if p.get("baseToken", {}).get("address")
+                    and p["baseToken"]["address"] not in seen
+                ]
+                if valid_pairs:
+                    best = max(
+                        valid_pairs,
+                        key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0),
+                    )
+                    addr = best["baseToken"]["address"]
+                    norm = _normalize_pair(best)
+                    if norm.get("symbol") and norm["symbol"] != "BASE":
+                        seen.add(addr)
+                        results.append(norm)
+            except Exception:
+                continue
+
+        results.sort(key=lambda t: t.get("volume24h", 0.0), reverse=True)
+        return results
+
+    async def _fetch_single_token_pair(
+        self, address: str, fallback_icon: str | None = None
+    ) -> dict[str, Any] | None:
+        """Fetch best trading pair for a given token address."""
+        try:
+            resp = await self._client.get(f"/latest/dex/tokens/{address}")
+            if resp.is_success:
+                pairs = (resp.json() or {}).get("pairs") or []
+                if pairs:
+                    best = max(
+                        pairs,
+                        key=lambda p: float((p.get("liquidity") or {}).get("usd") or 0),
+                    )
+                    return _normalize_pair(best, fallback_icon=fallback_icon)
+        except Exception:
+            pass
+        return None
+
     async def _search_base_pairs(
         self, limit: int, min_liquidity: float = 0
     ) -> list[dict[str, Any]]:
         """Search DexScreener for active Base chain pairs, sorted by volume."""
-        resp = await self._client.get(
-            "/latest/dex/search",
-            params={"q": "base"},
-        )
-        resp.raise_for_status()
-        pairs = (resp.json() or {}).get("pairs") or []
-        base_pairs = [
-            p for p in pairs
-            if p.get("chainId") == "base"
-            and p.get("baseToken", {}).get("address")
-            and float((p.get("liquidity") or {}).get("usd") or 0) >= min_liquidity
-        ]
-        # Sort by 24h volume descending
-        base_pairs.sort(
-            key=lambda p: float((p.get("volume") or {}).get("h24") or 0),
-            reverse=True,
-        )
-        result = [_normalize_pair(p) for p in base_pairs[:limit]]
-        return result
+        return await self._search_meme_queries(limit)
 
     async def _batch_fetch_pairs(self, addresses: list[str]) -> list[dict[str, Any]]:
         """Fetch pair details for multiple token addresses."""

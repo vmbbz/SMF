@@ -41,14 +41,14 @@ export class TrendingStrip {
 
       let nextTokens = Array.isArray(primaryTokens) ? primaryTokens : [];
 
-      // Graduates can legitimately be empty for stretches; don't leave the strip blank.
+      // Top Memes can legitimately be empty for stretches; don't leave the strip blank.
       if (this.isGraduatesOnly && nextTokens.length === 0) {
         const trendingFallback = await getSolscanTrending(12);
         if (Array.isArray(trendingFallback) && trendingFallback.length > 0) {
           nextTokens = trendingFallback;
-          this.fallbackNotice = 'NO BASE GRADS YET - SHOWING TRENDING';
+          this.fallbackNotice = 'TOP MEMES - SHOWING TRENDING';
         } else {
-          this.fallbackNotice = 'NO BASE GRADS YET';
+          this.fallbackNotice = 'TOP MEMES';
         }
       }
 
@@ -102,7 +102,7 @@ export class TrendingStrip {
         <button class="strip-info-btn" type="button" onclick="window.openHelpModal && window.openHelpModal()" title="Game Guide">?</button>
         <div class="strip-actions">
           <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn strip-mode-btn" type="button">
-            ${this.isGraduatesOnly ? 'ALL TRENDING' : 'BASE GRADS'}
+            ${this.isGraduatesOnly ? 'ALL TRENDING' : 'TOP MEMES'}
           </button>
         </div>
       </div>
@@ -334,7 +334,7 @@ export class TrendingStrip {
 
     // Update button text just in case
     const btn = this.container.querySelector('.toggle-btn');
-    if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'BASE GRADS';
+    if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'TOP MEMES';
 
     if (this.tokens.length === 0) {
       inner.innerHTML = `<span class="market-loading-text">Market feed unavailable - tap button to retry</span>`;
