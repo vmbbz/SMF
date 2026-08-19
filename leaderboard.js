@@ -18,25 +18,32 @@ export class LeaderboardManager {
 
   // Save new fight result
   saveFight(winner, loser, winnerToken, loserToken) {
-    const leaderboard = this.getLeaderboard();
-    
-    // Add or update player stats
-    const updatePlayer = (token, isWinner) => {
-      const existingEntry = leaderboard.find(entry => entry.token === token);
+    try {
+      const leaderboard = this.getLeaderboard();
       
-      if (existingEntry) {
-        existingEntry.wins += isWinner ? 1 : 0;
-        existingEntry.losses += isWinner ? 0 : 1;
-        existingEntry.rating += isWinner ? 25 : -25;
-      } else {
-        leaderboard.push({
-          token,
-          wins: isWinner ? 1 : 0,
-          losses: isWinner ? 0 : 1,
-          rating: isWinner ? 1200 : 800,
-          lastFight: new Date().toISOString()
-        });
-      }
+      // Add or update player stats
+      const updatePlayer = (token, isWinner) => {
+        if (!token) return;
+        const existingEntry = leaderboard.find(entry => entry.token === token);
+        
+        if (existingEntry) {
+          existingEntry.wins += isWinner ? 1 : 0;
+          existingEntry.losses += isWinner ? 0 : 1;
+          existingEntry.rating += isWinner ? 25 : -25;
+          existingEntry.lastFight = new Date().toISOString();
+        } else {
+          leaderboard.push({
+            token,
+            wins: isWinner ? 1 : 0,
+            losses: isWinner ? 0 : 1,
+            rating: isWinner ? 1200 : 800,
+            lastFight: new Date().toISOString()
+          });
+        }
+      };
+
+      updatePlayer(winnerToken, true);
+      updatePlayer(loserToken, false);
 
       // Sort by rating (highest first) and keep top 10
       leaderboard.sort((a, b) => b.rating - a.rating);
@@ -49,7 +56,7 @@ export class LeaderboardManager {
     } catch (e) {
       console.error('Failed to save leaderboard:', e);
       return [];
-    };
+    }
   }
 
   // Get top 10 players
