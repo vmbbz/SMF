@@ -26,7 +26,13 @@ function getCachedTrendingTokens() {
     const payload = JSON.parse(localStorage.getItem(TRENDING_CACHE_KEY) || 'null');
     if (!payload || !Array.isArray(payload.tokens)) return [];
     if (Date.now() - Number(payload.timestamp || 0) > TRENDING_CACHE_TTL) return [];
-    return payload.tokens;
+    const tokens = payload.tokens;
+    // Invalidate old static cache if it contains dummy symbols or 0.0% placeholders
+    if (tokens.some(t => t.symbol === 'BASE' || (t.priceChange24h === 0 && (t.symbol === 'BRETT' || t.symbol === 'TOSHI')))) {
+      localStorage.removeItem(TRENDING_CACHE_KEY);
+      return [];
+    }
+    return tokens;
   } catch {
     return [];
   }
@@ -82,56 +88,20 @@ function buildFallbackTokenFromMint(mint) {
   };
 }
 
-async function fetchBaseTrendingFromDexscreener(count = 8) {
+async function getTrendingTokens(count = 12) {
   try {
-    const res = await fetch('https://api.dexscreener.com/latest/dex/search?q=base');
-    if (!res.ok) return [];
-    const data = await res.json();
-    const pairs = data?.pairs || [];
-    const basePairs = pairs.filter(p => p.chainId === 'base' && p.baseToken?.address);
-    
-    return basePairs.slice(0, count).map(p => ({
-      mint: p.baseToken.address,
-      address: p.baseToken.address,
-      symbol: p.baseToken.symbol || 'BASE',
-      name: p.baseToken.name || p.baseToken.symbol || 'Base Token',
-      logoURI: p.info?.imageUrl || 'assets/base-logo.png',
-      chainId: 'base',
-      marketCap: p.marketCap || p.fdv || 0,
-      volume24h: p.volume?.h24 || 0,
-      priceChange24h: p.priceChange?.h24 || 0,
-      liquidity: p.liquidity?.usd || 0,
-      price: p.priceUsd || 0,
-      holders: 'N/A',
-      dexscreenerUrl: p.url || `https://dexscreener.com/base/${p.baseToken.address}`,
-    }));
-  } catch (e) {
-    console.error('Dexscreener Base trending fetch error:', e);
-    return [];
-  }
-}
-
-async function getTrendingTokens(count = 8) {
-  try {
-    // Primary: Fetch Base ecosystem trending tokens
-    const baseTrending = await fetchBaseTrendingFromDexscreener(count);
-    if (Array.isArray(baseTrending) && baseTrending.length > 0) {
-      setCachedTrendingTokens(baseTrending);
-      return baseTrending;
-    }
-
-    // Secondary fallback: Solscan trending
+    // Primary: Fetch live trending market feed from backend server API
     const primary = await getSolscanTrending(count);
     if (Array.isArray(primary) && primary.length > 0) {
       setCachedTrendingTokens(primary);
       return primary;
     }
 
-    // Tertiary fallback: PumpFun grads
-    const grads = await getPumpFunGraduates(count);
-    if (Array.isArray(grads) && grads.length > 0) {
-      setCachedTrendingTokens(grads);
-      return grads;
+    // Secondary: Top Memes from backend server API
+    const memes = await getPumpFunGraduates(count);
+    if (Array.isArray(memes) && memes.length > 0) {
+      setCachedTrendingTokens(memes);
+      return memes;
     }
 
     // Last resort: Return cached feed

@@ -61,6 +61,10 @@ export class TrendingStrip {
         let cached = null;
         try {
           cached = JSON.parse(localStorage.getItem(this.cacheKey) || 'null');
+          if (cached && Array.isArray(cached.tokens) && cached.tokens.some(t => t.symbol === 'BASE' || (t.priceChange24h === 0 && (t.symbol === 'BRETT' || t.symbol === 'TOSHI')))) {
+            localStorage.removeItem(this.cacheKey);
+            cached = null;
+          }
         } catch (_) {}
         if (cached && Array.isArray(cached.tokens) && cached.tokens.length > 0) {
           this.tokens = cached.tokens;
@@ -74,6 +78,10 @@ export class TrendingStrip {
       let cached = null;
       try {
         cached = JSON.parse(localStorage.getItem(this.cacheKey) || 'null');
+        if (cached && Array.isArray(cached.tokens) && cached.tokens.some(t => t.symbol === 'BASE' || (t.priceChange24h === 0 && (t.symbol === 'BRETT' || t.symbol === 'TOSHI')))) {
+          localStorage.removeItem(this.cacheKey);
+          cached = null;
+        }
       } catch (_) {}
       if (cached && Array.isArray(cached.tokens) && cached.tokens.length > 0) {
         this.tokens = cached.tokens;
