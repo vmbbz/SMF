@@ -339,7 +339,7 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                     socket_connect_timeout=5.0
                 ))
                 # Test connection
-                await redis_pool.ping()
+                await redis_pool.ping()  # type: ignore[misc]
                 print("[redis] Connected successfully")
             except Exception as e:
                 print(f"[redis] Connection failed: {e}. Falling back to in-memory mode.")
