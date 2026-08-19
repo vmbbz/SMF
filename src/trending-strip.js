@@ -9,7 +9,7 @@ export class TrendingStrip {
     this.refreshTimer = null;
     this.loading = false;
     this.fallbackNotice = '';
-    this.cacheKey = `smf_trending_cache_${containerId}`;
+    this.cacheKey = `bmf_trending_cache_${containerId}`;
   }
 
   async init() {
@@ -45,9 +45,9 @@ export class TrendingStrip {
         const trendingFallback = await getSolscanTrending(12);
         if (Array.isArray(trendingFallback) && trendingFallback.length > 0) {
           nextTokens = trendingFallback;
-          this.fallbackNotice = 'NO NEW GRADS - SHOWING TRENDING';
+          this.fallbackNotice = 'NO BASE GRADS YET - SHOWING TRENDING';
         } else {
-          this.fallbackNotice = 'NO NEW GRADS YET';
+          this.fallbackNotice = 'NO BASE GRADS YET';
         }
       }
 
@@ -101,7 +101,7 @@ export class TrendingStrip {
         <button class="strip-info-btn" type="button" onclick="window.openHelpModal && window.openHelpModal()" title="Game Guide">?</button>
         <div class="strip-actions">
           <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn strip-mode-btn" type="button">
-            ${this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS'}
+            ${this.isGraduatesOnly ? 'ALL TRENDING' : 'BASE GRADS'}
           </button>
         </div>
       </div>
@@ -157,7 +157,7 @@ export class TrendingStrip {
           width: 24px;
           height: 24px;
           border-radius: 50%;
-          border: 1px solid rgba(255, 0, 255, 0.75);
+          border: 1px solid rgba(0, 100, 255, 0.75);
           background: rgba(0, 0, 0, 0.62);
           color: #fff;
           cursor: pointer;
@@ -168,7 +168,7 @@ export class TrendingStrip {
           font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
           font-size: 9px;
           line-height: 1;
-          box-shadow: 0 0 9px rgba(255, 0, 255, 0.48);
+          box-shadow: 0 0 9px rgba(0, 100, 255, 0.48);
           transition: transform 0.15s ease, border-color 0.15s ease;
         }
         .strip-info-btn:hover {
@@ -185,9 +185,9 @@ export class TrendingStrip {
         .strip-mode-btn {
           height: 24px;
           max-width: 148px;
-          border: 1px solid rgba(255, 0, 255, 0.72);
+          border: 1px solid rgba(0, 100, 255, 0.72);
           border-radius: 999px;
-          background: linear-gradient(135deg, rgba(255, 0, 255, 0.95), rgba(0, 212, 255, 0.88));
+          background: linear-gradient(135deg, rgba(0, 80, 255, 0.95), rgba(0, 200, 255, 0.88));
           color: #050505;
           cursor: pointer;
           display: inline-flex;
@@ -201,7 +201,7 @@ export class TrendingStrip {
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          box-shadow: 0 0 12px rgba(255, 0, 255, 0.28);
+          box-shadow: 0 0 12px rgba(0, 100, 255, 0.28);
         }
         .marquee-container {
           overflow: hidden;
@@ -333,7 +333,7 @@ export class TrendingStrip {
 
     // Update button text just in case
     const btn = this.container.querySelector('.toggle-btn');
-    if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS';
+    if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'BASE GRADS';
 
     if (this.tokens.length === 0) {
       inner.innerHTML = `<span class="market-loading-text">Market feed unavailable - tap button to retry</span>`;
