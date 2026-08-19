@@ -1,7 +1,7 @@
 {
-  "name": "smf-karate",
+  "name": "memefight-karate",
   "version": "1.0.0",
-  "description": "Solana Meme Fighter - Beat trending tokens with karate moves",
+  "description": "MemeFight - Beat trending tokens with karate moves",
   "main": "index.html",
   "scripts": {
     "build": "npm run build",

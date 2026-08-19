@@ -1,7 +1,7 @@
 // Simple persistent leaderboard for Phase 3
 export class LeaderboardManager {
   constructor() {
-    this.STORAGE_KEY = 'smf_leaderboard';
+    this.STORAGE_KEY = 'bmf_leaderboard';
     this.MAX_ENTRIES = 10;
   }
 

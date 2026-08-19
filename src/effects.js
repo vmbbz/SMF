@@ -8,6 +8,7 @@ export class Effects {
     this.weatherParticles = [];
     this._initWeather();
   }
+<<<<<<< HEAD
 
   toggleWeather() {
     this.currentWeather = (this.currentWeather + 1) % this.weatherModes.length;
@@ -83,6 +84,10 @@ export class Effects {
   }
 
   addHitParticles(x, y, color = '#ff00ff', count = 25) {
+=======
+  
+  addHitParticles(x, y, color = '#0000FF', count = 25) {
+>>>>>>> 0c024be (feat: rebrand to MemeFight () and update theme to Base blockchain blue (#0000FF))
     for (let i = 0; i < count; i++) {
       this.particles.push({
         x, y,

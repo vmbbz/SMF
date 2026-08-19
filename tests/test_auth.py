@@ -670,4 +670,8 @@ class TestMultiplayerRoute:
             resp = client.get("/multiplayer")
             assert resp.status_code == 200
             assert "text/html" in resp.headers["content-type"]
+<<<<<<< HEAD
             assert "$SMF-STICKLASH" in resp.text
+=======
+            assert "MemeFight" in resp.text
+>>>>>>> 0c024be (feat: rebrand to MemeFight () and update theme to Base blockchain blue (#0000FF))

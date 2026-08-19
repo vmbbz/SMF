@@ -239,7 +239,11 @@ def test_index_returns_html() -> None:
         resp = client.get("/")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
+<<<<<<< HEAD
         assert "$SMF-STICKLASH" in resp.text
+=======
+        assert "MemeFight" in resp.text
+>>>>>>> 0c024be (feat: rebrand to MemeFight () and update theme to Base blockchain blue (#0000FF))
 
 
 def test_room_route_returns_html() -> None:
@@ -247,7 +251,11 @@ def test_room_route_returns_html() -> None:
         resp = client.get("/room/red-tiger-paw")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
+<<<<<<< HEAD
         assert "$SMF-STICKLASH" in resp.text
+=======
+        assert "MemeFight" in resp.text
+>>>>>>> 0c024be (feat: rebrand to MemeFight () and update theme to Base blockchain blue (#0000FF))
 
 
 def test_room_route_single_word() -> None:

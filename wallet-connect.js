@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 // wallet-connect.js
 // Redesigned User Profile, 100% Mock-Free Solana Wallet, & Premium Boost Store Modal
 import { tokenDetailsPath } from './src/api-endpoints.js';
@@ -656,6 +657,25 @@ export async function showWalletConnect(options = {}) {
         <div id="tx-spinner" class="tx-fire-glow" style="font-size: 40px; margin-bottom: 20px;">⚡</div>
         <h4 id="tx-title" style="color: var(--neon-green); font-size: 14px; margin-bottom: 15px; letter-spacing: 1px;">SOLANA TRANSACTION</h4>
         <div id="tx-status-step" style="font-size: 11px; line-height: 1.8; color: #ccc;">Initialising secure link...</div>
+=======
+// Wallet connect stub for Phase 3
+export function showWalletConnect() {
+  const statusDiv = document.getElementById('status');
+  
+  if (statusDiv) {
+    statusDiv.innerHTML = `
+      <div style="background: rgba(0,255,0,0.1); padding: 15px; border-radius: 12px; color: white; font-family: sans-serif;">
+        <h3>🔗 Connect Wallet for Power-Ups</h3>
+        <p style="margin: 10px 0;">Stake $BMF tokens to unlock special abilities!</p>
+        <div style="background: rgba(255,255,255,0.1); padding: 10px; border-radius: 8px; margin: 10px 0;">
+          <p style="color: #ccc; font-size: 12px;">📱 Wallet connection coming soon...</p>
+          <p style="color: #ccc;">This will connect to Phantom/Backpack</p>
+          <p style="color: #ccc;">Stake $BMF for temporary power-ups</p>
+        </div>
+        <button onclick="hideWalletConnect()" style="margin-top: 10px; background: #13ef95; color: white; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer;">
+          Close
+        </button>
+>>>>>>> 0c024be (feat: rebrand to MemeFight () and update theme to Base blockchain blue (#0000FF))
       </div>
     `;
     document.body.appendChild(txOverlay);
