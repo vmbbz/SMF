@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from pathlib import Path
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict, Optional, cast
 from urllib.parse import urlparse, parse_qs, urlencode
 from birdeye_service import birdeye_service
 from dexscreener_service import dexscreener_service
@@ -330,14 +330,14 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                 if redis_url.startswith("redis://") and "upstash" in redis_url:
                     redis_url = redis_url.replace("redis://", "rediss://", 1)
                 
-                redis_pool = aioredis.from_url(
+                # cast() is a zero-cost type hint — tells the checker this is Redis, not bool.
+                # aioredis.from_url() stubs have an overload resolution bug with decode_responses=True.
+                redis_pool = cast(aioredis.Redis, aioredis.from_url(  # type: ignore[type-arg]
                     redis_url,
                     decode_responses=True,
                     socket_timeout=5.0,
                     socket_connect_timeout=5.0
-                )
-                # Explicitly type-narrow: from_url returns Redis, not bool
-                assert not isinstance(redis_pool, bool)
+                ))
                 # Test connection
                 await redis_pool.ping()
                 print("[redis] Connected successfully")
