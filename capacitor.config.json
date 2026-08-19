@@ -1,6 +1,6 @@
 {
   "appId": "com.solanamemefighter.app",
-  "appName": "SMF Karate",
+  "appName": "MemeFight",
   "webDir": "www",
   "server": {
     "androidScheme": "https"
@@ -9,11 +9,11 @@
     "SplashScreen": {
       "launchShowDuration": 2000,
       "launchAutoHide": true,
-      "backgroundColor": "#ffffff",
+      "backgroundColor": "#0000FF",
       "androidScaleType": "FIT_CENTER",
       "showSpinner": false,
       "spinnerStyle": "large",
-      "spinnerColor": "#13ef95"
+      "spinnerColor": "#00A3FF"
     }
   }
 }

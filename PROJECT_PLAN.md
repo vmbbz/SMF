@@ -1,13 +1,7 @@
-<<<<<<< HEAD
-# Solana Meme Battle ($SMF) - Official Project Plan
+# MemeFight ($BMF) - Official Project Plan
 
 ## 🥊 The Vision
-**Solana Meme Battle ($SMF)** is a high-fidelity, viral-ready stickman fighting game where the Solana meme ecosystem comes to life as playable fighters. By integrating real-time market data from Dexscreener and Pump.fun, $SMF transforms price charts into interactive combat.
-=======
-# MemeFight ($BMF) - Project Plan
-
-## Project Overview
-**Title**: MemeFight ($BMF)  
+**MemeFight ($BMF)** is a high-fidelity, viral-ready stickman fighting game where meme tokens come to life as playable fighters. By integrating real-time market data, MemeFight transforms price charts into interactive combat.
 **Phase**: Rebrand & Base Blockchain Blue Integration  
 **Goal**: Build a Web3 gamified application featuring stickman karate mechanics with meme token integration
 

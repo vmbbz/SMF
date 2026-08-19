@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 // wallet-connect.js
 // Redesigned User Profile, 100% Mock-Free Solana Wallet, & Premium Boost Store Modal
 import { tokenDetailsPath } from './src/api-endpoints.js';

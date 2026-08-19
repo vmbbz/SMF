@@ -8,7 +8,6 @@ export class Effects {
     this.weatherParticles = [];
     this._initWeather();
   }
-<<<<<<< HEAD
 
   toggleWeather() {
     this.currentWeather = (this.currentWeather + 1) % this.weatherModes.length;

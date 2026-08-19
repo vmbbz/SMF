@@ -41,40 +41,84 @@ function setCachedTrendingTokens(tokens) {
   } catch {}
 }
 
+export function isEvmAddress(address) {
+  return /^0x[a-fA-F0-9]{40}$/.test(String(address || '').trim());
+}
+
 function buildFallbackTokenFromMint(mint) {
   const raw = String(mint || '').trim();
-  const short = raw.length >= 6 ? raw.slice(0, 6).toUpperCase() : 'MEME';
+  const isEvm = isEvmAddress(raw);
+  const short = isEvm ? `${raw.slice(0, 6)}...${raw.slice(-4)}` : (raw.length >= 6 ? raw.slice(0, 6).toUpperCase() : 'MEME');
   return {
     mint: raw,
-    symbol: short,
-    name: `Token ${short}`,
+    address: raw,
+    symbol: isEvm ? 'BASE' : short,
+    name: isEvm ? `Base Token (${short})` : `Token ${short}`,
     logoURI: 'assets/smf-logo.png',
+    chainId: isEvm ? 'base' : 'solana',
     marketCap: 0,
     volume24h: 0,
     priceChange24h: 0,
     liquidity: 0,
     price: 0,
     holders: 'N/A',
-    dexscreenerUrl: raw ? `https://dexscreener.com/solana/${raw}` : '',
+    dexscreenerUrl: raw ? (isEvm ? `https://dexscreener.com/base/${raw}` : `https://dexscreener.com/solana/${raw}`) : '',
   };
+}
+
+async function fetchBaseTrendingFromDexscreener(count = 8) {
+  try {
+    const res = await fetch('https://api.dexscreener.com/latest/dex/search?q=base');
+    if (!res.ok) return [];
+    const data = await res.json();
+    const pairs = data?.pairs || [];
+    const basePairs = pairs.filter(p => p.chainId === 'base' && p.baseToken?.address);
+    
+    return basePairs.slice(0, count).map(p => ({
+      mint: p.baseToken.address,
+      address: p.baseToken.address,
+      symbol: p.baseToken.symbol || 'BASE',
+      name: p.baseToken.name || p.baseToken.symbol || 'Base Token',
+      logoURI: p.info?.imageUrl || 'assets/smf-logo.png',
+      chainId: 'base',
+      marketCap: p.marketCap || p.fdv || 0,
+      volume24h: p.volume?.h24 || 0,
+      priceChange24h: p.priceChange?.h24 || 0,
+      liquidity: p.liquidity?.usd || 0,
+      price: p.priceUsd || 0,
+      holders: 'N/A',
+      dexscreenerUrl: p.url || `https://dexscreener.com/base/${p.baseToken.address}`,
+    }));
+  } catch (e) {
+    console.error('Dexscreener Base trending fetch error:', e);
+    return [];
+  }
 }
 
 async function getTrendingTokens(count = 8) {
   try {
+    // Primary: Fetch Base ecosystem trending tokens
+    const baseTrending = await fetchBaseTrendingFromDexscreener(count);
+    if (Array.isArray(baseTrending) && baseTrending.length > 0) {
+      setCachedTrendingTokens(baseTrending);
+      return baseTrending;
+    }
+
+    // Secondary fallback: Solscan trending
     const primary = await getSolscanTrending(count);
     if (Array.isArray(primary) && primary.length > 0) {
       setCachedTrendingTokens(primary);
       return primary;
     }
 
-    // If trending is empty/rate-limited, fall back to grads.
+    // Tertiary fallback: PumpFun grads
     const grads = await getPumpFunGraduates(count);
     if (Array.isArray(grads) && grads.length > 0) {
       setCachedTrendingTokens(grads);
       return grads;
     }
 
-    // Last resort: return recent cached feed so gameplay can still start.
+    // Last resort: Return cached feed
     return getCachedTrendingTokens().slice(0, count);
   } catch (e) {
     console.error("Trending fetch failed:", e);
@@ -98,10 +142,39 @@ async function getTokenByMint(mint) {
     ]);
 
     if (!data || !data.mint) {
-      // If details endpoint blips, salvage from cached/live list by mint match.
       const inMemoryCandidates = getCachedTrendingTokens();
-      const matched = inMemoryCandidates.find(t => String(t?.mint || '') === cleanMint);
+      const matched = inMemoryCandidates.find(t => String(t?.mint || t?.address || '').toLowerCase() === cleanMint.toLowerCase());
       if (matched) data = matched;
+    }
+
+    if (!data || !data.mint) {
+      // Direct Dexscreener API lookup for Base / EVM address
+      try {
+        const dexRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${cleanMint}`);
+        if (dexRes.ok) {
+          const dexData = await dexRes.json();
+          const pair = dexData?.pairs?.[0];
+          if (pair) {
+            data = {
+              mint: cleanMint,
+              address: cleanMint,
+              symbol: pair.baseToken?.symbol || 'BASE',
+              name: pair.baseToken?.name || 'Base Token',
+              logoURI: pair.info?.imageUrl || 'assets/smf-logo.png',
+              chainId: pair.chainId || (isEvmAddress(cleanMint) ? 'base' : 'solana'),
+              marketCap: pair.marketCap || pair.fdv || 0,
+              volume24h: pair.volume?.h24 || 0,
+              priceChange24h: pair.priceChange?.h24 || 0,
+              liquidity: pair.liquidity?.usd || 0,
+              price: pair.priceUsd || 0,
+              holders: 'N/A',
+              dexscreenerUrl: pair.url || `https://dexscreener.com/base/${cleanMint}`,
+            };
+          }
+        }
+      } catch (e) {
+        console.error('Dexscreener direct token lookup failed:', e);
+      }
     }
 
     if (!data || !data.mint) {
@@ -116,7 +189,6 @@ async function getTokenByMint(mint) {
   }
 }
 
-// Simple personality generator (we can make it smarter later)
 function generatePersonality(token) {
   if (!token) {
     return {
@@ -133,19 +205,19 @@ function generatePersonality(token) {
   }
   const vibe = (token.symbol || 'MEME').toLowerCase();
   if (vibe.includes('pepe') || vibe.includes('frog')) {
-    return { name: 'Cocky Frog Lord', pitch: 0.8, rate: 1.1, taunts: ['Ribbit your way to shadow realm!', 'My chart pumps harder than your kicks!'] };
+    return { name: 'Cocky Frog Lord', pitch: 0.8, rate: 1.1, taunts: ['Ribbit your way to shadow realm!', 'My Base chart pumps harder than your kicks!'] };
   }
   if (vibe.includes('fart') || vibe.includes('gas')) {
-    return { name: 'Gasbag Supreme', pitch: 1.3, rate: 0.9, taunts: ['You just got FARTED on!', 'Smell the victory!'] };
+    return { name: 'Gasbag Supreme', pitch: 1.3, rate: 0.9, taunts: ['You just got FARTED on!', 'Smell the Base gas victory!'] };
   }
   return { 
-    name: 'Degen Warrior', 
+    name: 'Base Degen Warrior', 
     pitch: 1.0, 
     rate: 1.0, 
     taunts: [
-      `You think you can beat ${token.symbol || 'me'}? My liquidity is thicker than your portfolio!`,
+      `You think you can beat ${token.symbol || 'me'} on Base? My liquidity is thicker than your portfolio!`,
       'PUMP IT OR DUMP IT — either way you\'re getting KO\'d!',
-      `I just 100x\'d while you were loading this fight 😂`
+      `I just 100x\'d on Base while you were loading this fight 😂`
     ]
   };
 }

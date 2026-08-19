@@ -1,10 +1,8 @@
-// Capacitor configuration for Phase 3 Android APK
-import { CapacitorConfig } from '@capacitor/cli';
-
-const config: CapacitorConfig = {
-  appId: 'com.memefight.app',
+// Capacitor configuration for MemeFight Android APK
+const config = {
+  appId: 'com.solanamemefighter.app',
   appName: 'MemeFight',
-  webDir: 'public',
+  webDir: 'www',
   server: {
     androidScheme: 'https'
   },
@@ -12,7 +10,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 2000,
       launchAutoHide: true,
-      backgroundColor: '#13ef95',
+      backgroundColor: '#0000FF',
       showSpinner: false,
       spinnerStyle: 'large',
       spinnerColor: '#ffffff'
