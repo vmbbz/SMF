@@ -11,6 +11,7 @@ RUN uv sync --frozen --no-dev
 
 # Copy application
 COPY server.py .
+COPY arena_director.py .
 COPY auth.py .
 COPY birdeye_service.py .
 COPY dexscreener_service.py .

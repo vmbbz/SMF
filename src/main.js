@@ -14,6 +14,7 @@ import { PredictionManager } from './prediction.js';
 import { generatePersonality, getTokenByMint } from './token-utils.js';
 import { StageMusicManager } from './stage-music.js';
 import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
+import { announceArenaDirectorDecision, fetchArenaDirectorDecision } from './arena-director-client.js';
 import { getTokenCoverSource, getTokenImageSource, loadGameImage } from './image-utils.js';
 
 window.generatePersonality = generatePersonality;
@@ -3954,13 +3955,25 @@ window.nextFight = async function() {
   if (overlay) overlay.classList.add('hidden');
 
   let nextToken = null;
+  let directorDecision = null;
+  const currentMint = game?.p2?.tokenData?.mint || window.currentGame?.p2?.tokenData?.mint || '';
 
-  // Priority 1: pumpQueue from endless-mode launcher
-  if (window.pumpQueue && window.pumpQueue.length > 0) {
+  // Priority 1: the autonomous Arena Director selects and explains the next opponent.
+  try {
+    directorDecision = await fetchArenaDirectorDecision(currentMint, 12);
+    if (directorDecision?.opponent) {
+      nextToken = directorDecision.opponent;
+    }
+  } catch (error) {
+    console.warn('[ArenaDirector] Decision unavailable, using local market fallback:', error);
+  }
+
+  // Priority 2: pumpQueue from endless-mode launcher.
+  if (!nextToken && window.pumpQueue && window.pumpQueue.length > 0) {
     nextToken = window.pumpQueue.shift();
   }
 
-  // Priority 2: rotate through trending strip list
+  // Priority 3: rotate through the locally cached trending strip.
   if (!nextToken) {
     let tokens = [];
     if (window.fightTrendingStrip?.tokens?.length > 0) {
@@ -3970,7 +3983,7 @@ window.nextFight = async function() {
     }
     if (tokens.length > 0) {
       let nextIndex = 0;
-      const curMint = game?.p2?.tokenData?.mint || window.currentGame?.p2?.tokenData?.mint;
+      const curMint = currentMint;
       if (curMint) {
         const idx = tokens.findIndex(t => t.mint === curMint);
         if (idx !== -1) nextIndex = (idx + 1) % tokens.length;
@@ -3979,7 +3992,7 @@ window.nextFight = async function() {
     }
   }
 
-  // Priority 3: fetch fresh trending as last resort
+  // Priority 4: fetch fresh trending as a last resort.
   if (!nextToken) {
     try {
       const fresh = await fetchApiJson([
@@ -4002,6 +4015,7 @@ window.nextFight = async function() {
   }
 
   await window.resetAndFight(nextToken);
+  announceArenaDirectorDecision(directorDecision);
 };
 
 // ─────────────────────────────────────────────

@@ -35,7 +35,13 @@ Release notes:
 
 STICKLASH is a 2D stickman fighting game where **Pump.fun / Solana meme tokens are your AI opponents**. Token market metrics — 24h volume, price change, liquidity — are pulled live and directly translate into in-game power stats. A token that just pumped 2× hits harder, moves faster, and has more health. One that's bleeding out on DexScreener is a pushover.
 
-Built with vanilla Canvas2D, a custom combat engine, and a FastAPI/Python backend for live Birdeye data.
+Built with vanilla Canvas2D, a custom combat engine, and a Litestar/Python backend for live market data.
+
+### Autonomous Arena Director
+
+The server-side **StickLash Arena Director** merges live trending and graduated-token candidates, scores them using volume, volatility, liquidity, and discovery signals, and selects the next opponent for Trending and Endless modes. Each decision includes a deterministic decision ID, policy version, ranked candidates, reason codes, and provider errors so the autonomous choice can be explained and audited. If the director is unavailable, gameplay falls back to the existing local market queue.
+
+See [AnsemHack Readiness](ANSEMHACK_READINESS.md) for the verified competition scope, architecture, acceptance criteria, and rollout boundaries.
 
 ---
 
@@ -59,7 +65,7 @@ The STICKLASH backend and infrastructure are powered by standard-setting Web3 an
 | **Upstash** | Serverless Redis | Multi-region WebRTC signaling, matchmaking queue, & active room lobby storage | `![Upstash](https://img.shields.io/badge/Upstash-Serverless--Redis-FF4F00?style=flat-square&logo=redis&logoColor=white)` |
 | **Deepgram** | Aura 2 Zeus & Flux v2 | Dynamic 24kHz Zeus voice lines, WebSocket speech capture, & AI-fighter command pipeline | `![Deepgram](https://img.shields.io/badge/Deepgram-Aura--Zeus-13EF95?style=flat-square&logo=deepgram&logoColor=black)` |
 | **Solana Web3** | On-Chain SPL Program | Phantom/Backpack/Solflare wallet pairing, decimal lookups, & SPL token burn transactions | `![Solana](https://img.shields.io/badge/Solana-SPL--Token-9945FF?style=flat-square&logo=solana&logoColor=white)` |
-| **Alchemy** | Solana Node API + Streaming | Mainnet RPC reliability for wallet balance reads, boost burn transaction broadcast/simulation, and low-latency subscription infrastructure (WebSockets / gRPC path) | `![Alchemy](https://img.shields.io/badge/Alchemy-Solana--RPC-1FC7D4?style=flat-square&logo=alchemy&logoColor=white)` |
+| **Alchemy** | Solana Node API | Optional private mainnet RPC for server-side wallet balance reads and boost-burn transaction verification; a bounded Yellowstone stream adapter is planned but is not a runtime dependency yet | `![Alchemy](https://img.shields.io/badge/Alchemy-Solana--RPC-1FC7D4?style=flat-square&logo=alchemy&logoColor=white)` |
 | **Twitter / X** | Web Intent API | Zero-auth viral gameplay sharing, automated screenshot capture matching, & ELO brag links | `![Twitter](https://img.shields.io/badge/Twitter/X-Viral--Share-000000?style=flat-square&logo=x&logoColor=white)` |
 | **Birdeye** | DeFi Market API | Live on-chain price data, market cap scaling, & pump.fun graduated feeds | `![Birdeye](https://img.shields.io/badge/Birdeye-DeFi--Data-00C2FF?style=flat-square&logo=coinmarketcap&logoColor=white)` |
 | **Supabase** | PostgreSQL | Persistent multi-player ELO rating records, match stats, & active leaderboard graphs | `![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase&logoColor=white)` |
@@ -69,14 +75,14 @@ The STICKLASH backend and infrastructure are powered by standard-setting Web3 an
 
 ## 🏗️ Backend Architecture & Caching Pipeline
 
-STICKLASH utilizes a dual FastAPI / Litestar Python engine designed to balance heavy real-time Web3 queries, multiplayer WebRTC signaling, and low-latency voice streams with high efficiency:
+STICKLASH uses a Litestar Python backend to balance real-time Web3 queries, multiplayer WebRTC signaling, agent decisions, and low-latency voice streams:
 
 ```
                                   [ STICKLASH Frontend ]
                                      /       |        \
                        WebRTC Signals  Voice STT  Token Data
                                  /           |          \
-                 (Upstash Redis)       (Deepgram)     [ FastAPI Server ]
+                 (Upstash Redis)       (Deepgram)     [ Litestar Server ]
                         |                    |           /           \
                  [Signaling Mgr]      [Flux v2 STT] [Birdeye]     [PostgreSQL]
                         |                    |      (Proportional) (Supabase ELO)
@@ -234,9 +240,12 @@ When the currently-fought token's price pumps **during your fight**, timed boost
 ```
 stick-fighter/
 ├── index.html              # Main shell — game canvas, UI panels, mobile joystick, scripts
-├── birdeye_service.py      # FastAPI backend — Birdeye API proxy, caching, trending/price endpoints
+├── server.py               # Litestar routes, wallet verification, multiplayer, voice, and static app
+├── arena_director.py       # Explainable autonomous market-opponent policy
+├── birdeye_service.py      # Birdeye discovery-list proxy and caching
 ├── src/
 │   ├── main.js             # Orchestration layer — game lifecycle, loadOpponent, resetAndFight, nextFight
+│   ├── arena-director-client.js # Director API client, UI announcement, decision event
 │   ├── game.js             # Core combat engine — RAF loop, hitbox, projectiles, round management
 │   ├── fighter.js          # Fighter class — animations, move execution, applyMarketStats
 │   ├── input.js            # InputManager — adapter pattern, merges keyboard/joystick/voice/LLM actions
@@ -267,9 +276,10 @@ stick-fighter/
 |---|---|---|
 | `window.loadOpponent(token, forceRestart?)` | `main.js` | Load a token fighter into P2 |
 | `window.resetAndFight(token)` | `main.js` | Full teardown + fresh game start (the single source of truth for "next fight") |
-| `window.nextFight()` | `main.js` | Picks next token (pumpQueue → trending strip → API fallback) and calls resetAndFight |
+| `window.nextFight()` | `main.js` | Requests an Arena Director decision, then uses queue/strip/API fallbacks before resetAndFight |
 | `window.fightToken(mint)` | `index.html` | Fetches token by mint and calls loadOpponent |
-| `window.startEndlessMode()` | `index.html` | Loads 12 trending tokens into pumpQueue, sets endlessSession.active |
+| `window.startEndlessMode()` | `index.html` | Starts an Arena Director-selected opponent and enables automatic next fights |
+| `window.latestArenaDirectorDecision` | `arena-director-client.js` | Latest auditable market-agent decision shown by the active client |
 | `window.showVictoryOverlay(winnerNum, token, loserToken)` | `main.js` | Renders victory screen + session stats + countdown |
 | `window.endlessSession` | `main.js` | `{active, round, wins, losses, streak}` — session state for endless mode |
 | `window._cancelEndlessCountdown()` | `main.js` | Cancels 8s auto-advance timer |

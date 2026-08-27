@@ -2656,6 +2656,7 @@
     import { Effects } from './src/effects.js';
     import { getProfile, showWalletConnect, hideWalletConnect } from './wallet-connect.js';
     import { proxiedImageUrl } from './src/image-utils.js';
+    import { announceArenaDirectorDecision, fetchArenaDirectorDecision } from './src/arena-director-client.js';
 
     // Global exports
     window.getTrendingTokens = getTrendingTokens;
@@ -2705,17 +2706,27 @@
       if (status) status.innerHTML = 'Fetching trending tokens...';
 
       try {
-        const { getTrendingTokens } = await import('./src/token-utils.js');
-        const tokens = await getTrendingTokens(8);
-        if (!tokens || tokens.length === 0) throw new Error('No tokens found');
+        let decision = null;
+        let selectedToken = null;
+        try {
+          decision = await fetchArenaDirectorDecision('', 12);
+          selectedToken = decision?.opponent || null;
+        } catch (directorError) {
+          console.warn('[ArenaDirector] Opening decision unavailable:', directorError);
+        }
 
-        const randomToken = tokens[Math.floor(Math.random() * tokens.length)];
-        if (status) status.innerHTML = `Fighting <strong>$${randomToken.symbol}</strong>!`;
+        if (!selectedToken) {
+          const tokens = await getTrendingTokens(8);
+          if (!tokens || tokens.length === 0) throw new Error('No tokens found');
+          selectedToken = tokens[Math.floor(Math.random() * tokens.length)];
+        }
+        if (status) status.innerHTML = `Fighting <strong>$${selectedToken.symbol}</strong>!`;
 
         // Use unified global setter from main.js
         if (window.setGameMode) window.setGameMode(undefined, 4); // LLM Mode
 
-        await window.loadOpponent(randomToken);
+        await window.loadOpponent(selectedToken);
+        announceArenaDirectorDecision(decision);
       } catch (err) {
         console.error('Trending mode failed:', err);
         if (status) status.innerHTML = 'Failed to load tokens.';
@@ -2743,15 +2754,31 @@
         window.endlessSession.streak = 0;
       }
 
-      pumpQueue = await getTrendingTokens(12);
-      window.pumpQueue = pumpQueue; // expose globally for nextFight()
+      let decision = null;
+      let firstToken = null;
+      try {
+        decision = await fetchArenaDirectorDecision('', 12);
+        firstToken = decision?.opponent || null;
+      } catch (directorError) {
+        console.warn('[ArenaDirector] Endless opening decision unavailable:', directorError);
+      }
 
-      if (pumpQueue.length === 0) {
+      if (!firstToken) {
+        pumpQueue = await getTrendingTokens(12);
+        window.pumpQueue = pumpQueue; // fallback queue for nextFight()
+        firstToken = pumpQueue.shift() || null;
+      } else {
+        pumpQueue = [];
+        window.pumpQueue = pumpQueue;
+      }
+
+      if (!firstToken) {
         status.innerHTML = 'No tokens matched filter — check console for raw data';
         return;
       }
       if (window._showMobileControls) window._showMobileControls();
-      await loadOpponent(pumpQueue.shift());
+      await loadOpponent(firstToken);
+      announceArenaDirectorDecision(decision);
     };
 
     window.startCustomFight = async () => {

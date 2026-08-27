@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from pathlib import Path
 from typing import Any, List, Dict, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
+from arena_director import arena_director
 from birdeye_service import birdeye_service
 from dexscreener_service import dexscreener_service
 
@@ -137,6 +138,7 @@ MARKET_API_PREFIX = os.environ.get("SMF_MARKET_API_PREFIX", "/api/marketfeed/v2"
 MARKET_TRENDING_ROUTE = f"{MARKET_API_PREFIX}/trending-scan"
 MARKET_GRADUATES_ROUTE = f"{MARKET_API_PREFIX}/graduate-scan"
 MARKET_TOKEN_ROUTE = f"{MARKET_API_PREFIX}/token-scan/{{mint:str}}"
+ARENA_DIRECTOR_ROUTE = "/api/arena/director/next"
 ALLOW_LEGACY_MARKET_ENDPOINTS = os.environ.get("SMF_ALLOW_LEGACY_MARKET_ENDPOINTS", "0").strip().lower() in {
     "1",
     "true",
@@ -2485,6 +2487,37 @@ async def _fetch_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
     return await dexscreener_service.get_cached_token(mint)
 
 
+@get(ARENA_DIRECTOR_ROUTE)
+async def api_arena_director_next(
+    current_mint: str | None = None,
+    count: int = 12,
+) -> Dict[str, Any]:
+    """Return an explainable autonomous choice for the next live-market opponent."""
+    bounded_count = max(1, min(int(count), 24))
+    results = await asyncio.gather(
+        _fetch_market_trending(bounded_count),
+        _fetch_market_graduates(bounded_count),
+        return_exceptions=True,
+    )
+
+    provider_errors: list[dict[str, str]] = []
+    lists: list[List[Dict[str, Any]]] = []
+    for provider, result in zip(("birdeye_trending", "birdeye_graduated"), results):
+        if isinstance(result, BaseException):
+            provider_errors.append({"provider": provider, "error": type(result).__name__})
+            lists.append([])
+        else:
+            lists.append(result if isinstance(result, list) else [])
+
+    decision = arena_director.decide(
+        lists[0],
+        lists[1],
+        current_mint=current_mint,
+    )
+    decision["providerErrors"] = provider_errors
+    return decision
+
+
 @get(MARKET_TRENDING_ROUTE)
 async def api_market_trending(count: int = 12) -> List[Dict[str, Any]]:
     return await _fetch_market_trending(count)
@@ -3935,6 +3968,7 @@ app = Litestar(
         api_boost_create_intent,
         api_boost_confirm,
         api_boost_consume,
+        api_arena_director_next,
         api_market_trending,
         api_market_graduates,
         api_market_token_details,
