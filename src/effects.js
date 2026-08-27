@@ -82,7 +82,7 @@ export class Effects {
     }
   }
 
-  addHitParticles(x, y, color = '#0000FF', count = 25) {
+  addHitParticles(x, y, color = '#ff00ff', count = 25) {
     for (let i = 0; i < count; i++) {
       this.particles.push({
         x, y,

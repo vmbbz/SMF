@@ -1,57 +1,7 @@
-# MemeFight ($BMF) - Official Project Plan
+# Solana Meme Battle ($SMF) - Official Project Plan
 
 ## 🥊 The Vision
-**MemeFight ($BMF)** is a high-fidelity, viral-ready stickman fighting game where meme tokens come to life as playable fighters. By integrating real-time market data, MemeFight transforms price charts into interactive combat.
-**Phase**: Rebrand & Base Blockchain Blue Integration  
-**Goal**: Build a Web3 gamified application featuring stickman karate mechanics with meme token integration
-
-## Core Concept
-A Web3 game where players control stickman characters performing karate moves, integrated with cryptocurrency/meme token mechanics for a gamified DeFi experience.
-
-## Current Understanding
-Based on the project title and "GO PHASE 1" context, this appears to be:
-- A stickman fighting/karate game
-- Web3 integration with meme tokens
-- Gamified tokenomics
-- Sprint/hackathon development approach
-
-## Technical Stack (To Be Defined)
-**Frontend**: [To be specified]
-**Backend**: [To be specified] 
-**Blockchain**: [To be specified - likely Ethereum-compatible]
-**Smart Contracts**: [To be specified]
-**Token Standard**: [To be specified - likely ERC-20]
-
-## Key Features (To Be Detailed)
-- Stickman karate fighting mechanics
-- Meme token integration
-- Web3 wallet connectivity
-- Gamified token rewards/earnings
-- [Additional features to be defined]
-
-## Repositories & Services (To Be Added)
-- [Repository links to be provided]
-- [Services to be used to be specified]
-
-## Development Phases
-### Phase 1: Complete ✅
-- ✅ Fork deepgram/stick-fighter repository
-- ✅ Clone and setup local environment
-- ✅ Create token-utils.js with Dexscreener/Birdeye APIs
-- ✅ Modify fighter.js to support token logos and personalities
-- ✅ Update UI with meme panel and game logic
-- ✅ Add victory screenshot and X post functionality
-- ✅ Test local deployment
-- ✅ Deploy to GitHub repository (https://github.com/vmbbz/SMF.git)
-
-### Future Phases
-- [To be defined based on user requirements]
-
-## Notes
-- This document will be updated as more details are provided
-- User will provide specific code implementations for each step
-- Plan serves as reference for development workflow
->>>>>>> 0c024be (feat: rebrand to MemeFight () and update theme to Base blockchain blue (#0000FF))
+**Solana Meme Battle ($SMF)** is a high-fidelity, viral-ready stickman fighting game where the Solana meme ecosystem comes to life as playable fighters. By integrating real-time market data from Dexscreener and Pump.fun, $SMF transforms price charts into interactive combat.
 
 ---
 

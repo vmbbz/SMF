@@ -1,5 +1,5 @@
 // wallet-connect.js
-// Base Account SDK wallet integration for MemeFight ($BMF) on Base chain
+// Redesigned User Profile, 100% Mock-Free Solana Wallet, & Premium Boost Store Modal
 import { tokenDetailsPath } from './src/api-endpoints.js';
 import { loadGameImage, proxiedImageUrl } from './src/image-utils.js';
 
@@ -19,13 +19,12 @@ export function getProfile() {
     profile = {
       name: 'Guest Fighter',
       avatar: null,
-      boosts: 15, // Free starter boosts initialized automatically
+      boosts: 15, // Free $3 starter boosts initialized automatically
       walletConnected: false,
       walletReadOnly: false,
       walletAuthenticated: false,
       walletAddress: '',
-      bmfBalance: 0,   // $BMF ERC-20 balance on Base
-      ethBalance: 0,   // ETH balance on Base
+      smfBalance: 0 // Fetch real balance on-chain
     };
     saveProfile(profile);
   } else {
@@ -102,80 +101,36 @@ function compressAndSaveAvatar(file, callback) {
   reader.readAsDataURL(file);
 }
 
-// ─────────────────────────────────────────────
-// Base Account SDK helpers
-// ─────────────────────────────────────────────
-
-/**
- * Returns an EIP-1193 provider for Base chain.
- *
- * Priority:
- *  1. Coinbase Wallet SDK v4 (window.CoinbaseWalletSDK) — prefers Smart Wallet / Base
- *  2. Any injected window.ethereum (MetaMask, Coinbase Wallet browser extension, etc.)
- */
-function getBaseProvider() {
-  // Coinbase Wallet SDK v4 IIFE build exposes window.CoinbaseWalletSDK
-  if (window.CoinbaseWalletSDK) {
-    if (!window._cbWalletProvider) {
-      try {
-        const sdk = new window.CoinbaseWalletSDK({
-          appName: 'MemeFight',
-          appLogoUrl: 'https://memefight.fun/logo.png',
-          // Prefer smart wallet (Base Account) on mobile; falls back to extension
-          preference: { options: 'smartWalletOnly' },
-        });
-        window._cbWalletProvider = sdk.makeWeb3Provider();
-      } catch (e) {
-        console.warn('[Wallet] CoinbaseWalletSDK init failed, falling back:', e);
-        window._cbWalletProvider = window.ethereum || null;
-      }
-    }
-    return window._cbWalletProvider;
-  }
-  // Fallback: any injected EIP-1193 wallet (MetaMask, Rabby, etc.)
-  if (window.ethereum) return window.ethereum;
-  return null;
-}
-
-// Async balance update function — queries ERC-20 balanceOf on Base
+// Async balance update function
 export async function updateOnChainBalance(profile) {
   if (!profile.walletConnected || !profile.walletAddress) return;
   try {
     const configRes = await fetch('/api/smf-config');
     const config = await configRes.json();
-    const provider = getBaseProvider();
-    const contract = config.bmfContract || config.smfMint || '';
-    const wallet = profile.walletAddress;
-
-    // ETH balance via eth_getBalance
+    const { Connection, PublicKey } = window.solanaWeb3;
+    const connection = new Connection(config.solanaRpc, 'confirmed');
+    const walletPub = new PublicKey(profile.walletAddress);
+    const mintPub = new PublicKey(config.smfMint);
+    
+    // Derive Associated Token Account (ATA)
+    const tokenProgramId = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+    const associatedTokenProgramId = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+    
+    const [associatedTokenAddress] = await PublicKey.findProgramAddress(
+      [
+        walletPub.toBuffer(),
+        tokenProgramId.toBuffer(),
+        mintPub.toBuffer()
+      ],
+      associatedTokenProgramId
+    );
+    
     try {
-      const ethBalHex = await provider.request({
-        method: 'eth_getBalance',
-        params: [wallet, 'latest'],
-      });
-      profile.ethBalance = parseInt(ethBalHex, 16) / 1e18;
+      const balRes = await connection.getTokenAccountBalance(associatedTokenAddress);
+      profile.smfBalance = balRes.value.uiAmount || 0;
     } catch (e) {
-      profile.ethBalance = 0;
-    }
-
-    // $BMF ERC-20 balance via balanceOf(address) — only if contract is deployed
-    if (contract && contract !== '') {
-      try {
-        // ERC-20 balanceOf selector: 0x70a08231
-        const paddedAddr = wallet.toLowerCase().replace('0x', '').padStart(64, '0');
-        const data = '0x70a08231' + paddedAddr;
-        const result = await provider.request({
-          method: 'eth_call',
-          params: [{ to: contract, data }, 'latest'],
-        });
-        const rawBalance = BigInt(result);
-        // Assume 18 decimals (standard ERC-20)
-        profile.bmfBalance = Number(rawBalance) / 1e18;
-      } catch (e) {
-        profile.bmfBalance = 0;
-      }
-    } else {
-      profile.bmfBalance = 0; // Contract not deployed yet
+      console.warn('[Wallet] Failed to fetch token balance, account might not exist. Setting balance to 0.', e);
+      profile.smfBalance = 0; // Account not created or has 0 tokens
     }
   } catch (err) {
     console.error('[Wallet] Error checking on-chain balance:', err);
@@ -227,9 +182,13 @@ function isNativeCapacitorPlatform() {
   }
 }
 
-// No longer using Solana MWA bridge. Base Account SDK handles mobile via deep links.
-function getNativeMwaPlugin() { return null; }
-function hasNativeMwaBridge() { return false; }
+function getNativeMwaPlugin() {
+  return window.Capacitor?.Plugins?.SolanaMwa || null;
+}
+
+function hasNativeMwaBridge() {
+  return isNativeCapacitorPlatform() && !!getNativeMwaPlugin();
+}
 
 const WALLET_FLOW_IDLE = {
   stage: 'idle',
@@ -301,8 +260,35 @@ function walletFriendlyErrorMessage(err) {
   return 'Wallet connection could not be completed. Please retry from your Solana wallet.';
 }
 
-// No MWA listeners needed — Base Account SDK handles wallet events via EIP-1193
+if (hasNativeMwaBridge()) {
+  try {
+    const nativeMwaPlugin = getNativeMwaPlugin();
+    nativeMwaPlugin.addListener('walletCallback', (event) => {
+      console.log('[Wallet][MWA] callback intent received:', event?.uri || event);
+      refreshNativeWalletConnectionState().catch(() => {});
+    });
+    nativeMwaPlugin.addListener('appUrlOpen', (event) => {
+      const incomingUrl = String(event?.url || event?.uri || '').trim();
+      if (incomingUrl) {
+        console.log('[Wallet][MWA] appUrlOpen intent received:', incomingUrl);
+      }
+      refreshNativeWalletConnectionState().catch(() => {});
+    });
+    nativeMwaPlugin.addListener('walletResume', () => {
+      refreshNativeWalletConnectionState().catch(() => {});
+    });
+  } catch (e) {
+    console.warn('[Wallet][MWA] failed to attach callback listener:', e);
+  }
+}
 
+if (hasNativeMwaBridge()) {
+  // Cold start recovery: if Android recreated the process during wallet handoff,
+  // re-sync native wallet state as soon as JS boots.
+  setTimeout(() => {
+    refreshNativeWalletConnectionState().catch(() => {});
+  }, 0);
+}
 
 const WALLET_AUTH_STORAGE_KEY = 'smf_wallet_auth_session';
 
@@ -331,24 +317,46 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-/**
- * Sign a SIWE message using Base Account SDK / EIP-1193 personal_sign.
- * Returns the signature as a 0x-prefixed hex string.
- */
-async function signWalletAuthMessage(message, walletAddress) {
-  const provider = getBaseProvider();
-  if (!provider) {
-    throw new Error('No wallet provider available. Install Coinbase Wallet or MetaMask.');
+async function signWalletAuthMessage(message) {
+  const nativeMwa = getNativeMwaPlugin();
+  if (nativeMwa) {
+    const signed = await nativeMwa.signMessage({ message });
+    const signatureBase64 = String(signed?.signatureBase64 || '').trim();
+    if (!signatureBase64) {
+      throw new Error('Native wallet bridge returned an empty signature.');
+    }
+    return signatureBase64;
   }
-  // EIP-191 personal_sign: params are [message_hex, address]
-  const msgHex = '0x' + Array.from(new TextEncoder().encode(message))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
-  const signature = await provider.request({
-    method: 'personal_sign',
-    params: [msgHex, walletAddress],
+
+  if (!window.solana || typeof window.solana.signMessage !== 'function') {
+    throw new Error('Wallet does not support message signing.');
+  }
+  const encoded = new TextEncoder().encode(message);
+  const signed = await window.solana.signMessage(encoded, 'utf8');
+  const signatureBytes = signed?.signature || signed;
+  if (!signatureBytes) {
+    throw new Error('Wallet did not return a signature.');
+  }
+  return bytesToBase64(signatureBytes);
+}
+
+async function nativeMwaSignAndSendSerializedTx(transaction) {
+  const nativeMwa = getNativeMwaPlugin();
+  if (!nativeMwa) {
+    throw new Error('Native Solana bridge unavailable.');
+  }
+  const serialized = transaction.serialize({
+    verifySignatures: false,
+    requireAllSignatures: false
   });
-  return signature; // Already 0x-prefixed hex from EIP-1193 wallets
+  const signed = await nativeMwa.signAndSendTransaction({
+    transactionBase64: bytesToBase64(serialized)
+  });
+  const signatureBase58 = String(signed?.signatureBase58 || '').trim();
+  if (!signatureBase58) {
+    throw new Error('Native wallet bridge returned an empty transaction signature.');
+  }
+  return { signature: signatureBase58 };
 }
 
 function isSessionValidForWallet(session, walletAddress) {
@@ -380,9 +388,8 @@ function buildStoredWalletAuthHeaders(walletAddress) {
 
 async function ensureWalletAuthSession(walletAddress, { forceRefresh = false } = {}) {
   if (!walletAddress) throw new Error('Wallet address missing.');
-  const provider = getBaseProvider();
-  if (!provider) {
-    throw new Error('No wallet provider available. Install Coinbase Wallet or MetaMask.');
+  if (!window.solana && !hasNativeMwaBridge()) {
+    throw new Error('Wallet provider unavailable.');
   }
 
   const existing = getWalletAuthSession();
@@ -400,7 +407,7 @@ async function ensureWalletAuthSession(walletAddress, { forceRefresh = false } =
     throw new Error(`Wallet auth challenge failed (${challengeResp.status}): ${err}`);
   }
   const challenge = await challengeResp.json();
-  const signature = await signWalletAuthMessage(String(challenge.message || ''), walletAddress);
+  const signature = await signWalletAuthMessage(String(challenge.message || ''));
 
   const verifyResp = await fetch('/api/wallet-auth/verify', {
     method: 'POST',
@@ -647,23 +654,23 @@ export async function showWalletConnect(options = {}) {
     txOverlay.innerHTML = `
       <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 24px; padding: 40px; max-width: 400px; width: 90%; box-shadow: 0 0 30px rgba(0,255,157,0.15);">
         <div id="tx-spinner" class="tx-fire-glow" style="font-size: 40px; margin-bottom: 20px;">⚡</div>
-        <h4 id="tx-title" style="color: var(--neon-green); font-size: 14px; margin-bottom: 15px; letter-spacing: 1px;">BASE TRANSACTION</h4>
+        <h4 id="tx-title" style="color: var(--neon-green); font-size: 14px; margin-bottom: 15px; letter-spacing: 1px;">SOLANA TRANSACTION</h4>
         <div id="tx-status-step" style="font-size: 11px; line-height: 1.8; color: #ccc;">Initialising secure link...</div>
       </div>
     `;
     document.body.appendChild(txOverlay);
   }
 
-    // Fetch config and token price asynchronously once
+  // Fetch config and token price asynchronously once
   if (!fetchedSMFPrice && !isFetchingPrice) {
     isFetchingPrice = true;
     try {
       const configRes = await fetch('/api/smf-config');
       const config = await configRes.json();
-      activeMint = config.bmfContract || config.smfMint || '';
-      activeRpc = config.baseRpcUrl || config.solanaRpc || 'https://mainnet.base.org';
+      activeMint = config.smfMint;
+      activeRpc = config.solanaRpc;
       
-      const tokenRes = await fetch(tokenDetailsPath(activeMint));
+      const tokenRes = await fetch(tokenDetailsPath(config.smfMint));
       if (tokenRes.ok) {
         const tokenInfo = await tokenRes.json();
         if (tokenInfo && tokenInfo.price) {
@@ -674,7 +681,7 @@ export async function showWalletConnect(options = {}) {
       console.warn('[Wallet] Config/price fetch failed:', e);
     } finally {
       isFetchingPrice = false;
-      fetchedSMFPrice = fetchedSMFPrice || 0.00001; // fallback (very cheap meme coin)
+      fetchedSMFPrice = fetchedSMFPrice || 0.00762; // fallback
       
       const profile = getProfile();
       if (profile.walletConnected && profile.walletAddress) {
@@ -911,7 +918,7 @@ export async function showWalletConnect(options = {}) {
       <!-- WALLET CENTER SECTION (Optional, Mock-Free) -->
       <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 16px; margin-bottom: 12px; text-align: left;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 8px;">
-          <span style="font-size: 10px; font-weight: bold; color: var(--neon-blue); letter-spacing: 0.5px;">🔵 BASE WALLET ${nativeMwaBridge ? '(ANDROID MWA)' : ''}</span>
+          <span style="font-size: 10px; font-weight: bold; color: var(--neon-blue); letter-spacing: 0.5px;">🔑 SOLANA WALLET ${nativeMwaBridge ? '(ANDROID MWA)' : ''}</span>
           <div style="display:flex; align-items:center; gap:4px;">
             <span style="width: 6px; height: 6px; border-radius:50%; background: ${walletStatusColor}; box-shadow: 0 0 6px ${walletStatusColor};"></span>
             <span style="font-size: 8px; color: #aaa;">${walletStatusLabel}</span>
@@ -939,7 +946,7 @@ export async function showWalletConnect(options = {}) {
               <div style="background:rgba(0,0,0,0.22); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px; margin:8px 0;">
                 <div class="wallet-step-row">
                   <span class="wallet-step-dot done">1</span>
-                  <span>Wallet connected. Base Account returned your address to MemeFight.</span>
+                  <span>Wallet connected. Phantom returned your public address to StickLash.</span>
                 </div>
                 <div class="wallet-step-row">
                   <span class="wallet-step-dot ${walletAuthReady ? 'done' : 'active'}">2</span>
@@ -952,22 +959,22 @@ export async function showWalletConnect(options = {}) {
                 </div>
               ` : `
                 <button onclick="window.secureWalletSignIn()" class="premium-btn" style="padding: 7px 10px; font-size: 8px; width: 100%; margin-bottom: 8px; border-color: rgba(20,241,149,0.45);">
-                  SIGN FREE SIWE MESSAGE
+                  SIGN FREE SECURITY MESSAGE
                 </button>
               `}
             ` : ''}
             ${profile.walletReadOnly ? `
               <div style="font-size: 8px; color: #ffcc00; margin-bottom: 8px; line-height: 1.35;">
-                READ-ONLY MODE: Open MemeFight in Coinbase Wallet or MetaMask browser to sign.
+                READ-ONLY MODE: Open StickLash inside Phantom/Backpack browser to sign secure actions.
               </div>
             ` : ''}
-            <button onclick="window.disconnectBaseWallet()" style="background: rgba(255,59,48,0.1); border: 1px solid #ff3b30; color: #ff3b30; font-family:inherit; font-size:8px; border-radius: 4px; padding: 4px 8px; cursor:pointer; width: 100%; transition: all 0.2s;">
+            <button onclick="window.disconnectSolanaWallet()" style="background: rgba(255,59,48,0.1); border: 1px solid #ff3b30; color: #ff3b30; font-family:inherit; font-size:8px; border-radius: 4px; padding: 4px 8px; cursor:pointer; width: 100%; transition: all 0.2s;">
               DISCONNECT WALLET
             </button>
           </div>
         ` : (window.showWalletConnectionOptions ? `
           <div style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.08); padding: 10px; border-radius: 8px; font-size: 9px; line-height: 1.4; color: #ccc;">
-            <div style="font-weight:bold; color:var(--neon-green); font-size: 9px; margin-bottom: 8px; text-align:center;">🔗 CONNECT BASE WALLET</div>
+            <div style="font-weight:bold; color:var(--neon-green); font-size: 9px; margin-bottom: 8px; text-align:center;">🔗 CONNECT SOLANA WALLET</div>
 
             ${nativeMwaBridge ? `
               <p style="font-size: 8px; color: #bbb; margin-bottom: 10px; line-height: 1.3;">
@@ -988,7 +995,7 @@ export async function showWalletConnect(options = {}) {
             <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; margin-top: 6px;">
               <div style="font-weight:bold; color:var(--neon-blue); font-size: 8px; margin-bottom: 6px;">SYNC ADDRESS (READ-ONLY)</div>
               <div style="display:flex; gap:6px;">
-                <input type="text" id="manual-wallet-input" placeholder="Paste Base Public Key" style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:4px 8px; color:white; font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif); font-size:8px;">
+                <input type="text" id="manual-wallet-input" placeholder="Paste Solana Public Key" style="flex:1; background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.15); border-radius:4px; padding:4px 8px; color:white; font-family:var(--font-print, 'Press Start 2P', system-ui, sans-serif); font-size:8px;">
                 <button onclick="window.syncManualSolanaAddress()" style="background:var(--neon-blue); border:none; color:black; font-family:inherit; font-size:8px; font-weight:bold; border-radius:4px; padding:4px 10px; cursor:pointer;">
                   SYNC
                 </button>
@@ -1001,9 +1008,9 @@ export async function showWalletConnect(options = {}) {
             </button>
           </div>
         ` : `
-          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connect your Base wallet to buy boost packs with ETH or $BMF. Wallet is optional — free boosts are always available!</p>
-          <button onclick="window.connectBaseWallet()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px; background: linear-gradient(135deg, rgba(0,80,255,0.9), rgba(0,180,255,0.8)); border-color: rgba(0,100,255,0.6);">
-            🔵 SIGN IN WITH BASE
+          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $SMF tokens to buy premium boost packs.</p>
+          <button onclick="window.connectSolanaWallet()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px;">
+            ${nativeMwaBridge ? 'CONNECT VIA ANDROID WALLET (MWA)' : 'CONNECT SOLANA WALLET'}
           </button>
         `)}
       </div>
@@ -1023,53 +1030,45 @@ export async function showWalletConnect(options = {}) {
         ` : ''}
         
         <p style="font-size: 8px; color: #888; margin-bottom: 8px; line-height: 1.4;">
-          Use ETH for instant boost packs (profit goes to treasury & giveaways).
+          Staking is unsafe. Instead, use connected wallet $SMF tokens to **buy boost packs**! All $SMF spent is **burned forever** 🔥 (Solana Burn Program).
         </p>
 
         <!-- PACKAGES -->
         <div style="display:flex; flex-direction:column; gap:6px; margin-bottom: 8px;">
-          <!-- Pack 1: ETH -->
+          <!-- Pack 1 -->
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
-              <div style="font-weight:bold; color:#fff;">🔵 Micro Pack (5 Boosts)</div>
-              <div style="color:var(--neon-blue); font-size: 8px;">0.0005 ETH <span style="color:#aaa;">(~$1.00)</span></div>
+              <div style="font-weight:bold; color:#fff;">🔵 Micro Pack (5 Premium Boosts)</div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" style="background:rgba(0,100,255,0.85);" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPackETH('micro')">
-              PAY ETH
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
+              BUY & BURN
             </button>
           </div>
-          <!-- Pack 2: ETH -->
+          <!-- Pack 2 -->
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:var(--neon-green);">🔥 Degen Pack (20 Boosts) - BEST VALUE</div>
-              <div style="color:var(--neon-green); font-size: 8px;">0.0015 ETH <span style="color:#aaa;">(~$3.00)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" style="background: var(--neon-green);" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPackETH('degen')">
-              PAY ETH
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
+              BUY & BURN
             </button>
           </div>
-          <!-- Pack 3: ETH -->
+          <!-- Pack 3 -->
           <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
-              <div style="font-weight:bold; color:#fff;">⚡ Chaos Pack (45 Boosts)</div>
-              <div style="color:var(--neon-blue); font-size: 8px;">0.0025 ETH <span style="color:#aaa;">(~$5.00)</span></div>
+              <div style="font-weight:bold; color:#fff;">⚡ Chaos Pack (45 Premium Boosts)</div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $SMF)</span></div>
             </div>
-            <button class="buy-smf-btn" style="background:rgba(0,100,255,0.85);" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPackETH('chaos')">
-              PAY ETH
+            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
+              BUY & BURN
             </button>
-          </div>
-          <!-- $BMF packs: coming soon -->
-          <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 8px; margin-top: 4px;">
-            <div style="font-size: 8px; font-weight:bold; color: #ffcc00; margin-bottom:5px; letter-spacing:0.3px;">🔥 BURN $BMF FOR BONUS BOOSTS</div>
-            <div style="background: rgba(255,204,0,0.06); border: 1px solid rgba(255,204,0,0.22); border-radius:8px; padding:8px; font-size:7px; color:#aaa; line-height:1.5;">
-              $BMF token launches on Base soon. Once deployed, burning $BMF gives you <strong style="color:#ffcc00;">2x bonus boosts</strong> vs ETH packs and is deflationary!<br>
-              <span style="color: rgba(255,204,0,0.75); font-weight:bold;">⏳ COMING SOON</span>
-            </div>
           </div>
         </div>
         
         ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? `
-          <div style="font-size: 7px; color:${profile.walletReadOnly ? '#ffcc00' : (!walletAuthReady && profile.walletConnected ? 'var(--neon-blue)' : '#ff3b30')}; text-align:center; font-weight:bold; letter-spacing:0.3px;">${profile.walletReadOnly ? '⚠️ READ-ONLY MODE CANNOT PURCHASE.' : (!walletAuthReady && profile.walletConnected ? '⚠️ SIGN FREE SIWE MESSAGE TO UNLOCK PURCHASES' : '⚠️ CONNECT BASE WALLET TO UNLOCK PURCHASES')}</div>
+          <div style="font-size: 7px; color:${profile.walletReadOnly ? '#ffcc00' : (!walletAuthReady && profile.walletConnected ? 'var(--neon-blue)' : '#ff3b30')}; text-align:center; font-weight:bold; letter-spacing:0.3px;">${profile.walletReadOnly ? '⚠️ READ-ONLY MODE CANNOT PURCHASE. OPEN IN WALLET BROWSER.' : (!walletAuthReady && profile.walletConnected ? '⚠️ SIGN FREE SECURITY MESSAGE TO UNLOCK PURCHASES' : '⚠️ CONNECT SOLANA WALLET TO UNLOCK PURCHASES')}</div>
         ` : ''}
       </div>
 
@@ -1276,13 +1275,13 @@ window.secureWalletSignIn = async function(options = {}) {
   }
 };
 
-// Global hook: connect wallet via Base Account SDK
-window.connectBaseWallet = async function() {
+// Global hook: connect wallet (Real & Mock-Free)
+window.connectSolanaWallet = async function() {
   if (window.__smfWalletConnectInFlight) {
     setWalletFlow(
       'opening_wallet',
       'WALLET ALREADY OPEN',
-      'Finish the current wallet prompt, then return to MemeFight.',
+      'Finish the current Phantom prompt, then return to StickLash.',
       'warn'
     );
     showWalletConnect();
@@ -1291,63 +1290,119 @@ window.connectBaseWallet = async function() {
 
   window.__smfWalletConnectInFlight = true;
   try {
-    const provider = getBaseProvider();
-    if (!provider) {
-      alert('⚠️ No Base-compatible wallet found. Install Coinbase Wallet or MetaMask, then try again.');
-      return;
-    }
+    const nativeMwa = getNativeMwaPlugin();
+    let publicKeyStr = '';
 
     setWalletFlow(
       'opening_wallet',
-      'OPENING BASE WALLET',
-      'Approve the MemeFight connection in your wallet (Coinbase Wallet / MetaMask). You will return here after account selection.',
+      nativeMwa ? 'OPENING PHANTOM' : 'OPENING WALLET',
+      nativeMwa
+        ? 'Approve the StickLash connection in your Android wallet. You should return here after account selection.'
+        : 'Approve the wallet connection prompt, then finish the free security sign-in.',
       'warn'
     );
     emitWalletGameplayPause(true, 'wallet_connect');
     showWalletConnect();
 
-    // Request accounts via EIP-1193
-    const accounts = await provider.request({ method: 'eth_requestAccounts' });
-    const publicKeyStr = String(accounts?.[0] || '').trim();
-    if (!publicKeyStr || !/^0x[0-9a-fA-F]{40}$/.test(publicKeyStr)) {
-      throw new Error('Wallet did not return a valid Base address.');
+    if (nativeMwa) {
+      const canNativeSignIn = typeof nativeMwa.signIn === 'function';
+      if (canNativeSignIn) {
+        const result = await withWalletBridgeTimeout(
+          nativeMwa.signIn({
+            statement: 'Sign in to StickLash. This proves wallet ownership and does not move tokens.'
+          }),
+          'Phantom sign-in'
+        );
+        publicKeyStr = String(result?.walletAddress || '').trim();
+        if (!publicKeyStr) {
+          throw new Error('Native wallet sign-in did not return a wallet address.');
+        }
+        try {
+          await ensureWalletAuthSessionFromNativeSignIn(result);
+          await refreshConnectedWalletProfile(publicKeyStr, { authenticated: true });
+          setWalletFlow(
+            'ready',
+            'WALLET READY',
+            'Phantom approved StickLash and your secure boost session is active.',
+            'success'
+          );
+        } catch (sessionErr) {
+          console.warn('[Wallet][MWA] SIWS server session failed; falling back to connected-only state:', sessionErr);
+          await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
+          setWalletFlow(
+            'connected_needs_signature',
+            'WALLET CONNECTED',
+            'Phantom approved StickLash. Finish the free security sign-in to unlock protected boosts.',
+            'warn'
+          );
+        }
+      } else {
+        const result = await withWalletBridgeTimeout(nativeMwa.connect(), 'Phantom connect');
+        publicKeyStr = String(result?.walletAddress || '').trim();
+        if (!publicKeyStr) {
+          throw new Error('Native wallet bridge did not return a wallet address.');
+        }
+        await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
+        setWalletFlow(
+          'connected_needs_signature',
+          'WALLET CONNECTED',
+          'One more free signature unlocks protected boosts. This is not a transaction and no tokens move.',
+          'warn'
+        );
+      }
+      window.showWalletConnectionOptions = false;
+    } else if (window.solana) {
+      const resp = await window.solana.connect();
+      publicKeyStr = resp.publicKey.toString();
+      window.showWalletConnectionOptions = false;
+      await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
+      setWalletFlow(
+        'connected_needs_signature',
+        'WALLET CONNECTED',
+        'One more free signature unlocks protected boosts. This is not a transaction and no tokens move.',
+        'warn'
+      );
+    } else {
+      // No native bridge and no browser wallet.
+      window.showWalletConnectionOptions = true;
+      showWalletConnect();
+      return;
     }
-
-    window.showWalletConnectionOptions = false;
-    await refreshConnectedWalletProfile(publicKeyStr, { authenticated: false });
-    setWalletFlow(
-      'connected_needs_signature',
-      'WALLET CONNECTED',
-      'One free SIWE message signature unlocks server-protected boosts. No tokens move.',
-      'warn'
-    );
-
+    
     // Redraw modal
     showWalletConnect();
-
+    
+    // Show in-game notification if applicable
     const activeGame = window.currentGame || window.game || window._game;
     if (activeGame && activeGame.showBoostMessage) {
-      activeGame.showBoostMessage('⚡ WALLET CONNECTED. SIGN TO UNLOCK BOOSTS.', 'runner');
+      const connectedProfile = getProfile();
+      activeGame.showBoostMessage(
+        connectedProfile.walletAuthenticated
+          ? "⚡ WALLET READY. BOOSTS UNLOCKED."
+          : "⚡ WALLET CONNECTED. SIGN TO UNLOCK BOOSTS.",
+        "runner"
+      );
     }
   } catch (err) {
     console.error('Wallet connection rejected/failed:', err);
     setWalletFlow('connect_failed', 'WALLET CONNECTION FAILED', walletFriendlyErrorMessage(err), 'error');
+    if (String(err?.code || '').includes('MWA_NO_WALLET')) {
+      window.showWalletConnectionOptions = true;
+      showWalletConnect();
+    }
     alert('⚠️ ' + walletFriendlyErrorMessage(err));
   } finally {
     window.__smfWalletConnectInFlight = false;
     emitWalletGameplayPause(false, 'wallet_connect');
   }
 };
-// Backward compat alias (in case anything else calls the old name)
-window.connectSolanaWallet = window.connectBaseWallet;
-
 
 window.copyGameUrlToClipboard = function() {
-  const gameUrl = 'https://memefight.fun';
+  const gameUrl = 'https://sticklash.fun';
   navigator.clipboard.writeText(gameUrl).then(() => {
-    alert('📋 Game URL copied! Paste it in the Browser tab of Coinbase Wallet or MetaMask.');
+    alert('📋 Game URL copied to clipboard! Paste it in the Browser tab of Phantom or Backpack.');
   }).catch(() => {
-    alert('📋 Game URL is: https://memefight.fun — paste it in your wallet browser tab.');
+    alert('📋 Game URL is: https://sticklash.fun (Copy and open in Phantom browser)');
   });
 };
 
@@ -1362,10 +1417,10 @@ window.syncManualSolanaAddress = async function() {
     return;
   }
   
-  // EVM address validation (0x + 40 hex chars)
-  const isEVM = /^0x[0-9a-fA-F]{40}$/.test(address);
-  if (!isEVM) {
-    if (errorEl) errorEl.textContent = 'Invalid Base/EVM address (must start with 0x).';
+  // Basic validation (Solana public key base58, 32-44 chars)
+  const isBase58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address);
+  if (!isBase58) {
+    if (errorEl) errorEl.textContent = 'Invalid Solana address format.';
     return;
   }
   
@@ -1389,7 +1444,7 @@ window.syncManualSolanaAddress = async function() {
     
     const activeGame = window.currentGame || window.game || window._game;
     if (activeGame && activeGame.showBoostMessage) {
-      activeGame.showBoostMessage('⚡ BASE ADDRESS SYNCED!', 'runner');
+      activeGame.showBoostMessage("⚡ SOLANA ADDRESS SYNCED!", "runner");
     }
   } catch (e) {
     if (errorEl) errorEl.textContent = 'Failed to sync: ' + e.message;
@@ -1433,8 +1488,12 @@ window.requestWalletSecurityFlow = function({ autoPause = true } = {}) {
 };
 
 // Global hook: disconnect wallet
-window.disconnectBaseWallet = function() {
+window.disconnectSolanaWallet = function() {
   const profile = getProfile();
+  const nativeMwa = getNativeMwaPlugin();
+  if (nativeMwa) {
+    nativeMwa.disconnect().catch(() => {});
+  }
   if (profile.walletAddress) {
     logoutWalletAuthSession(profile.walletAddress).catch(() => {});
   } else {
@@ -1444,193 +1503,218 @@ window.disconnectBaseWallet = function() {
   profile.walletReadOnly = false;
   profile.walletAuthenticated = false;
   profile.walletAddress = '';
-  profile.bmfBalance = 0;
-  profile.ethBalance = 0;
+  profile.smfBalance = 0;
   clearWalletFlow();
   saveProfile(profile);
+
+  // Redraw modal
   showWalletConnect();
 };
-// Backward compat alias
-window.disconnectSolanaWallet = window.disconnectBaseWallet;
 
-
-
-// ─────────────────────────────────────────────────────────
-// Transaction overlay helpers (Base chain)
-// ─────────────────────────────────────────────────────────
-function _ensureTxOverlay() {
-  let el = document.getElementById('base-tx-overlay');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'base-tx-overlay';
-    Object.assign(el.style, {
-      position: 'fixed', top: '0', left: '0',
-      width: '100vw', height: '100vh',
-      background: 'rgba(10,10,15,0.92)',
-      backdropFilter: 'blur(18px)',
-      zIndex: '3100',
-      display: 'none',
-      alignItems: 'center',
-      justifyContent: 'center',
-      color: 'white',
-      fontFamily: "var(--font-print,'Press Start 2P',system-ui,sans-serif)",
-      textAlign: 'center',
-      padding: '20px',
-    });
-    el.innerHTML = `
-      <div style="background:rgba(0,80,255,0.08);border:1px solid rgba(0,100,255,0.3);border-radius:24px;padding:40px;max-width:400px;width:90%;box-shadow:0 0 40px rgba(0,100,255,0.2);">
-        <div id="base-tx-spinner" style="font-size:40px;margin-bottom:20px;">⚡</div>
-        <h4 style="color:#0050ff;font-size:13px;margin-bottom:15px;letter-spacing:2px;">BASE TRANSACTION</h4>
-        <div id="base-tx-status" style="font-size:10px;line-height:1.9;color:#ccc;">Initialising…</div>
-      </div>`;
-    document.body.appendChild(el);
-  }
-  return el;
-}
-
-function showTransactionOverlay() {
-  const el = _ensureTxOverlay();
-  el.style.display = 'flex';
-  const status = document.getElementById('base-tx-status');
-  if (status) status.innerHTML = 'Connecting to Base…';
-}
-
-function hideTransactionOverlay() {
-  const el = document.getElementById('base-tx-overlay');
-  if (el) el.style.display = 'none';
-}
-
-function updateTransactionStep(html) {
-  const status = document.getElementById('base-tx-status');
-  if (status) status.innerHTML = html;
-}
-
-// Global hook: purchase boost pack via ETH transfer on Base chain
-
-window.purchaseBoostPackETH = async function(packId) {
+// Global hook: purchase boost pack with server-authoritative crediting
+window.purchaseBoostPack = async function(packId) {
   let profile = getProfile();
-  if (!profile.walletConnected) return alert('\u26a0\ufe0f Wallet is not connected.');
-  if (profile.walletReadOnly) return alert('\u26a0\ufe0f Read-only wallet mode cannot purchase. Open game in your wallet browser.');
-  const provider = getBaseProvider();
-  if (!provider) {
-    return alert('\u26a0\ufe0f No Base-compatible wallet found. Install Coinbase Wallet or MetaMask.');
+  if (!profile.walletConnected) return alert('⚠️ Wallet is not connected.');
+  if (profile.walletReadOnly) return alert('⚠️ Read-only wallet mode cannot purchase. Open game in your wallet browser.');
+  const nativeMwa = getNativeMwaPlugin();
+  if (!window.solana && !nativeMwa) {
+    return alert('⚠️ No Solana wallet adapter detected.');
   }
   if (!isWalletAuthenticated(profile)) {
     setWalletFlow(
       'purchase_needs_signature',
       'SECURITY SIGN-IN REQUIRED',
-      'Sign one free SIWE message first, then MemeFight can safely process your boost purchase.',
+      'Sign one free message first, then StickLash can safely create your boost purchase intent.',
       'warn'
     );
     showWalletConnect({ focusStore: true });
-    return;
+    const signedIn = await window.secureWalletSignIn({ silent: true });
+    if (!signedIn) {
+      alert('⚠️ Finish the free wallet sign-in before buying boosts.');
+      return;
+    }
+    profile = getProfile();
   }
 
-  // ETH prices per pack (wei hex-encoded)
-  // micro:  0.0005 ETH = 500_000_000_000_000 wei
-  // degen:  0.0015 ETH = 1_500_000_000_000_000 wei
-  // chaos:  0.0025 ETH = 2_500_000_000_000_000 wei
-  const PACKS = {
-    micro: { boosts: 5,  weiHex: '0x1C6BF52634000' },
-    degen: { boosts: 20, weiHex: '0x5543DF729C000' },
-    chaos: { boosts: 45, weiHex: '0x8E1BC9BF04000' },
-  };
-  const pack = PACKS[packId];
-  if (!pack) return alert('\u26a0\ufe0f Unknown boost pack.');
+  const txOverlay = document.getElementById('solana-tx-overlay');
+  const txStatusStep = document.getElementById('tx-status-step');
+  const txSpinner = document.getElementById('tx-spinner');
+  
+  if (!txOverlay || !txStatusStep) return;
 
-  emitWalletGameplayPause(true, 'boost_purchase');
-  showTransactionOverlay();
+  // Show fullscreen glowing Solana confirmation transaction loader
+  txOverlay.style.display = 'flex';
+  emitWalletGameplayPause(true, 'purchase_boost_pack');
+  txSpinner.className = '';
+  txSpinner.innerHTML = '⚙️';
+  txSpinner.style.animation = 'spin 1.5s linear infinite';
+  txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Creating Secure Purchase Intent...</span><br><span style="color:#888;">Locking canonical pack quote on backend</span>`;
+
   try {
-    updateTransactionStep('Fetching treasury address\u2026');
+    const { Connection, PublicKey, Transaction, TransactionInstruction } = window.solanaWeb3;
 
-    const configRes = await fetch('/api/smf-config');
-    const config = await configRes.json();
-    const treasuryAddress = config.treasuryAddress || config.bmfTreasury || '';
-    if (!treasuryAddress || !/^0x[0-9a-fA-F]{40}$/.test(treasuryAddress)) {
-      throw new Error('Treasury address not configured on server. Contact support.');
-    }
-
-    updateTransactionStep('Requesting wallet approval\u2026');
-
-    // Switch to Base mainnet (chainId 0x2105 = 8453)
-    try {
-      await provider.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x2105' }],
-      });
-    } catch (switchErr) {
-      if (switchErr && switchErr.code === 4902) {
-        await provider.request({
-          method: 'wallet_addEthereumChain',
-          params: [{
-            chainId: '0x2105',
-            chainName: 'Base',
-            rpcUrls: ['https://mainnet.base.org'],
-            nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-            blockExplorerUrls: ['https://basescan.org'],
-          }],
-        });
-      }
-    }
-
-    // Send ETH to treasury
-    const txHash = await provider.request({
-      method: 'eth_sendTransaction',
-      params: [{
-        from: profile.walletAddress,
-        to: treasuryAddress,
-        value: pack.weiHex,
-        chainId: '0x2105',
-      }],
-    });
-    if (!txHash) throw new Error('Wallet did not return a transaction hash.');
-
-    updateTransactionStep(`\u23f3 Waiting for Base confirmation\u2026<br><span style="font-size:8px;color:#aaa;">${txHash.slice(0, 16)}\u2026</span>`);
-
-    // Submit txHash to server for receipt verification + boost crediting
-    const sessionToken = getWalletAuthSession()?.token || '';
-    const boostRes = await fetch('/api/boost/purchase-eth', {
+    const intentResp = await fetchWithWalletAuth(profile.walletAddress, '/api/boost/create-intent', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + sessionToken,
-      },
-      body: JSON.stringify({ wallet: profile.walletAddress, packId, txHash }),
+      body: JSON.stringify({
+        wallet: profile.walletAddress,
+        packId
+      })
     });
-    if (!boostRes.ok) {
-      const detail = await boostRes.text();
-      throw new Error(`Boost credit failed (${boostRes.status}): ${detail}`);
+    if (!intentResp.ok) {
+      const err = await intentResp.text();
+      throw new Error(`Intent creation failed (${intentResp.status}): ${err}`);
     }
-    const boostData = await boostRes.json();
+    const intent = await intentResp.json();
+    const requiredSmfUi = Number(intent.requiredSmfUiAmount || 0);
+    const requiredSmfRaw = BigInt(String(intent.requiredSmfRawAmount || '0'));
+    const boostsToCredit = Number(intent.boostsToCredit || 0);
+    const mintAddress = String(intent.mint || activeMint || '');
+    const rpcUrl = String(intent.solanaRpc || activeRpc || 'https://api.mainnet-beta.solana.com');
 
-    profile = getProfile();
-    profile.boosts = typeof boostData.boosts === 'number'
-      ? boostData.boosts
-      : (profile.boosts + pack.boosts);
+    if (!mintAddress) {
+      throw new Error('Backend did not return token mint address.');
+    }
+    if (requiredSmfRaw <= 0n || requiredSmfUi <= 0 || boostsToCredit <= 0) {
+      throw new Error('Backend returned invalid quote values.');
+    }
+    if (profile.smfBalance < requiredSmfUi) {
+      throw new Error(`Insufficient $SMF balance. Need ${requiredSmfUi}, have ${profile.smfBalance}.`);
+    }
+
+    const connection = new Connection(rpcUrl, 'confirmed');
+    const walletPub = new PublicKey(profile.walletAddress);
+    const mintPub = new PublicKey(mintAddress);
+
+    // Derive ATA
+    const tokenProgramId = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+    const associatedTokenProgramId = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+    
+    const [associatedTokenAddress] = await PublicKey.findProgramAddress(
+      [
+        walletPub.toBuffer(),
+        tokenProgramId.toBuffer(),
+        mintPub.toBuffer()
+      ],
+      associatedTokenProgramId
+    );
+    
+    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${requiredSmfUi} $SMF</span>`;
+    
+    // Compile SPL Token Burn Instruction
+    // Keys needed:
+    // 1. Source (writable) -> associatedTokenAddress
+    // 2. Mint (writable) -> mintPub
+    // 3. Authority (signer) -> walletPub
+    const keys = [
+      { pubkey: associatedTokenAddress, isSigner: false, isWritable: true },
+      { pubkey: mintPub, isSigner: false, isWritable: true },
+      { pubkey: walletPub, isSigner: true, isWritable: false }
+    ];
+    
+    // Compile instruction data
+    // Index 8 is Burn. Data structure: u8 index (8), u64 amount
+    const data = new Uint8Array(9);
+    data[0] = 8; // Burn index
+    let temp = requiredSmfRaw;
+    for (let i = 0; i < 8; i++) {
+      data[1 + i] = Number(temp & 0xffn);
+      temp >>= 8n;
+    }
+    
+    const burnInstruction = new TransactionInstruction({
+      keys,
+      programId: tokenProgramId,
+      data
+    });
+    
+    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${requiredSmfUi} $SMF tokens in wallet...</span>`;
+    
+    // Fetch recent blockhash
+    const { blockhash } = await connection.getLatestBlockhash('confirmed');
+    const transaction = new Transaction();
+    transaction.add(burnInstruction);
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = walletPub;
+    
+    // Request wallet signature and broadcast
+    const { signature } = nativeMwa
+      ? await nativeMwaSignAndSendSerializedTx(transaction)
+      : await window.solana.signAndSendTransaction(transaction);
+    
+    txSpinner.innerHTML = '🔥';
+    txSpinner.className = 'tx-fire-glow';
+    txSpinner.style.animation = 'none';
+    txStatusStep.innerHTML = `
+      <span style="color:var(--neon-green);">✓ Burn Signed!</span><br>
+      <span style="color:#ff5500; font-weight:bold;">3. Verifying With Backend Ledger...</span><br>
+      <span style="color:#ff8800; font-size:10px;">Transaction Broadcasted. Signature:<br>
+      <span style="font-size:8px; color:#aaa;">${signature}</span></span><br>
+      <span style="color:#ff3300; font-size:9px; font-weight:bold;">Awaiting server-side burn verification... 🔥</span>
+    `;
+    
+    // Poll for confirmation
+    const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+    if (confirmation.value.err) {
+      throw new Error('Transaction failed on-chain: ' + JSON.stringify(confirmation.value.err));
+    }
+
+    const confirmResp = await fetchWithWalletAuth(profile.walletAddress, '/api/boost/confirm', {
+      method: 'POST',
+      body: JSON.stringify({
+        wallet: profile.walletAddress,
+        intentId: intent.intentId,
+        signature
+      })
+    });
+    if (!confirmResp.ok) {
+      const err = await confirmResp.text();
+      throw new Error(`Backend confirmation failed (${confirmResp.status}): ${err}`);
+    }
+    const confirmationData = await confirmResp.json();
+    
+    txSpinner.className = '';
+    txSpinner.innerHTML = '🎉';
+    txStatusStep.innerHTML = `
+      <span style="color:var(--neon-green); font-weight:bold; font-size:14px; text-shadow:0 0 10px var(--neon-green);">✓ TRANSACTION CONFIRMED!</span><br>
+      <span style="color:#ccc; font-size:11px; margin-top:10px; display:inline-block;">Successfully Credited <span style="color:var(--neon-pink); font-weight:bold;">${boostsToCredit} Premium Boosts</span>!</span><br>
+      <span style="color:#888; font-size:8px;">Signature: ${signature.substring(0, 10)}... (Confirmed on Solana Mainnet)</span>
+    `;
+    
+    // Update local cache from authoritative backend response
+    profile.smfBalance = Math.max(0, profile.smfBalance - requiredSmfUi);
+    profile.boosts = typeof confirmationData.boosts === 'number'
+      ? confirmationData.boosts
+      : profile.boosts;
     saveProfile(profile);
+
+    // Update UI elements
     updateBoostIndicators(profile.boosts);
-
-    hideTransactionOverlay();
-    showWalletConnect({ focusStore: true });
-
+    
+    // Play SFX
     const activeGame = window.currentGame || window.game || window._game;
-    if (activeGame && activeGame.showBoostMessage) {
-      activeGame.showBoostMessage(`\u26a1 +${pack.boosts} BOOSTS! FIGHT ON!`, 'runner');
+    if (activeGame && activeGame.sfx && activeGame.sfx.hadouken) {
+      try { activeGame.sfx.hadouken(); } catch(e){}
     }
-    alert(`\u2705 Purchase complete! +${pack.boosts} boosts added.`);
-
+    
+    setTimeout(() => {
+      txOverlay.style.display = 'none';
+      emitWalletGameplayPause(false, 'purchase_boost_pack');
+      showWalletConnect();
+    }, 4000);
+    
   } catch (err) {
-    console.error('[Boost] ETH purchase failed:', err);
-    hideTransactionOverlay();
-    alert('\u26a0\ufe0f ' + (err.message || 'Boost purchase failed. Please try again.'));
-  } finally {
-    emitWalletGameplayPause(false, 'boost_purchase');
+    console.error('Solana Transaction failed:', err);
+    txSpinner.innerHTML = '❌';
+    txSpinner.style.animation = 'none';
+    txStatusStep.innerHTML = `<span style="color:#ff3b30; font-weight:bold; font-size:14px;">✓ TRANSACTION FAILED</span><br><span style="color:#ccc; font-size:10px; margin-top:10px; display:inline-block;">${err.message || err}</span>`;
+    
+    setTimeout(() => {
+      txOverlay.style.display = 'none';
+      emitWalletGameplayPause(false, 'purchase_boost_pack');
+    }, 5000);
   }
 };
-// Backward-compat alias for any lingering purchaseBoostPack calls
-window.purchaseBoostPack = window.purchaseBoostPackETH;
 
 // Automatically bind to window on import
 window.showWalletConnect = showWalletConnect;
 window.hideWalletConnect = hideWalletConnect;
-

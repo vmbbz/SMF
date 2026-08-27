@@ -215,7 +215,7 @@ window.enrichTokenData = enrichTokenData;
 
 function hasUsableTokenImage(token) {
   const source = getTokenImageSource(token, '');
-  return Boolean(source && source !== 'assets/base-logo.png' && source !== 'assets/smf-logo.png');
+  return Boolean(source && source !== 'assets/smf-logo.png');
 }
 
 function hasUsableTokenCover(token) {
@@ -3729,10 +3729,7 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
 
   const isPlayer = winnerNum === 1;
   winText.textContent = isPlayer ? 'YOU WIN!' : 'K.O.';
-  winText.style.color = isPlayer ? 'var(--neon-green)' : 'var(--neon-pink)';
-  winText.style.textShadow = isPlayer 
-    ? '0 0 30px var(--neon-green), 0 0 60px #00d9ff, 0 0 15px #ffffff' 
-    : '0 0 30px var(--neon-pink), 0 0 60px #ff007f, 0 0 15px #ffffff';
+  winText.style.color = isPlayer ? 'var(--neon-blue)' : 'var(--neon-pink)';
   
   winText.style.transform = 'scale(1)';
   winText.style.fontSize = ''; 
@@ -3784,7 +3781,7 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
 
       container.innerHTML = `
         <div class="card-header" style="color:${color};font-size:14px;font-weight:bold;margin-bottom:15px;letter-spacing:3px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">${isWinner ? 'WINNER' : 'LOSER'}</div>
-        <img src="assets/base-logo.png" style="width:100px;height:100px;border-radius:50%;border:4px solid ${color};">
+        <img src="assets/smf-logo.png" style="width:100px;height:100px;border-radius:50%;border:4px solid ${color};">
         <div style="font-size:24px;font-weight:900;color:#fff;margin-top:15px;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;font-family:'Shojumaru', 'Press Start 2P', sans-serif;">${name}</div>
         <div style="font-style:italic;color:var(--neon-blue);font-size:14px;line-height:1.2;text-shadow:0 0 10px var(--neon-blue);">"${quote}"</div>
       `;

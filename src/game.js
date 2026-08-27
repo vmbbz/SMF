@@ -771,7 +771,7 @@ export class Game {
         hitDesc = `HEADSHOT! You took ${totalDmg} damage to the head!`;
         atkDesc = `HEADSHOT! You nailed them in the head for ${totalDmg}!`;
       } else if (zone === "crotch") {
-        color = "#0000FF";
+        color = "#ff00ff";
         text = `${totalDmg} CROTCH!`;
         logText = `${totalDmg} CROTCH`;
         if (this.sfx) this.sfx.crotchshot();

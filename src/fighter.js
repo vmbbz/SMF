@@ -93,8 +93,7 @@ const HADOUKEN_COOLDOWN = 1.5; // seconds
 
 export { HADOUKEN_DATA };
 
-const DEFAULT_HEAD_IMAGE = 'assets/base-logo.png';
-const SOLANA_DEFAULT_HEAD_IMAGE = DEFAULT_HEAD_IMAGE; // Backward compat alias
+const SOLANA_DEFAULT_HEAD_IMAGE = 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png';
 
 // ─────────────────────────────────────────────
 // Fighter
@@ -157,7 +156,7 @@ export class Fighter {
     this.personality = null;
     this.headImage = new Image();
     this.headImage.crossOrigin = 'anonymous';
-    this.headImage.src = DEFAULT_HEAD_IMAGE;
+    this.headImage.src = SOLANA_DEFAULT_HEAD_IMAGE;
     
     // Load custom profile avatar from localStorage for P1 (Human Player) if available
     if (playerNum === 1) {
@@ -185,7 +184,7 @@ export class Fighter {
     this.tokenData = tokenData;
     this.personality = generatePersonality(tokenData);
 
-    const primaryLogo = getTokenImageSource(tokenData, DEFAULT_HEAD_IMAGE);
+    const primaryLogo = getTokenImageSource(tokenData, SOLANA_DEFAULT_HEAD_IMAGE);
 
     /** Load an image with crossOrigin set BEFORE src, returns promise<boolean> */
     const tryLoad = (url) => new Promise((resolve) => {
@@ -205,7 +204,7 @@ export class Fighter {
     if (tokenData.extensions?.website) { /* skip, not an image */ }
     if (tokenData.image && tokenData.image !== primaryLogo) candidates.push(tokenData.image);
     if (tokenData.icon && tokenData.icon !== primaryLogo) candidates.push(tokenData.icon);
-    candidates.push(DEFAULT_HEAD_IMAGE);
+    candidates.push(SOLANA_DEFAULT_HEAD_IMAGE);
 
     let loaded = false;
 
@@ -221,13 +220,13 @@ export class Fighter {
     }
 
     if (!loaded) {
-      // Absolute last resort: restore default SMF logo fallback.
-      this.headImage = await loadGameImage(DEFAULT_HEAD_IMAGE).catch(() => this.headImage);
+      // Absolute last resort: restore the original Solana logo fallback.
+      this.headImage = await loadGameImage(SOLANA_DEFAULT_HEAD_IMAGE).catch(() => this.headImage);
     }
 
     // Also retry after 3s in background if we fell back to default
     // (handles case where token image server was slow on first load)
-    if (primaryLogo && (this.headImage.src.includes('smf-logo.png') || this.headImage.src.includes('So111111111111'))) {
+    if (primaryLogo && this.headImage.src.includes('So111111111111')) {
       setTimeout(async () => {
         const retryUrl = primaryLogo;
         if (retryUrl) {

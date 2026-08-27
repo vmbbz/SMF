@@ -20,8 +20,8 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_CEILING, InvalidOperation
 from pathlib import Path
-from typing import Any, List, Dict, Optional, cast
-from urllib.parse import urlparse, parse_qs, urlencode
+from typing import Any, List, Dict, Optional
+from urllib.parse import urlparse
 from birdeye_service import birdeye_service
 from dexscreener_service import dexscreener_service
 
@@ -75,15 +75,6 @@ PUBLIC_ORIGIN = "https://sticklash.fun"
 SHARE_CARD_DIR = ROOT / "public" / "share-cards"
 MAX_SHARE_CARD_BYTES = 5 * 1024 * 1024
 
-# Legacy Solana constants kept for backward-compat code paths (unused by Base chain)
-BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-BASE58_INDEX: dict[str, int] = {c: i for i, c in enumerate(BASE58_ALPHABET)}
-# Solana SPL token program IDs (kept for legacy _extract_burn_entries)
-TOKEN_PROGRAM_IDS = {
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",   # SPL Token
-    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",   # Token-2022
-}
-
 # ─────────────────────────────────────────────
 # Redis / Room Manager lifecycle
 # ─────────────────────────────────────────────
@@ -104,21 +95,21 @@ matchmaking_task: MatchmakingTask | None = None
 DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_PAYMENT_TOKEN_PRICE_FALLBACK = Decimal("0")
-DEFAULT_ANDROID_PACKAGE_NAME = "com.basememefighter.app"
+DEFAULT_ANDROID_PACKAGE_NAME = "com.solanamemefighter.app"
 DEFAULT_ANDROID_CERT_SHA256 = "84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76"
 BOOST_INTENT_TTL_SECONDS = int(os.environ.get("BOOST_INTENT_TTL_SECONDS", "600"))
 STARTER_BOOSTS = int(os.environ.get("STARTER_BOOSTS", "15"))
 WALLET_AUTH_CHALLENGE_TTL_SECONDS = int(os.environ.get("WALLET_AUTH_CHALLENGE_TTL_SECONDS", "300"))
 WALLET_AUTH_SESSION_TTL_SECONDS = int(os.environ.get("WALLET_AUTH_SESSION_TTL_SECONDS", "86400"))
 
-# SPL Token program IDs kept for legacy reference (unused post-Base migration)
-_LEGACY_TOKEN_PROGRAM_IDS = {
-    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+TOKEN_PROGRAM_IDS = {
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # SPL Token
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",  # Token-2022
 }
 
-# EVM wallet address: 0x + 40 hex chars (EIP-55 checksummed or lowercase)
-WALLET_ADDRESS_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
+WALLET_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+BASE58_INDEX = {c: i for i, c in enumerate(BASE58_ALPHABET)}
 BOOST_RATE_LIMITS = {
     "wallet-auth-challenge": {"limit": 20, "window": 60},
     "wallet-auth-verify": {"limit": 30, "window": 60},
@@ -313,7 +304,7 @@ def _cancel_controller_wait_timer(code: str) -> None:
 @asynccontextmanager
 async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
     """Safe lifespan for $SMF Stick Lash - no required Redis or Postgres"""
-    print("[lifespan] Starting safe mode for $BMF MemeFight")
+    print("[lifespan] Starting safe mode for $SMF Stick Lash")
 
     global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, boost_pg_pool, cleanup_task, matchmaking_task
 
@@ -330,16 +321,14 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                 if redis_url.startswith("redis://") and "upstash" in redis_url:
                     redis_url = redis_url.replace("redis://", "rediss://", 1)
                 
-                # cast() is a zero-cost type hint — tells the checker this is Redis, not bool.
-                # aioredis.from_url() stubs have an overload resolution bug with decode_responses=True.
-                redis_pool = cast(aioredis.Redis, aioredis.from_url(  # type: ignore[type-arg]
+                redis_pool = aioredis.from_url(
                     redis_url,
                     decode_responses=True,
                     socket_timeout=5.0,
                     socket_connect_timeout=5.0
-                ))
+                )
                 # Test connection
-                await redis_pool.ping()  # type: ignore[misc]
+                await redis_pool.ping()
                 print("[redis] Connected successfully")
             except Exception as e:
                 print(f"[redis] Connection failed: {e}. Falling back to in-memory mode.")
@@ -459,24 +448,21 @@ def _base58_decode(value: str) -> bytes:
     return b"\x00" * leading_zeros + decoded
 
 
-def _decode_signature(signature: str) -> str:
-    """Normalise a hex or base64 signature to a 0x-prefixed hex string for eth-account."""
+def _decode_signature(signature: str) -> bytes:
     sig = signature.strip()
-    # Already 0x-prefixed hex (MetaMask etc.)
-    if re.match(r'^0x[0-9a-fA-F]{130}$', sig):
-        return sig
-    # Raw hex without prefix (some wallets omit 0x)
-    if re.match(r'^[0-9a-fA-F]{130}$', sig):
-        return '0x' + sig
-    # Base64-encoded 65-byte ECDSA signature
-    padding = '=' * ((4 - len(sig) % 4) % 4)
+    # Preferred path: base64 (wallet client sends base64 for transport)
+    padding = "=" * ((4 - len(sig) % 4) % 4)
     try:
         raw = base64.b64decode(sig + padding, validate=True)
-        if len(raw) == 65:
-            return '0x' + raw.hex()
+        if len(raw) == 64:
+            return raw
     except (binascii.Error, ValueError):
         pass
-    raise ValueError("Signature format invalid. Expected 65-byte ECDSA signature as 0x hex or base64.")
+    # Fallback: base58-encoded signature
+    raw_bs58 = _base58_decode(sig)
+    if len(raw_bs58) == 64:
+        return raw_bs58
+    raise ValueError("Signature format invalid. Expect base64 or base58 64-byte signature.")
 
 
 def _extract_bearer_token(request: Request) -> str:
@@ -488,29 +474,6 @@ def _extract_bearer_token(request: Request) -> str:
 
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-
-def _verify_eip191_signature(message: str, signature_hex: str, expected_wallet: str) -> None:
-    """Verify an EIP-191 personal_sign signature and raise HTTPException on mismatch.
-
-    Uses eth-account which is part of the web3 ecosystem and does not require
-    any network calls — it only does local ECDSA recovery.
-    """
-    try:
-        from eth_account.messages import encode_defunct  # type: ignore[import-not-found]
-        from eth_account import Account               # type: ignore[import-not-found]
-    except ImportError:
-        raise HTTPException(
-            status_code=503,
-            detail="Wallet auth dependency missing on server (eth-account). Run: uv add eth-account",
-        )
-    try:
-        msg = encode_defunct(text=message)
-        recovered = Account.recover_message(msg, signature=signature_hex)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Signature recovery failed: {exc}")
-    if recovered.lower() != expected_wallet.lower():
-        raise HTTPException(status_code=401, detail="Wallet signature does not match wallet address")
 
 
 def _wallet_auth_domain(request: Request) -> str:
@@ -537,17 +500,16 @@ def _public_base_url(request: Request) -> str:
 
 
 def _wallet_auth_message(request: Request, wallet: str, nonce: str, issued_at_unix: int, expires_at_unix: int) -> str:
-    """Build an EIP-4361 Sign-In With Ethereum (SIWE) message for Base chain."""
-    issued_iso  = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(issued_at_unix))
+    issued_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(issued_at_unix))
     expires_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(expires_at_unix))
     domain = _wallet_auth_domain(request)
     return (
-        f"{domain} wants you to sign in with your Ethereum account:\n"
+        f"{domain} wants you to sign in with your Solana account:\n"
         f"{wallet}\n\n"
-        "Sign in to MemeFight ($BMF) and authorize secure boost actions.\n\n"
+        "Sign in to StickLash and authorize secure boost actions.\n\n"
         f"URI: https://{domain}\n"
         "Version: 1\n"
-        f"Chain ID: {BASE_CHAIN_ID}\n"
+        "Chain ID: solana:mainnet-beta\n"
         f"Nonce: {nonce}\n"
         f"Issued At: {issued_iso}\n"
         f"Expiration Time: {expires_iso}"
@@ -611,25 +573,6 @@ def _get_solana_rpc() -> str:
 def _get_public_solana_rpc() -> str:
     # Never leak private provider URLs (e.g. key-bearing RPC) to browser clients.
     return os.environ.get("SOLANA_RPC_PUBLIC", DEFAULT_PUBLIC_SOLANA_RPC)
-
-
-# ─── Base chain RPC helpers ───────────────────────────────────────────────────
-DEFAULT_BASE_RPC        = "https://mainnet.base.org"
-DEFAULT_PUBLIC_BASE_RPC = "https://mainnet.base.org"
-BASE_CHAIN_ID           = 8453
-
-
-def _get_bmf_contract() -> str:
-    """$BMF ERC-20 contract address on Base. Configured via BMF_CONTRACT_ADDRESS env var."""
-    return os.environ.get("BMF_CONTRACT_ADDRESS", "").strip()
-
-
-def _get_base_rpc() -> str:
-    return os.environ.get("BASE_RPC", DEFAULT_BASE_RPC)
-
-
-def _get_public_base_rpc() -> str:
-    return os.environ.get("BASE_RPC_PUBLIC", DEFAULT_PUBLIC_BASE_RPC)
 
 
 def _as_decimal(value: Any, fallback: Decimal) -> Decimal:
@@ -1910,20 +1853,10 @@ async def share_card_page(share_id: str, request: Request) -> Response:
 
 @get("/api/smf-config")
 async def api_smf_config() -> dict[str, str]:
-    """Retrieve $BMF contract address, treasury address, and client-safe Base RPC URL."""
-    bmf_contract = _get_bmf_contract()
-    base_rpc = _get_public_base_rpc()
-    treasury = os.environ.get("BMF_TREASURY_ADDRESS", "").strip()
+    """Retrieve SMF mint address and client-safe Solana RPC URL."""
     return {
-        # Base chain (preferred)
-        "bmfContract":    bmf_contract,
-        "baseRpcUrl":     base_rpc,
-        "baseChainId":    str(BASE_CHAIN_ID),
-        "treasuryAddress": treasury,
-        "bmfTreasury":    treasury,
-        # Legacy compat fields (kept so old clients don't error on missing keys)
-        "smfMint":  bmf_contract,  # same address, ERC-20 on Base
-        "solanaRpc": base_rpc,     # repurposed to Base RPC
+        "smfMint": _get_smf_mint(),
+        "solanaRpc": _get_public_solana_rpc(),
     }
 
 
@@ -1987,11 +1920,22 @@ async def api_wallet_auth_verify(data: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="signature is required")
     _check_rate_limit("wallet-auth-verify", wallet)
 
-    # Verify EIP-191 personal_sign signature
     try:
-        signature_hex = _decode_signature(signature)
+        signature_bytes = _decode_signature(signature)
+        wallet_bytes = _base58_decode(wallet)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    if len(wallet_bytes) != 32:
+        raise HTTPException(status_code=400, detail="Wallet public key bytes length invalid")
+
+    try:
+        import nacl.signing  # type: ignore[import-not-found]
+        from nacl.exceptions import BadSignatureError  # type: ignore[import-not-found]
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Wallet auth dependency missing on server (PyNaCl).",
+        )
 
     session_token = secrets.token_urlsafe(48)
     session_hash = _token_hash(session_token)
@@ -2010,7 +1954,7 @@ async def api_wallet_auth_verify(data: dict[str, Any]) -> dict[str, Any]:
             )
             if challenge is None:
                 raise HTTPException(status_code=404, detail="Challenge not found")
-            if str(challenge["wallet_address"]).lower() != wallet.lower():
+            if str(challenge["wallet_address"]) != wallet:
                 raise HTTPException(status_code=403, detail="Challenge wallet mismatch")
             if challenge["consumed_at"] is not None:
                 raise HTTPException(status_code=409, detail="Challenge already used")
@@ -2018,8 +1962,11 @@ async def api_wallet_auth_verify(data: dict[str, Any]) -> dict[str, Any]:
             if expires_at is not None and expires_at.timestamp() < time.time():
                 raise HTTPException(status_code=409, detail="Challenge expired")
 
-            # Verify EIP-191 personal_sign against the stored challenge message
-            _verify_eip191_signature(str(challenge["message"]), signature_hex, wallet)
+            verify_key = nacl.signing.VerifyKey(wallet_bytes)
+            try:
+                verify_key.verify(str(challenge["message"]).encode("utf-8"), signature_bytes)
+            except BadSignatureError:
+                raise HTTPException(status_code=401, detail="Invalid wallet signature")
 
             await conn.execute(
                 """
@@ -2050,14 +1997,9 @@ async def api_wallet_auth_verify(data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@post("/api/wallet-auth/verify-siwe")
-@post("/api/wallet-auth/verify-siws")  # backward-compat alias
-async def api_wallet_auth_verify_siwe(data: dict[str, Any]) -> dict[str, Any]:
-    """Verify a Sign-In With Ethereum (SIWE/EIP-4361) payload and issue a session token.
-
-    Accepts both the new SIWE format (chain_id=8453) and the legacy endpoint name
-    /verify-siws for backward compatibility with existing clients.
-    """
+@post("/api/wallet-auth/verify-siws")
+async def api_wallet_auth_verify_siws(data: dict[str, Any]) -> dict[str, Any]:
+    """Verify a native MWA Sign-In-with-Solana payload and issue a session token."""
     if boost_pg_pool is None:
         raise HTTPException(status_code=503, detail="Boost ledger database not available")
 
@@ -2065,7 +2007,7 @@ async def api_wallet_auth_verify_siwe(data: dict[str, Any]) -> dict[str, Any]:
     signature = str(data.get("signature") or "").strip()
     signed_message_b64 = str(data.get("signedMessageBase64") or data.get("signed_message_base64") or "").strip()
     if not _is_valid_wallet_address(wallet):
-        raise HTTPException(status_code=400, detail="Invalid wallet address format (expected EVM 0x address)")
+        raise HTTPException(status_code=400, detail="Invalid wallet address format")
     if not signature:
         raise HTTPException(status_code=400, detail="signature is required")
     if not signed_message_b64:
@@ -2073,28 +2015,43 @@ async def api_wallet_auth_verify_siwe(data: dict[str, Any]) -> dict[str, Any]:
     _check_rate_limit("wallet-auth-verify", wallet)
 
     try:
-        signature_hex = _decode_signature(signature)
+        signature_bytes = _decode_signature(signature)
+        wallet_bytes = _base58_decode(wallet)
         padding = "=" * ((4 - len(signed_message_b64) % 4) % 4)
         message_bytes = base64.b64decode(signed_message_b64 + padding, validate=True)
         message = message_bytes.decode("utf-8")
     except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid SIWE payload: {exc}")
+        raise HTTPException(status_code=400, detail=f"Invalid SIWS payload: {exc}")
+    if len(wallet_bytes) != 32:
+        raise HTTPException(status_code=400, detail="Wallet public key bytes length invalid")
 
     fields = _parse_siws_message_fields(message)
-    if fields.get("wallet", "").lower() != wallet.lower():
-        raise HTTPException(status_code=403, detail="SIWE wallet mismatch")
+    if fields.get("wallet") != wallet:
+        raise HTTPException(status_code=403, detail="SIWS wallet mismatch")
+    if fields.get("uri") != "https://sticklash.fun":
+        raise HTTPException(status_code=403, detail="SIWS URI mismatch")
     if fields.get("version") != "1":
-        raise HTTPException(status_code=403, detail="SIWE version mismatch")
-    # Accept Base chain ID (8453) as string or int
-    chain_id_str = str(fields.get("chain_id", "")).strip()
-    if chain_id_str not in {str(BASE_CHAIN_ID), str(BASE_CHAIN_ID) + "\n"}:
-        raise HTTPException(status_code=403, detail=f"SIWE chain mismatch (expected {BASE_CHAIN_ID}, got {chain_id_str!r})")
+        raise HTTPException(status_code=403, detail="SIWS version mismatch")
+    if fields.get("chain_id") not in {"solana:mainnet-beta", "mainnet"}:
+        raise HTTPException(status_code=403, detail="SIWS chain mismatch")
     nonce = fields.get("nonce", "")
     if len(nonce) < 16:
-        raise HTTPException(status_code=400, detail="SIWE nonce too short")
+        raise HTTPException(status_code=400, detail="SIWS nonce missing")
 
-    # Verify EIP-191 personal_sign signature
-    _verify_eip191_signature(message, signature_hex, wallet)
+    try:
+        import nacl.signing  # type: ignore[import-not-found]
+        from nacl.exceptions import BadSignatureError  # type: ignore[import-not-found]
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Wallet auth dependency missing on server (PyNaCl).",
+        )
+
+    verify_key = nacl.signing.VerifyKey(wallet_bytes)
+    try:
+        verify_key.verify(message_bytes, signature_bytes)
+    except BadSignatureError:
+        raise HTTPException(status_code=401, detail="Invalid SIWS signature")
 
     session_token = secrets.token_urlsafe(48)
     session_hash = _token_hash(session_token)
@@ -2411,162 +2368,6 @@ async def api_boost_confirm(request: Request, data: dict[str, Any]) -> dict[str,
     }
 
 
-@post("/api/boost/purchase-eth")
-async def api_boost_purchase_eth(request: Request, data: dict[str, Any]) -> dict[str, Any]:
-    """Credit boosts after verifying an ETH payment on Base chain.
-
-    The client sends the txHash after the wallet has signed & broadcast the
-    transaction.  Server waits for a receipt via the Base RPC, checks:
-      - to == treasury address
-      - value >= expected ETH amount for the pack
-      - from == wallet
-      - status == 1 (success)
-    Boost crediting is idempotent — duplicate txHash is a no-op.
-    """
-    if boost_pg_pool is None:
-        raise HTTPException(status_code=503, detail="Boost ledger database not available")
-
-    wallet   = _normalize_wallet_address(data.get("wallet"))
-    pack_id  = str(data.get("packId") or "").strip().lower()
-    tx_hash  = str(data.get("txHash") or "").strip()
-
-    if not _is_valid_wallet_address(wallet):
-        raise HTTPException(status_code=400, detail="Invalid wallet address")
-    if pack_id not in BOOST_PACKS:
-        raise HTTPException(status_code=400, detail=f"Unknown packId '{pack_id}'")
-    if not re.match(r'^0x[0-9a-fA-F]{64}$', tx_hash):
-        raise HTTPException(status_code=400, detail="Invalid txHash format")
-
-    # ETH amounts per pack in wei (must match frontend PACKS constants)
-    ETH_PACK_WEI: dict[str, int] = {
-        "micro": 500_000_000_000_000,   # 0.0005 ETH
-        "degen": 1_500_000_000_000_000, # 0.0015 ETH
-        "chaos": 2_500_000_000_000_000, # 0.0025 ETH
-    }
-    expected_wei  = ETH_PACK_WEI[pack_id]
-    boosts_count  = int(BOOST_PACKS[pack_id]["boosts"])
-    treasury_addr = os.environ.get("BMF_TREASURY_ADDRESS", "").strip().lower()
-
-    if not treasury_addr or not re.match(r'^0x[0-9a-fA-F]{40}$', treasury_addr):
-        raise HTTPException(status_code=503, detail="Treasury address not configured on server")
-
-    async with boost_pg_pool.acquire() as conn:
-        await _require_wallet_session(conn, request, wallet)
-        _check_rate_limit("purchase_eth", wallet)
-
-        # Idempotency — check if this tx was already credited
-        existing = await conn.fetchrow(
-            "SELECT boosts_credited FROM boost_eth_purchases WHERE tx_hash = $1",
-            tx_hash,
-        )
-        if existing is not None:
-            balance_row = await conn.fetchrow(
-                "SELECT boosts FROM player_boost_balances WHERE wallet_address = $1",
-                wallet,
-            )
-            boosts = int(balance_row["boosts"]) if balance_row else STARTER_BOOSTS
-            return {"status": "already_credited", "boosts": boosts, "idempotent": True}
-
-        # Verify receipt on Base via JSON-RPC
-        rpc_url = _get_base_rpc()
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                receipt_resp = await client.post(rpc_url, json={
-                    "jsonrpc": "2.0", "id": 1,
-                    "method": "eth_getTransactionReceipt",
-                    "params": [tx_hash],
-                })
-                receipt_resp.raise_for_status()
-                receipt_body = receipt_resp.json()
-
-                tx_resp = await client.post(rpc_url, json={
-                    "jsonrpc": "2.0", "id": 2,
-                    "method": "eth_getTransactionByHash",
-                    "params": [tx_hash],
-                })
-                tx_resp.raise_for_status()
-                tx_body = tx_resp.json()
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"Base RPC call failed: {exc}")
-
-        receipt = (receipt_body.get("result") or {})
-        tx      = (tx_body.get("result") or {})
-
-        if not receipt:
-            raise HTTPException(status_code=400, detail="Transaction not yet on-chain. Retry in a moment.")
-
-        # Check success
-        if int(receipt.get("status", "0x0"), 16) != 1:
-            raise HTTPException(status_code=400, detail="Transaction reverted or failed on-chain")
-
-        # Check recipient
-        to_addr = str(tx.get("to") or "").lower()
-        if to_addr != treasury_addr:
-            raise HTTPException(status_code=400, detail="Transaction recipient does not match treasury")
-
-        # Check sender
-        from_addr = str(tx.get("from") or "").lower()
-        if from_addr != wallet.lower():
-            raise HTTPException(status_code=400, detail="Transaction sender does not match wallet")
-
-        # Check value >= expected
-        value_hex = str(tx.get("value") or "0x0")
-        value_wei = int(value_hex, 16)
-        if value_wei < expected_wei:
-            raise HTTPException(
-                status_code=400,
-                detail=f"ETH value too low: got {value_wei} wei, expected ≥ {expected_wei}",
-            )
-
-        block_number = int(receipt.get("blockNumber", "0x0"), 16)
-
-        async with conn.transaction():
-            # Insert purchase record (idempotent via UNIQUE tx_hash)
-            inserted = await conn.fetchval(
-                """
-                INSERT INTO boost_eth_purchases
-                    (tx_hash, wallet_address, pack_id, boosts_credited, eth_wei, block_number)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (tx_hash) DO NOTHING
-                RETURNING 1
-                """,
-                tx_hash, wallet, pack_id, boosts_count, value_wei, block_number,
-            )
-
-            if inserted:
-                # Credit boosts
-                await conn.execute(
-                    """
-                    INSERT INTO player_boost_balances
-                        (wallet_address, boosts, total_purchased_boosts, total_spent_boosts)
-                    VALUES ($1, $2, $3, 0)
-                    ON CONFLICT (wallet_address) DO UPDATE SET
-                        boosts = player_boost_balances.boosts + $3,
-                        total_purchased_boosts =
-                            player_boost_balances.total_purchased_boosts + $3,
-                        updated_at = NOW()
-                    """,
-                    wallet, STARTER_BOOSTS + boosts_count, boosts_count,
-                )
-
-        balance_row = await conn.fetchrow(
-            "SELECT boosts FROM player_boost_balances WHERE wallet_address = $1", wallet
-        )
-        boosts = int(balance_row["boosts"]) if balance_row else STARTER_BOOSTS
-
-    _audit_boost_event(
-        "boost_eth_purchase", wallet=wallet, pack_id=pack_id,
-        tx_hash=tx_hash, boosts=boosts, eth_wei=value_wei,
-    )
-    return {
-        "status": "credited",
-        "boosts": boosts,
-        "bootsCredited": boosts_count,
-        "txHash": tx_hash,
-        "packId": pack_id,
-    }
-
-
 @post("/api/boost/consume")
 async def api_boost_consume(request: Request, data: dict[str, Any]) -> dict[str, Any]:
     """Atomically consume boost units for gameplay actions (e.g., hadouken)."""
@@ -2670,28 +2471,19 @@ async def api_boost_consume(request: Request, data: dict[str, Any]) -> dict[str,
         "idempotent": False,
     }
 
-async def _fetch_market_trending(count: int = 12) -> List[Dict[str, Any]]:
-    return await birdeye_service.fetch_trending_tokens(count)
-
-async def _fetch_market_graduates(count: int = 8) -> List[Dict[str, Any]]:
-    return await birdeye_service.fetch_graduated_tokens(count)
-
-async def _fetch_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
-    # Token details are gameplay hot-path data. Keep Birdeye reserved for
-    # discovery lists; DexScreener handles per-token logo/banner/price refreshes.
-    return await dexscreener_service.get_cached_token(mint)
-
 @get(MARKET_TRENDING_ROUTE)
 async def api_market_trending(count: int = 12) -> List[Dict[str, Any]]:
-    return await _fetch_market_trending(count)
+    return await birdeye_service.fetch_trending_tokens(count)
 
 @get(MARKET_GRADUATES_ROUTE)
 async def api_market_graduates(count: int = 8) -> List[Dict[str, Any]]:
-    return await _fetch_market_graduates(count)
+    return await birdeye_service.fetch_graduated_tokens(count)
 
 @get(MARKET_TOKEN_ROUTE)
 async def api_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
-    return await _fetch_market_token_details(mint)
+    # Token details are gameplay hot-path data. Keep Birdeye reserved for
+    # discovery lists; DexScreener handles per-token logo/banner/price refreshes.
+    return await dexscreener_service.get_cached_token(mint)
 
 def _assert_legacy_market_endpoint_allowed() -> None:
     if ALLOW_LEGACY_MARKET_ENDPOINTS:
@@ -2704,17 +2496,17 @@ def _assert_legacy_market_endpoint_allowed() -> None:
 @get("/api/trending")
 async def api_trending(count: int = 12) -> List[Dict[str, Any]]:
     _assert_legacy_market_endpoint_allowed()
-    return await _fetch_market_trending(count)
+    return await api_market_trending(count)
 
 @get("/api/graduates")
 async def api_graduates(count: int = 8) -> List[Dict[str, Any]]:
     _assert_legacy_market_endpoint_allowed()
-    return await _fetch_market_graduates(count)
+    return await api_market_graduates(count)
 
 @get("/api/token/{mint:str}")
 async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
     _assert_legacy_market_endpoint_allowed()
-    return await _fetch_market_token_details(mint)
+    return await api_market_token_details(mint)
 
 @get("/api/proxy/image")
 async def proxy_image(url: str) -> Response:
@@ -2749,10 +2541,10 @@ async def safety_tweets(cashtag: str) -> dict:
     
     # Mock data as robust fallback
     mock_tweets = [
-        {"author": "@basetrader", "text": f"{cashtag} contract is clean. LP burned, ownership renounced. Base chain verified. 🛡️"},
+        {"author": "@novasolana", "text": f"{cashtag} contract is clean. LP burned, mint revoked. Good to go. 🛡️"},
         {"author": "@rugmuncher", "text": f"Watching the top 10 wallets for {cashtag}. They hold 42%, be careful playing this one! ⚠️"},
-        {"author": "@base_scanner", "text": f"No honeypot detected on {cashtag}. Ownership renounced on Base."},
-        {"author": "@degen_whale", "text": f"I just ape'd into {cashtag} on Base, looks absolutely safe!"}
+        {"author": "@solana_scanner", "text": f"No honeypot detected on {cashtag}. Renounced ownership."},
+        {"author": "@degen_whale", "text": f"I just ape'd into {cashtag}, looks absolutely safe!"}
     ]
 
     if not bearer_token:
@@ -4124,13 +3916,12 @@ app = Litestar(
         api_smf_config,
         api_wallet_auth_challenge,
         api_wallet_auth_verify,
-        api_wallet_auth_verify_siwe,
+        api_wallet_auth_verify_siws,
         api_wallet_auth_logout,
         api_boost_packs,
         api_boost_balance,
         api_boost_create_intent,
         api_boost_confirm,
-        api_boost_purchase_eth,
         api_boost_consume,
         api_market_trending,
         api_market_graduates,

@@ -26,13 +26,7 @@ function getCachedTrendingTokens() {
     const payload = JSON.parse(localStorage.getItem(TRENDING_CACHE_KEY) || 'null');
     if (!payload || !Array.isArray(payload.tokens)) return [];
     if (Date.now() - Number(payload.timestamp || 0) > TRENDING_CACHE_TTL) return [];
-    const tokens = payload.tokens;
-    // Invalidate old static cache if it contains dummy symbols or 0.0% placeholders
-    if (tokens.some(t => t.symbol === 'BASE' || (t.priceChange24h === 0 && (t.symbol === 'BRETT' || t.symbol === 'TOSHI')))) {
-      localStorage.removeItem(TRENDING_CACHE_KEY);
-      return [];
-    }
-    return tokens;
+    return payload.tokens;
   } catch {
     return [];
   }
@@ -47,64 +41,40 @@ function setCachedTrendingTokens(tokens) {
   } catch {}
 }
 
-export function isEvmAddress(address) {
-  return /^0x[a-fA-F0-9]{40}$/.test(String(address || '').trim());
-}
-
-export function getTokenSymbol(token, fallback = 'MEME') {
-  if (!token) return fallback;
-  const sym = token.symbol || token.tokenSymbol || token.baseToken?.symbol || token.extractedSymbol;
-  if (sym && sym !== 'BASE' && sym !== 'Unknown') {
-    return String(sym).toUpperCase();
-  }
-  if (token.name && token.name !== 'Unknown' && token.name !== 'Base Token') {
-    return String(token.name).toUpperCase();
-  }
-  if (token.mint || token.address) {
-    const raw = String(token.mint || token.address);
-    return raw.length >= 6 ? raw.slice(0, 6).toUpperCase() : fallback;
-  }
-  return fallback;
-}
-
 function buildFallbackTokenFromMint(mint) {
   const raw = String(mint || '').trim();
-  const isEvm = isEvmAddress(raw);
   const short = raw.length >= 6 ? raw.slice(0, 6).toUpperCase() : 'MEME';
   return {
     mint: raw,
-    address: raw,
     symbol: short,
-    name: isEvm ? `Base Token (${short})` : `Token ${short}`,
-    logoURI: 'assets/base-logo.png',
-    chainId: isEvm ? 'base' : 'solana',
+    name: `Token ${short}`,
+    logoURI: 'assets/smf-logo.png',
     marketCap: 0,
     volume24h: 0,
     priceChange24h: 0,
     liquidity: 0,
     price: 0,
     holders: 'N/A',
-    dexscreenerUrl: raw ? (isEvm ? `https://dexscreener.com/base/${raw}` : `https://dexscreener.com/solana/${raw}`) : '',
+    dexscreenerUrl: raw ? `https://dexscreener.com/solana/${raw}` : '',
   };
 }
 
-async function getTrendingTokens(count = 12) {
+async function getTrendingTokens(count = 8) {
   try {
-    // Primary: Fetch live trending market feed from backend server API
     const primary = await getSolscanTrending(count);
     if (Array.isArray(primary) && primary.length > 0) {
       setCachedTrendingTokens(primary);
       return primary;
     }
 
-    // Secondary: Top Memes from backend server API
-    const memes = await getPumpFunGraduates(count);
-    if (Array.isArray(memes) && memes.length > 0) {
-      setCachedTrendingTokens(memes);
-      return memes;
+    // If trending is empty/rate-limited, fall back to grads.
+    const grads = await getPumpFunGraduates(count);
+    if (Array.isArray(grads) && grads.length > 0) {
+      setCachedTrendingTokens(grads);
+      return grads;
     }
 
-    // Last resort: Return cached feed
+    // Last resort: return recent cached feed so gameplay can still start.
     return getCachedTrendingTokens().slice(0, count);
   } catch (e) {
     console.error("Trending fetch failed:", e);
@@ -128,39 +98,10 @@ async function getTokenByMint(mint) {
     ]);
 
     if (!data || !data.mint) {
+      // If details endpoint blips, salvage from cached/live list by mint match.
       const inMemoryCandidates = getCachedTrendingTokens();
-      const matched = inMemoryCandidates.find(t => String(t?.mint || t?.address || '').toLowerCase() === cleanMint.toLowerCase());
+      const matched = inMemoryCandidates.find(t => String(t?.mint || '') === cleanMint);
       if (matched) data = matched;
-    }
-
-    if (!data || !data.mint) {
-      // Direct Dexscreener API lookup for Base / EVM address
-      try {
-        const dexRes = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${cleanMint}`);
-        if (dexRes.ok) {
-          const dexData = await dexRes.json();
-          const pair = dexData?.pairs?.[0];
-          if (pair) {
-            data = {
-              mint: cleanMint,
-              address: cleanMint,
-              symbol: pair.baseToken?.symbol || 'BASE',
-              name: pair.baseToken?.name || 'Base Token',
-              logoURI: pair.info?.imageUrl || 'assets/base-logo.png',
-              chainId: pair.chainId || (isEvmAddress(cleanMint) ? 'base' : 'solana'),
-              marketCap: pair.marketCap || pair.fdv || 0,
-              volume24h: pair.volume?.h24 || 0,
-              priceChange24h: pair.priceChange?.h24 || 0,
-              liquidity: pair.liquidity?.usd || 0,
-              price: pair.priceUsd || 0,
-              holders: 'N/A',
-              dexscreenerUrl: pair.url || `https://dexscreener.com/base/${cleanMint}`,
-            };
-          }
-        }
-      } catch (e) {
-        console.error('Dexscreener direct token lookup failed:', e);
-      }
     }
 
     if (!data || !data.mint) {
@@ -175,6 +116,7 @@ async function getTokenByMint(mint) {
   }
 }
 
+// Simple personality generator (we can make it smarter later)
 function generatePersonality(token) {
   if (!token) {
     return {
@@ -191,19 +133,19 @@ function generatePersonality(token) {
   }
   const vibe = (token.symbol || 'MEME').toLowerCase();
   if (vibe.includes('pepe') || vibe.includes('frog')) {
-    return { name: 'Cocky Frog Lord', pitch: 0.8, rate: 1.1, taunts: ['Ribbit your way to shadow realm!', 'My Base chart pumps harder than your kicks!'] };
+    return { name: 'Cocky Frog Lord', pitch: 0.8, rate: 1.1, taunts: ['Ribbit your way to shadow realm!', 'My chart pumps harder than your kicks!'] };
   }
   if (vibe.includes('fart') || vibe.includes('gas')) {
-    return { name: 'Gasbag Supreme', pitch: 1.3, rate: 0.9, taunts: ['You just got FARTED on!', 'Smell the Base gas victory!'] };
+    return { name: 'Gasbag Supreme', pitch: 1.3, rate: 0.9, taunts: ['You just got FARTED on!', 'Smell the victory!'] };
   }
   return { 
-    name: 'Base Degen Warrior', 
+    name: 'Degen Warrior', 
     pitch: 1.0, 
     rate: 1.0, 
     taunts: [
-      `You think you can beat ${token.symbol || 'me'} on Base? My liquidity is thicker than your portfolio!`,
+      `You think you can beat ${token.symbol || 'me'}? My liquidity is thicker than your portfolio!`,
       'PUMP IT OR DUMP IT — either way you\'re getting KO\'d!',
-      `I just 100x\'d on Base while you were loading this fight 😂`
+      `I just 100x\'d while you were loading this fight 😂`
     ]
   };
 }

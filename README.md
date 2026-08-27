@@ -1,13 +1,15 @@
-# MemeFight ($BMF)
+![STICKLASH Arena Banner](assets/sticklash-bg.png)
 
 <div align="center">
-  <img src="https://img.shields.io/badge/Base--Blockchain-Theme--Active-0000FF?style=for-the-badge&logo=ethereum&logoColor=white" alt="Base Theme Active">
+  <img src="https://img.shields.io/badge/Solana--Mobile-Seeker--Optimized-9945FF?style=for-the-badge&logo=solana&logoColor=white" alt="Solana Seeker Ready">
   <img src="https://img.shields.io/badge/Deepgram-Zeus--Announcer-000000?style=for-the-badge&logo=deepgram&logoColor=white" alt="Deepgram Aura 2 Zeus">
   <img src="https://img.shields.io/badge/WebRTC-P2P--Multiplayer-333333?style=for-the-badge&logo=webrtc&logoColor=white" alt="WebRTC P2P">
+  <img src="https://img.shields.io/badge/Twitter/X-Viral--Share-000000?style=for-the-badge&logo=x&logoColor=white" alt="Viral Share">
+  <img src="https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI Backend">
   <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge" alt="MIT License">
 </div>
 
-Web3 meme token gamified fighting game on Base & Solana where players battle against trending tokens with $BMF energy.
+# STICKLASH 🥊⚡
 
 > **The world's first Solana meme-token fighting game.**
 > Real on-chain data powers your opponent's health, damage, and speed. Fight trending tokens live from Pump.fun and Birdeye. Every match is different because the blockchain never stops.
@@ -316,7 +318,3 @@ python -m http.server 3000
 ## 📄 License
 
 MIT — build on it, fight with it, ship it.
-=======
-MIT
-# MemeFight ($BMF)
->>>>>>> 0c024be (feat: rebrand to MemeFight () and update theme to Base blockchain blue (#0000FF))

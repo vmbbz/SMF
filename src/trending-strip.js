@@ -1,6 +1,5 @@
 import { getSolscanTrending, getPumpFunGraduates } from './solscan-trending.js';
-import { proxiedImageUrl, getTokenImageSource } from './image-utils.js';
-import { getTokenSymbol } from './token-utils.js';
+import { proxiedImageUrl } from './image-utils.js';
 
 export class TrendingStrip {
   constructor(containerId) {
@@ -10,7 +9,7 @@ export class TrendingStrip {
     this.refreshTimer = null;
     this.loading = false;
     this.fallbackNotice = '';
-    this.cacheKey = `bmf_trending_cache_${containerId}`;
+    this.cacheKey = `smf_trending_cache_${containerId}`;
   }
 
   async init() {
@@ -41,14 +40,14 @@ export class TrendingStrip {
 
       let nextTokens = Array.isArray(primaryTokens) ? primaryTokens : [];
 
-      // Top Memes can legitimately be empty for stretches; don't leave the strip blank.
+      // Graduates can legitimately be empty for stretches; don't leave the strip blank.
       if (this.isGraduatesOnly && nextTokens.length === 0) {
         const trendingFallback = await getSolscanTrending(12);
         if (Array.isArray(trendingFallback) && trendingFallback.length > 0) {
           nextTokens = trendingFallback;
-          this.fallbackNotice = 'TOP MEMES - SHOWING TRENDING';
+          this.fallbackNotice = 'NO NEW GRADS - SHOWING TRENDING';
         } else {
-          this.fallbackNotice = 'TOP MEMES';
+          this.fallbackNotice = 'NO NEW GRADS YET';
         }
       }
 
@@ -61,10 +60,6 @@ export class TrendingStrip {
         let cached = null;
         try {
           cached = JSON.parse(localStorage.getItem(this.cacheKey) || 'null');
-          if (cached && Array.isArray(cached.tokens) && cached.tokens.some(t => t.symbol === 'BASE' || (t.priceChange24h === 0 && (t.symbol === 'BRETT' || t.symbol === 'TOSHI')))) {
-            localStorage.removeItem(this.cacheKey);
-            cached = null;
-          }
         } catch (_) {}
         if (cached && Array.isArray(cached.tokens) && cached.tokens.length > 0) {
           this.tokens = cached.tokens;
@@ -78,10 +73,6 @@ export class TrendingStrip {
       let cached = null;
       try {
         cached = JSON.parse(localStorage.getItem(this.cacheKey) || 'null');
-        if (cached && Array.isArray(cached.tokens) && cached.tokens.some(t => t.symbol === 'BASE' || (t.priceChange24h === 0 && (t.symbol === 'BRETT' || t.symbol === 'TOSHI')))) {
-          localStorage.removeItem(this.cacheKey);
-          cached = null;
-        }
       } catch (_) {}
       if (cached && Array.isArray(cached.tokens) && cached.tokens.length > 0) {
         this.tokens = cached.tokens;
@@ -110,7 +101,7 @@ export class TrendingStrip {
         <button class="strip-info-btn" type="button" onclick="window.openHelpModal && window.openHelpModal()" title="Game Guide">?</button>
         <div class="strip-actions">
           <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn strip-mode-btn" type="button">
-            ${this.isGraduatesOnly ? 'ALL TRENDING' : 'TOP MEMES'}
+            ${this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS'}
           </button>
         </div>
       </div>
@@ -166,7 +157,7 @@ export class TrendingStrip {
           width: 24px;
           height: 24px;
           border-radius: 50%;
-          border: 1px solid rgba(0, 100, 255, 0.75);
+          border: 1px solid rgba(255, 0, 255, 0.75);
           background: rgba(0, 0, 0, 0.62);
           color: #fff;
           cursor: pointer;
@@ -177,7 +168,7 @@ export class TrendingStrip {
           font-family: var(--font-print, 'Press Start 2P', system-ui, sans-serif);
           font-size: 9px;
           line-height: 1;
-          box-shadow: 0 0 9px rgba(0, 100, 255, 0.48);
+          box-shadow: 0 0 9px rgba(255, 0, 255, 0.48);
           transition: transform 0.15s ease, border-color 0.15s ease;
         }
         .strip-info-btn:hover {
@@ -194,9 +185,9 @@ export class TrendingStrip {
         .strip-mode-btn {
           height: 24px;
           max-width: 148px;
-          border: 1px solid rgba(0, 100, 255, 0.72);
+          border: 1px solid rgba(255, 0, 255, 0.72);
           border-radius: 999px;
-          background: linear-gradient(135deg, rgba(0, 80, 255, 0.95), rgba(0, 200, 255, 0.88));
+          background: linear-gradient(135deg, rgba(255, 0, 255, 0.95), rgba(0, 212, 255, 0.88));
           color: #050505;
           cursor: pointer;
           display: inline-flex;
@@ -210,7 +201,7 @@ export class TrendingStrip {
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
-          box-shadow: 0 0 12px rgba(0, 100, 255, 0.28);
+          box-shadow: 0 0 12px rgba(255, 0, 255, 0.28);
         }
         .marquee-container {
           overflow: hidden;
@@ -342,7 +333,7 @@ export class TrendingStrip {
 
     // Update button text just in case
     const btn = this.container.querySelector('.toggle-btn');
-    if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'TOP MEMES';
+    if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS';
 
     if (this.tokens.length === 0) {
       inner.innerHTML = `<span class="market-loading-text">Market feed unavailable - tap button to retry</span>`;
@@ -350,17 +341,14 @@ export class TrendingStrip {
     }
 
     const itemsHtml = this.tokens.map(token => {
-      const chg = Number(token.priceChange24h || token.priceChange?.h24) || 0;
+      const chg = Number(token.priceChange24h) || 0;
       const chgStr = (chg >= 0 ? '+' : '') + chg.toFixed(1) + '%';
       const chgColor = chg >= 0 ? '#00ff9d' : '#ff2244';
-      const rawLogo = getTokenImageSource(token, 'assets/base-logo.png');
-      const logoSrc = proxiedImageUrl(rawLogo);
-      const symbol = getTokenSymbol(token, 'MEME');
-      const mint = token.mint || token.address || token.baseToken?.address || '';
+      const logoSrc = proxiedImageUrl(token.logoURI || token.image || token.icon || 'assets/smf-logo.png');
       return `
-      <div class="token-pill" onclick="window.requestTokenFight ? window.requestTokenFight('${mint}') : window.fightToken && window.fightToken('${mint}')">
-        <img src="${logoSrc}" alt="${symbol}" onerror="this.onerror=null;this.src='assets/base-logo.png'">
-        <span class="symbol">$${symbol}</span>
+      <div class="token-pill" onclick="window.requestTokenFight ? window.requestTokenFight('${token.mint}') : window.fightToken && window.fightToken('${token.mint}')">
+        <img src="${logoSrc}" alt="${token.symbol}" onerror="this.onerror=null;this.src='assets/smf-logo.png'">
+        <span class="symbol">$${token.symbol}</span>
         <span class="power" style="color:${chgColor}">${chgStr}</span>
       </div>`;
     }).join('');

@@ -80,16 +80,15 @@ class DexScreenerService:
 
     @staticmethod
     def _choose_best_pair(pairs: list[dict[str, Any]], mint: str) -> dict[str, Any]:
-        def score(pair: dict[str, Any]) -> tuple[int, int, float]:
+        def score(pair: dict[str, Any]) -> tuple[int, float]:
             base = pair.get("baseToken") or {}
-            matches_base = 1 if str(base.get("address") or "").lower() == mint.lower() else 0
-            is_base_chain = 1 if pair.get("chainId") == "base" else 0
+            matches_base = 1 if str(base.get("address") or "") == mint else 0
             liquidity = ((pair.get("liquidity") or {}).get("usd") or 0) or 0
             try:
                 liquidity_value = float(liquidity)
             except (TypeError, ValueError):
                 liquidity_value = 0.0
-            return matches_base, is_base_chain, liquidity_value
+            return matches_base, liquidity_value
 
         return max(pairs, key=score)
 
@@ -113,7 +112,6 @@ class DexScreenerService:
         header = info.get("header")
         open_graph = info.get("openGraph")
         cover = header or open_graph
-        chain_id = pair.get("chainId") or "base"
 
         return {
             "mint": mint,
@@ -133,9 +131,9 @@ class DexScreenerService:
             "liquidity": self._float(liquidity.get("usd")),
             "price": self._float(pair.get("priceUsd")),
             "holders": "N/A",
-            "dexscreenerUrl": pair.get("url") or f"https://dexscreener.com/{chain_id}/{mint}",
+            "dexscreenerUrl": pair.get("url") or f"https://dexscreener.com/solana/{mint}",
             "pairAddress": pair.get("pairAddress"),
-            "chainId": chain_id,
+            "chainId": pair.get("chainId"),
             "websites": info.get("websites") or [],
             "socials": info.get("socials") or [],
             "links": info.get("links") or [],
