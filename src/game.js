@@ -491,6 +491,7 @@ export class Game {
 
     // Intercept Hadouken attack for P1 (the human player) to validate premium boosts.
     if (
+      !this.authoritativeMultiplayer &&
       p1Pressed.has(Actions.HADOUKEN) &&
       this._isP1ReadyForHadouken() &&
       !skipHadoukenConsumeCheck

@@ -36,9 +36,10 @@ describe('Landing page keyboard navigation', () => {
     expect(html).toContain('id="btn-leaderboard"');
   });
 
-  test('path cards are <button> elements (keyboard accessible)', () => {
-    expect(html).toMatch(/<button[^>]*class="path-card mp"/);
-    expect(html).toMatch(/<button[^>]*class="path-card sp"/);
+  test('all three landing navigation targets are buttons', () => {
+    expect(html).toMatch(/<button[^>]*id="btn-singleplayer"/);
+    expect(html).toMatch(/<button[^>]*id="btn-multiplayer"/);
+    expect(html).toMatch(/<button[^>]*id="btn-leaderboard"/);
   });
 
   test('focus cycling wraps around 3 items (Up from 0 → 2, Down from 2 → 0)', () => {
@@ -134,8 +135,15 @@ describe('Room code input auto-focus', () => {
 
 describe('Leaderboard keyboard navigation', () => {
   test('leaderboard has exactly 2 league filter buttons', () => {
-    // Count <button class="lb-filter..."> elements (not CSS rules)
-    const filterMatches = html.match(/<button\s+class="lb-filter[^"]*"/g);
+    const leagueFilterMarkup = html.match(/<div class="lb-filters" id="lb-league-filters">([\s\S]*?)<\/div>/)?.[1] || '';
+    const filterMatches = leagueFilterMarkup.match(/<button\s+class="lb-filter[^"]*"/g);
+    expect(filterMatches).toBeDefined();
+    expect(filterMatches.length).toBe(2);
+  });
+
+  test('leaderboard has exactly 2 input-division filter buttons', () => {
+    const categoryFilterMarkup = html.match(/<div class="lb-filters" id="lb-category-filters">([\s\S]*?)<\/div>/)?.[1] || '';
+    const filterMatches = categoryFilterMarkup.match(/<button\s+class="lb-filter[^"]*"/g);
     expect(filterMatches).toBeDefined();
     expect(filterMatches.length).toBe(2);
   });

@@ -2103,6 +2103,21 @@
     .lb-filters {
       display: flex;
       gap: 6px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .lb-filter-group {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .lb-filter-label {
+      color: var(--dg-pebble);
+      font-family: monospace;
+      font-size: 9px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
     }
     .lb-filter {
       font-family: monospace;
@@ -2229,6 +2244,101 @@
       color: var(--dg-danger);
       margin-top: 4px;
     }
+    .mm-boundary {
+      max-width: 500px;
+      margin: 0 auto 12px;
+      color: var(--dg-pebble);
+      font-family: monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .mm-leagues {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin: 0 auto 12px;
+      width: min(100%, 500px);
+    }
+    .mm-league {
+      border: 2px solid var(--dg-border);
+      border-radius: 8px;
+      background: var(--dg-almost-blk);
+      color: var(--dg-text);
+      cursor: pointer;
+      font-family: monospace;
+      padding: 10px;
+      text-align: left;
+    }
+    .mm-league strong,
+    .mm-league span {
+      display: block;
+    }
+    .mm-league strong {
+      color: var(--dg-primary);
+      font-size: 11px;
+      margin-bottom: 5px;
+    }
+    .mm-league span {
+      color: var(--dg-pebble);
+      font-size: 9px;
+      line-height: 1.4;
+    }
+    .mm-league.selected {
+      border-color: var(--dg-primary);
+      background: rgba(19, 239, 149, 0.08);
+    }
+    .mm-league[data-league="boosted"].selected {
+      border-color: var(--neon-pink);
+      box-shadow: 0 0 12px rgba(255, 43, 214, 0.18);
+    }
+    .mm-policy {
+      color: var(--dg-slate);
+      font-family: monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      margin: 0 auto 12px;
+      max-width: 500px;
+      text-align: center;
+    }
+    .mm-auth-status {
+      color: var(--dg-primary);
+      font-family: monospace;
+      font-size: 10px;
+      min-height: 15px;
+      text-align: center;
+    }
+    .mm-auth-status.error { color: var(--dg-danger); }
+    .ranked-result-summary {
+      border: 1px solid rgba(19, 239, 149, 0.45);
+      border-radius: 8px;
+      color: var(--dg-text);
+      font-family: monospace;
+      font-size: 10px;
+      line-height: 1.5;
+      margin: 14px auto 0;
+      max-width: 620px;
+      padding: 9px 12px;
+      text-align: center;
+    }
+    .ranked-result-summary.hidden { display: none; }
+    .ranked-fight-status {
+      background: rgba(5, 8, 12, 0.86);
+      border: 1px solid var(--dg-primary);
+      border-radius: 6px;
+      color: var(--dg-text);
+      font-family: monospace;
+      font-size: 10px;
+      left: 50%;
+      padding: 7px 11px;
+      pointer-events: none;
+      position: fixed;
+      text-align: center;
+      top: 74px;
+      transform: translateX(-50%);
+      z-index: 650;
+    }
+    .ranked-fight-status.hidden { display: none; }
 
     .lb-link {
       font-family: monospace;
@@ -2578,7 +2688,7 @@
   <section id="economy-page" class="screen hidden" aria-labelledby="economy-page-title">
     <header class="economy-page-header">
       <div>
-        <div class="economy-eyebrow">STICKLASH PUBLIC POLICY · 2026-08-27.V2</div>
+        <div class="economy-eyebrow">STICKLASH PUBLIC POLICY · 2026-08-27.V3</div>
         <h1 id="economy-page-title">ECONOMY &amp; REWARDS</h1>
         <div id="economy-runtime-status" class="economy-status">DESIGN APPROVED · TOKEN FLOWS NOT LIVE</div>
       </div>
@@ -2592,7 +2702,7 @@
 
       <div class="economy-runtime">
         <strong>CURRENT RUNTIME</strong>
-        <span id="economy-runtime-detail">Boost purchases, creator-fee routing, $ANSEM actions, reward epochs, and token claims remain disabled while their on-chain verification paths are built.</span>
+        <span id="economy-runtime-detail">Wallet-bound public ranked matches, server-owned results, separate league ELO, and the three-charge Boosted cap are implemented. Boost purchases, creator-fee routing, $ANSEM actions, reward epochs, and token claims remain disabled.</span>
       </div>
 
       <section class="economy-section" aria-labelledby="economy-flow-title">
@@ -2642,7 +2752,7 @@
                 <th>Mode</th>
                 <th>Purchased power</th>
                 <th>Ranking</th>
-                <th>Weekly competitive budget</th>
+                <th>Target epoch allocation when rewards launch</th>
               </tr>
             </thead>
             <tbody>
@@ -2656,13 +2766,13 @@
                 <td>Boosted League</td>
                 <td>Maximum 3 paid boost charges per player per match</td>
                 <td>Separate validated ELO</td>
-                <td>30%</td>
+                <td>30% of each funded token budget</td>
               </tr>
               <tr>
                 <td>Skill Championship</td>
                 <td>Disabled; standardized loadout</td>
                 <td>Main validated ELO</td>
-                <td>70%</td>
+                <td>70% of each funded token budget</td>
               </tr>
             </tbody>
           </table>
@@ -2674,6 +2784,65 @@
         <p class="economy-note">
           Boosted League is openly boost-enabled, capped, and isolated. Buying more never adds ranking points. Skill Championship results and ratings cannot be affected by paid boosts.
         </p>
+      </section>
+
+      <section class="economy-section" aria-labelledby="economy-earning-title">
+        <h2 id="economy-earning-title">HOW PLAYERS EARN — AND WHAT COUNTS</h2>
+        <div class="economy-grid">
+          <article class="economy-card">
+            <h3>1. VERIFY &amp; CHOOSE</h3>
+            <p>Connect a Solana wallet, sign the free StickLash sign-in message, then choose Skill Championship or Boosted League and an input division.</p>
+          </article>
+          <article class="economy-card">
+            <h3>2. FIGHT A RANDOM HUMAN</h3>
+            <p>Public matchmaking pairs online players. The server locks identities and rules, runs the match, freezes the result, and updates only that league and input division.</p>
+          </article>
+          <article class="economy-card">
+            <h3>3. PLACE IN A FUTURE EPOCH</h3>
+            <p>There is no token payment per win. After rewards launch, validated matches form an epoch-only ranking; qualified placements can receive both funded assets after review.</p>
+          </article>
+        </div>
+        <div class="economy-table-wrap" style="margin-top: 14px;">
+          <table class="economy-table">
+            <thead>
+              <tr>
+                <th>Fight path</th>
+                <th>Updates ranked ELO now?</th>
+                <th>Future reward-epoch candidate?</th>
+                <th>Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Public Ranked · Skill</td>
+                <td>Yes</td>
+                <td>Yes, only after epochs launch</td>
+                <td>Random wallet-authenticated human opponent; equal-power rules</td>
+              </tr>
+              <tr>
+                <td>Public Ranked · Boosted</td>
+                <td>Yes, in separate ELO</td>
+                <td>Yes, only after epochs launch</td>
+                <td>Random wallet-authenticated human opponent; maximum three paid charges each</td>
+              </tr>
+              <tr>
+                <td>Private friend room</td>
+                <td>No</td>
+                <td>No</td>
+                <td>Chosen opponents make farming and collusion too easy</td>
+              </tr>
+              <tr>
+                <td>AI, LLM, token, Endless, or waiting-room practice</td>
+                <td>No</td>
+                <td>No</td>
+                <td>Practice and entertainment cannot create competitive rewards</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="economy-note">
+          Today, an eligible public ranked fight can change ELO only. It does not earn, accrue, reserve, or promise tokens. Reward eligibility starts only in a separately announced epoch with funded budgets, minimum-match and unique-opponent rules, a frozen snapshot, review, and a verified wallet claim.
+        </div>
       </section>
 
       <section class="economy-section" aria-labelledby="economy-rewards-title">
@@ -2697,17 +2866,29 @@
         </div>
       </section>
 
+      <section class="economy-section" aria-labelledby="economy-integrity-title">
+        <h2 id="economy-integrity-title">COMPETITIVE INTEGRITY IMPLEMENTED</h2>
+        <ul class="economy-checks">
+          <li>Authenticated wallets bound to server match rooms</li>
+          <li>Separate Skill and Boosted ELO histories</li>
+          <li>Unique, idempotent match settlement IDs</li>
+          <li>Server-owned final results and immutable ranked metadata</li>
+          <li>Paid specials blocked in Skill Championship</li>
+          <li>Three-charge cap enforced in Boosted League</li>
+        </ul>
+      </section>
+
       <section class="economy-section" aria-labelledby="economy-safety-title">
-        <h2 id="economy-safety-title">REQUIRED BEFORE TOKEN REWARDS GO LIVE</h2>
+        <h2 id="economy-safety-title">STILL REQUIRED BEFORE TOKEN REWARDS GO LIVE</h2>
         <ul class="economy-checks">
           <li>Official game-token and $ANSEM mints verified</li>
           <li>Dedicated reserve and treasury accounts configured</li>
           <li>Burn purchase path replaced by exact reserve transfer</li>
-          <li>Authenticated wallets bound to server match rooms</li>
-          <li>Separate Skill and Boosted ELO histories</li>
-          <li>Unique, idempotent match settlement IDs</li>
+          <li>Append-only reserve and creator-fee ledgers</li>
           <li>Minimum-match, unique-opponent, replay, and Sybil controls</li>
           <li>Dry-run epoch completed before token claims</li>
+          <li>Frozen reward snapshot and public review process</li>
+          <li>Audited, explicit wallet claim path</li>
         </ul>
       </section>
 
@@ -2731,6 +2912,7 @@
   <div id="fight-trending-strip" class="trending-strip"
     style="display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-green); padding: 6px 15px; z-index: 100; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(0,255,157,0.15); font-family: var(--font-print);">
   </div>
+  <div id="ranked-fight-status" class="ranked-fight-status hidden" role="status"></div>
 
   <!-- HUD WIDGETS (Bottom Center on PC, vertically centred on mobile) -->
   <div id="hud-widgets">
@@ -2835,6 +3017,7 @@
         })();
       </script>
     </div>
+    <p class="landing-tagline">Fight live Solana token AI for practice, or enter wallet-verified human competition.</p>
     <button class="premium-btn" onclick="startTrendingMode()">TRENDING ARENA <span class="cartoon-icon">🔥</span></button>
     <button class="premium-btn" onclick="startEndlessMode()">ENDLESS STREAM <span class="cartoon-icon">🌀</span></button>
     <div style="display:flex;gap:10px;margin:10px 0;">
@@ -2842,7 +3025,9 @@
       <button class="premium-btn" onclick="startCustomFight()"
         style="width:auto;margin:0;padding:10px 20px;">FIGHT <span class="cartoon-icon">👊</span></button>
     </div>
-    <button class="premium-btn pink" onclick="showMultiplayer()">MULTIPLAYER <span class="cartoon-icon">🌐</span></button>
+    <button id="btn-singleplayer" class="premium-btn">AI FIGHTERS · PRACTICE ONLY <span class="cartoon-icon">🤖</span></button>
+    <button id="btn-multiplayer" class="premium-btn pink">HUMAN MULTIPLAYER <span class="cartoon-icon">🌐</span></button>
+    <button id="btn-leaderboard" class="premium-btn">RANKED STANDINGS <span class="cartoon-icon">🏆</span></button>
     <div id="status"></div>
   </div>
 
@@ -2880,6 +3065,7 @@
 
 
 
+    <div id="ranked-result-summary" class="ranked-result-summary hidden" role="status"></div>
     <div
       style="display:flex; justify-content:center; flex-wrap:wrap; gap:10px; margin-top: 28px; z-index: 10; position: relative; width: 100%;">
       <div style="display:flex; gap:10px; width: 100%; justify-content: center;">
@@ -2889,7 +3075,7 @@
         <button class="premium-btn pink victory-btn" onclick="shareVictory()">SHARE TO X 🚀</button>
       </div>
       <div style="display:flex; gap:10px; width: 100%; justify-content: center;">
-        <button class="premium-btn dark victory-btn"
+        <button id="btn-victory-rematch" class="premium-btn dark victory-btn"
           onclick="if(window.rematchFight){window.rematchFight()}else{if(window._cancelEndlessCountdown)_cancelEndlessCountdown();location.reload()}">REMATCH 🥊</button>
         <button id="btn-next-fight" class="premium-btn dark victory-btn" onclick="nextFight()">NEXT FIGHT ⏭️</button>
       </div>
@@ -2910,27 +3096,27 @@
   <!-- Multiplayer menu -->
   <div class="screen multiplayer-menu hidden" id="multiplayer-menu">
     <h2>MULTIPLAYER</h2>
-    <p class="mp-steps">Step 1: Create or Join &rarr; Step 2: Pick Controller &rarr; Step 3: Fight!</p>
+    <p class="mp-steps">Private rooms are casual. Public matchmaking is the only ranked path.</p>
     <div class="mp-options">
       <button class="mp-option" id="btn-create-room">
         <span class="mp-icon">＋</span>
         <div class="mp-text">
-          <span class="mp-label">Create Room</span>
-          <span class="mp-desc">Get a shareable room code</span>
+          <span class="mp-label">Create Private Room</span>
+          <span class="mp-desc">Casual invite · unranked · no token rewards</span>
         </div>
       </button>
       <button class="mp-option" id="btn-join-room">
         <span class="mp-icon">→</span>
         <div class="mp-text">
-          <span class="mp-label">Join Room</span>
-          <span class="mp-desc">Enter a room code to join</span>
+          <span class="mp-label">Join Private Room</span>
+          <span class="mp-desc">Casual invite · unranked · no token rewards</span>
         </div>
       </button>
       <button class="mp-option" id="btn-matchmaking">
         <span class="mp-icon">⚔</span>
         <div class="mp-text">
-          <span class="mp-label">Matchmaking</span>
-          <span class="mp-desc">Find an ELO-matched opponent</span>
+          <span class="mp-label">Public Ranked</span>
+          <span class="mp-desc">Wallet-bound ELO matchmaking · reward pipeline not live</span>
         </div>
       </button>
     </div>
@@ -2983,11 +3169,23 @@
 
   <!-- Matchmaking screen -->
   <div class="screen matchmaking-screen hidden" id="matchmaking">
-    <h2>MATCHMAKING</h2>
+    <h2>PUBLIC RANKED</h2>
 
     <!-- Controller selection (before searching) -->
     <div id="mm-select">
-      <p class="join-hint">Choose your controller and search for an opponent</p>
+      <p class="mm-boundary">Fight a randomly matched online human. Private friends, AI opponents, and practice fights never enter these standings.</p>
+      <div class="mm-leagues" id="mm-leagues" aria-label="Ranked league">
+        <button class="mm-league selected" type="button" data-league="skill">
+          <strong>SKILL CHAMPIONSHIP</strong>
+          <span>Equal rules · paid specials blocked · 70% target reward pool</span>
+        </button>
+        <button class="mm-league" type="button" data-league="boosted">
+          <strong>BOOSTED LEAGUE</strong>
+          <span>Up to 3 paid boost charges each · separate ELO · 30% target pool</span>
+        </button>
+      </div>
+      <p class="mm-policy" id="mm-league-policy">Skill Championship: specials that consume paid boosts are disabled for both fighters.</p>
+      <p class="mm-auth-status" id="mm-auth-status">A connected wallet plus one free sign-in signature is required.</p>
       <div class="player-card p1" id="mm-ctrl-card">
         <h3>YOUR FIGHTER</h3>
         <div class="mode-pills" id="mm-ctrl-pills">
@@ -3008,7 +3206,7 @@
       <p class="mm-wait-info" id="mm-wait-info"></p>
       <div class="mm-actions">
         <button class="premium-btn pink" id="btn-mm-cancel" style="margin: 0; flex: 1;">CANCEL SEARCH</button>
-        <button class="back-btn" id="btn-mm-play-wait">Play while you wait &rarr;</button>
+        <button class="back-btn" id="btn-mm-play-wait">AI PRACTICE WHILE WAITING (DOES NOT COUNT) &rarr;</button>
       </div>
     </div>
 
@@ -3018,7 +3216,7 @@
   <!-- Character select screen (single-player opponent) -->
   <div class="screen character-select hidden" id="character-select">
     <h2>CHOOSE YOUR OPPONENT</h2>
-    <p class="join-hint">Select an AI character to fight</p>
+    <p class="join-hint">AI practice/showcase · no ELO · no token rewards</p>
     <div class="char-cards" id="char-cards">
       <!-- Populated by JS from /api/characters -->
     </div>
@@ -3071,10 +3269,21 @@
 
   <!-- Leaderboard screen -->
   <div class="screen leaderboard-screen hidden" id="leaderboard" style="max-width: 680px !important; width: 95% !important; max-height: 85vh; overflow-y: auto;">
-    <h2>LEADERBOARD</h2>
-    <div class="lb-filters" id="lb-filters">
-      <button class="lb-filter active" data-category="voice">Voice League</button>
-      <button class="lb-filter" data-category="keyboard">Keyboard League</button>
+    <h2>RANKED STANDINGS</h2>
+    <p class="mm-boundary">Only wallet-authenticated public ranked matches count. Token reward epochs and claims are not live.</p>
+    <div class="lb-filter-group">
+      <span class="lb-filter-label">League</span>
+      <div class="lb-filters" id="lb-league-filters">
+        <button class="lb-filter active" data-league="skill">Skill</button>
+        <button class="lb-filter" data-league="boosted">Boosted</button>
+      </div>
+    </div>
+    <div class="lb-filter-group">
+      <span class="lb-filter-label">Input division</span>
+      <div class="lb-filters" id="lb-category-filters">
+        <button class="lb-filter active" data-category="keyboard">Keyboard</button>
+        <button class="lb-filter" data-category="voice">Voice / Phone</button>
+      </div>
     </div>
     <div class="lb-viewer-row hidden" id="lb-viewer-row">
       <!-- Populated by JS: viewer's own rank when not in top entries -->

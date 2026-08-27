@@ -35,31 +35,30 @@ describe('Username validation pattern', () => {
 // ─── updateUsername API function ───────────────────────────────
 
 describe('updateUsername function', () => {
-  // Mock localStorage and fetch for auth module
-  const mockStorage = {};
-  beforeAll(() => {
-    globalThis.localStorage = {
-      getItem: (k) => mockStorage[k] ?? null,
-      setItem: (k, v) => { mockStorage[k] = v; },
-      removeItem: (k) => { delete mockStorage[k]; },
-    };
-  });
+  async function restoreSession(authenticated = true, name = 'old-name') {
+    const auth = await import('../src/auth.js');
+    globalThis.fetch = async () => ({
+      ok: authenticated,
+      json: async () => authenticated
+        ? { authenticated: true, user: { id: 'u1', name } }
+        : { authenticated: false },
+    });
+    await auth.checkAuth();
+    return auth;
+  }
 
   afterEach(() => {
-    Object.keys(mockStorage).forEach(k => delete mockStorage[k]);
     delete globalThis.fetch;
   });
 
   it('returns error when not logged in', async () => {
-    const { updateUsername } = await import('../src/auth.js');
-    // No access token in storage
+    const { updateUsername } = await restoreSession(false);
     const result = await updateUsername('new-name');
     expect(result.error).toBeDefined();
   });
 
   it('sends correct request to server', async () => {
-    mockStorage['sf_auth_access_token'] = 'test-token';
-    mockStorage['sf_auth_user'] = JSON.stringify({ id: 'u1', name: 'old' });
+    const { updateUsername } = await restoreSession(true, 'old');
 
     let capturedReq = null;
     globalThis.fetch = async (url, opts) => {
@@ -70,35 +69,31 @@ describe('updateUsername function', () => {
       };
     };
 
-    const { updateUsername } = await import('../src/auth.js');
     const result = await updateUsername('new-name');
 
     expect(result.name).toBe('new-name');
     expect(capturedReq.url).toBe('/api/auth/username');
     expect(capturedReq.opts.method).toBe('POST');
-    expect(capturedReq.opts.headers['Authorization']).toBe('Bearer test-token');
+    expect(capturedReq.opts.headers['Content-Type']).toBe('application/json');
+    expect(capturedReq.opts.headers.Authorization).toBeUndefined();
     const body = JSON.parse(capturedReq.opts.body);
     expect(body.name).toBe('new-name');
   });
 
-  it('updates stored user on success', async () => {
-    mockStorage['sf_auth_access_token'] = 'test-token';
-    mockStorage['sf_auth_user'] = JSON.stringify({ id: 'u1', name: 'old-name' });
+  it('updates the cached server session user on success', async () => {
+    const { updateUsername, getUser } = await restoreSession(true, 'old-name');
 
     globalThis.fetch = async () => ({
       ok: true,
       json: async () => ({ name: 'updated-name' }),
     });
 
-    const { updateUsername } = await import('../src/auth.js');
     await updateUsername('updated-name');
-
-    const stored = JSON.parse(mockStorage['sf_auth_user']);
-    expect(stored.name).toBe('updated-name');
+    expect(getUser().name).toBe('updated-name');
   });
 
   it('returns error on server rejection', async () => {
-    mockStorage['sf_auth_access_token'] = 'test-token';
+    const { updateUsername } = await restoreSession();
 
     globalThis.fetch = async () => ({
       ok: false,
@@ -106,17 +101,15 @@ describe('updateUsername function', () => {
       json: async () => ({ detail: 'Username is already taken' }),
     });
 
-    const { updateUsername } = await import('../src/auth.js');
     const result = await updateUsername('taken');
     expect(result.error).toContain('already taken');
   });
 
   it('returns error on network failure', async () => {
-    mockStorage['sf_auth_access_token'] = 'test-token';
+    const { updateUsername } = await restoreSession();
 
     globalThis.fetch = async () => { throw new Error('Network failed'); };
 
-    const { updateUsername } = await import('../src/auth.js');
     const result = await updateUsername('any');
     expect(result.error).toBe('Network error');
   });

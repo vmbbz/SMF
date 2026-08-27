@@ -36,9 +36,12 @@ function renderRuntimePolicy(policy) {
   }
 
   const disabledReason = String(runtime.boostPurchasesDisabledReason || '').trim();
+  const rankedDetail = policy.competition?.settlementAuthority === 'server'
+    ? 'Wallet-bound public ranked uses server-owned results and separate league/input ELO. '
+    : '';
   detail.textContent = disabledReason
-    ? `Boost purchases: ${disabledReason} Creator-fee routing, $ANSEM actions, reward epochs, and token claims remain disabled.`
-    : 'Runtime policy loaded. Value-moving features remain gated independently.';
+    ? `${rankedDetail}Boost purchases: ${disabledReason} Creator-fee routing, $ANSEM actions, reward epochs, and token claims remain disabled.`
+    : `${rankedDetail}Value-moving features remain gated independently.`;
 }
 
 export async function loadEconomyPolicy(fetchImpl = window.fetch) {

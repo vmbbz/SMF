@@ -409,6 +409,11 @@ function buildStoredWalletAuthHeaders(walletAddress) {
   };
 }
 
+export function getStoredWalletAuthHeaders(walletAddress) {
+  const headers = buildStoredWalletAuthHeaders(walletAddress);
+  return headers ? { ...headers } : null;
+}
+
 async function ensureWalletAuthSession(walletAddress, { forceRefresh = false } = {}) {
   if (!walletAddress) throw new Error('Wallet address missing.');
   if (!window.solana && !hasNativeMwaBridge()) {

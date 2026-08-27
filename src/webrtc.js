@@ -224,7 +224,9 @@ export class PeerConnection {
     this._clearWsReconnectTimer();
     this._disposeWebSocket();
 
-    const url = resolveWsUrl(`/ws/game/${this.roomCode}?player=${this.playerNum}`);
+    const url = resolveWsUrl(
+      `/ws/game/${encodeURIComponent(this.roomCode)}?player=${this.playerNum}&player_id=${encodeURIComponent(this.playerId)}`
+    );
     const ws = new WebSocket(url);
     const generation = ++this._wsGeneration;
     this.ws = ws;

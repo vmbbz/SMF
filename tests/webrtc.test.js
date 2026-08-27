@@ -199,7 +199,7 @@ describe('PeerConnection', () => {
       // Don't await — signaling will hang. Just call it.
       pc._connectWebSocket();
       expect(pc.ws).not.toBeNull();
-      expect(pc.ws.url).toBe('ws://localhost:3000/ws/game/red-tiger-paw?player=1');
+      expect(pc.ws.url).toBe('ws://localhost:3000/ws/game/red-tiger-paw?player=1&player_id=player-uuid-1');
     });
 
     test('WebSocket onopen sets wsConnected', () => {
@@ -394,7 +394,7 @@ describe('PeerConnection', () => {
       expect(iceCall).toBeTruthy();
     });
 
-    test('handles received ICE candidate', async () => {
+    test('queues received ICE candidate until the remote description exists', async () => {
       const signalPromise = pc._startSignaling();
       const sse = MockEventSource._last;
       sse._emit({ type: 'connected', player: 1, iceServers: [] });
@@ -405,7 +405,13 @@ describe('PeerConnection', () => {
         candidate: { candidate: 'remote:456' }
       })});
 
+      expect(pc.iceQueue).toEqual([{ candidate: 'remote:456' }]);
+      expect(pc.pc._lastCandidate).toBeUndefined();
+
+      pc.pc.remoteDescription = { type: 'answer', sdp: 'remote-answer-sdp' };
+      await pc._processIceQueue();
       expect(pc.pc._lastCandidate).toBeTruthy();
+      expect(pc.iceQueue).toHaveLength(0);
     });
   });
 

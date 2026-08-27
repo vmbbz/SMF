@@ -25,7 +25,7 @@ const html = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
 
 describe('Landing page', () => {
   test('has tagline explaining game modes', () => {
-    expect(html).toContain('Fight online or train against AI');
+    expect(html).toContain('Fight live Solana token AI for practice, or enter wallet-verified human competition.');
   });
 
   test('tagline has proper CSS class', () => {
@@ -34,10 +34,10 @@ describe('Landing page', () => {
 });
 
 describe('Multiplayer screen', () => {
-  test('has step indicator with 3 steps', () => {
-    expect(html).toContain('Step 1: Create or Join');
-    expect(html).toContain('Step 2: Pick Controller');
-    expect(html).toContain('Step 3: Fight!');
+  test('explains the casual-versus-ranked boundary', () => {
+    expect(html).toContain('Private rooms are casual. Public matchmaking is the only ranked path.');
+    expect(html).toContain('Fight a randomly matched online human.');
+    expect(html).toContain('AI PRACTICE WHILE WAITING (DOES NOT COUNT)');
   });
 
   test('step indicator has proper CSS class', () => {

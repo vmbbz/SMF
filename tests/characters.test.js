@@ -148,10 +148,10 @@ describe('LLMAdapter retry and fallback', () => {
     const adapter = createTestAdapter();
     await adapter._requestPlan();
 
-    expect(adapter._plan).toEqual(['forward', 'back', 'light punch', 'jump', 'crouch']);
+    expect(adapter._plan).toHaveLength(5);
     expect(adapter._consecutiveFailures).toBe(1);
     expect(adapter.game.p2LlmToast).not.toBeNull();
-    expect(adapter.game.p2LlmToast.text).toBe('AI connection lost');
+    expect(adapter.game.p2LlmToast.text).toBe('⚡ AI: Local Mode');
   });
 
   test('generates fallback plan on network error', async () => {
@@ -160,10 +160,10 @@ describe('LLMAdapter retry and fallback', () => {
     const adapter = createTestAdapter();
     await adapter._requestPlan();
 
-    // Should have a plan (randomly generated)
+    // Network failure switches to the local state-aware behavior tree.
     expect(adapter._plan.length).toBe(5);
     expect(adapter._consecutiveFailures).toBe(1);
-    expect(adapter.game.p2LlmToast.text).toBe('AI connection lost');
+    expect(adapter.game.p2LlmToast.text).toBe('⚡ AI: Local Mode');
   });
 
   test('generates fallback plan on HTTP error', async () => {
@@ -196,9 +196,9 @@ describe('LLMAdapter retry and fallback', () => {
     expect(adapter.game.p2LlmToast).toBeNull();
   });
 
-  test('_generateFallbackPlan returns 5 commands', () => {
+  test('_behaviorTreePlan returns 5 commands', () => {
     const adapter = createTestAdapter();
-    const plan = adapter._generateFallbackPlan();
+    const plan = adapter._behaviorTreePlan();
     expect(plan).toHaveLength(5);
     plan.forEach(cmd => expect(typeof cmd).toBe('string'));
   });

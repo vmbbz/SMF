@@ -182,8 +182,8 @@ describe('KeyboardAdapter hadouken combo', () => {
   });
 });
 
-describe('LLM fallback commands include hadouken', () => {
-  test('hadouken is in FALLBACK_COMMANDS', async () => {
+describe('Local AI behavior tree uses hadouken', () => {
+  test('far-range fallback pressure can open with hadouken', async () => {
     // Mock CommandAdapter for llm.js import
     const mockExecute = jest.fn();
     jest.unstable_mockModule('../src/input.js', () => ({
@@ -197,16 +197,19 @@ describe('LLM fallback commands include hadouken', () => {
       })),
     }));
 
-    // Import the module fresh to get FALLBACK_COMMANDS
     const llmModule = await import('../src/llm.js');
-    // FALLBACK_COMMANDS is not exported, but we can verify via adapter behavior
-    // Instead, let's check that the LLMAdapter can generate fallback plans
     const adapter = new llmModule.LLMAdapter(1);
-    const plan = adapter._generateFallbackPlan();
+    adapter.game = {
+      p1: { x: 100, y: 0, health: 200, state: 'idle', grounded: true },
+      p2: { x: 500, y: 0, health: 200, state: 'idle', grounded: true },
+      roundTimer: 60,
+      stageWidth: 1200,
+    };
+    const randomSpy = jest.spyOn(Math, 'random').mockReturnValue(0);
+    const plan = adapter._behaviorTreePlan();
+    randomSpy.mockRestore();
+
     expect(plan).toHaveLength(5);
-    // Each command should be a string
-    for (const cmd of plan) {
-      expect(typeof cmd).toBe('string');
-    }
+    expect(plan[0]).toBe('hadouken');
   });
 });

@@ -45,46 +45,53 @@ describe('parseRoute — multiplayer', () => {
   });
 });
 
-// ─── PKCE helpers ──────────────────────────────
+// ─── Server-managed auth session ──────────────────────────────
 
-describe('PKCE code verifier and challenge', () => {
-  // We need crypto.subtle and crypto.getRandomValues for these tests.
-  // Node 18+ provides them via globalThis.crypto.
-
-  it('_generateCodeVerifier returns 64-char hex string', async () => {
-    const { _generateCodeVerifier } = await import('../src/auth.js');
-    const verifier = _generateCodeVerifier();
-    expect(verifier).toHaveLength(64);
-    expect(verifier).toMatch(/^[0-9a-f]{64}$/);
+describe('server-managed auth session', () => {
+  afterEach(() => {
+    delete globalThis.fetch;
+    delete globalThis.window;
   });
 
-  it('_generateCodeVerifier returns different values each call', async () => {
-    const { _generateCodeVerifier } = await import('../src/auth.js');
-    const v1 = _generateCodeVerifier();
-    const v2 = _generateCodeVerifier();
-    expect(v1).not.toBe(v2);
+  it('restores an authenticated session from the server cookie endpoint', async () => {
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ authenticated: true, user: { id: 'u1', name: 'Fighter' } }),
+    });
+    const { checkAuth, isLoggedIn, getUser } = await import('../src/auth.js');
+
+    expect(await checkAuth()).toBe(true);
+    expect(isLoggedIn()).toBe(true);
+    expect(getUser().name).toBe('Fighter');
   });
 
-  it('_computeCodeChallenge returns base64url string without padding', async () => {
-    const { _computeCodeChallenge } = await import('../src/auth.js');
-    const challenge = await _computeCodeChallenge('test-verifier-12345');
-    // base64url: no +, /, or = characters
-    expect(challenge).not.toMatch(/[+/=]/);
-    // Should be non-empty
-    expect(challenge.length).toBeGreaterThan(0);
+  it('clears authenticated state when the session endpoint rejects', async () => {
+    globalThis.fetch = async () => ({ ok: false });
+    const { checkAuth, isLoggedIn, getUser } = await import('../src/auth.js');
+
+    expect(await checkAuth()).toBe(false);
+    expect(isLoggedIn()).toBe(false);
+    expect(getUser()).toBeNull();
   });
 
-  it('_computeCodeChallenge is deterministic for same input', async () => {
-    const { _computeCodeChallenge } = await import('../src/auth.js');
-    const c1 = await _computeCodeChallenge('same-verifier');
-    const c2 = await _computeCodeChallenge('same-verifier');
-    expect(c1).toBe(c2);
+  it('starts login through the server endpoint with a bounded return path', async () => {
+    globalThis.window = { location: { href: '' } };
+    const { login } = await import('../src/auth.js');
+
+    login('/multiplayer');
+    expect(globalThis.window.location.href).toBe('/api/auth/login?return_path=%2Fmultiplayer');
   });
 
-  it('_computeCodeChallenge differs for different inputs', async () => {
-    const { _computeCodeChallenge } = await import('../src/auth.js');
-    const c1 = await _computeCodeChallenge('verifier-a');
-    const c2 = await _computeCodeChallenge('verifier-b');
-    expect(c1).not.toBe(c2);
+  it('reports auth as unconfigured when the config request fails', async () => {
+    globalThis.fetch = async () => { throw new Error('offline'); };
+    const { getAuthConfig, isAuthConfigured } = await import('../src/auth.js');
+
+    expect(await getAuthConfig()).toEqual({ configured: false });
+    expect(await isAuthConfigured()).toBe(false);
+  });
+
+  it('keeps the legacy browser callback as a safe no-op', async () => {
+    const { handleCallback } = await import('../src/auth.js');
+    expect(await handleCallback()).toBeNull();
   });
 });

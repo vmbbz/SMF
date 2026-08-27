@@ -17,6 +17,7 @@ import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
 import { announceArenaDirectorDecision, fetchArenaDirectorDecision } from './arena-director-client.js';
 import { getTokenCoverSource, getTokenImageSource, loadGameImage } from './image-utils.js';
 import { initializeEconomyPage, openEconomyPage } from './economy-page.js';
+import { getProfile, getStoredWalletAuthHeaders } from '../wallet-connect.js';
 
 window.generatePersonality = generatePersonality;
 
@@ -1214,6 +1215,8 @@ safeListener('btn-create-room', 'click', async () => {
     localStorage.setItem('sf_roomCode', data.code);
     localStorage.setItem('sf_playerId', data.playerId);
     localStorage.setItem('sf_playerNum', '1');
+    localStorage.setItem('sf_matchType', data.matchType || 'private_casual');
+    localStorage.removeItem('sf_league');
     // Show lobby in "created" mode (P1 perspective)
     document.getElementById('room-lobby-title').textContent = 'ROOM CREATED';
     document.getElementById('room-lobby-hint').textContent = 'Share this code with your opponent';
@@ -1294,6 +1297,9 @@ async function joinRoom(code) {
     localStorage.setItem('sf_roomCode', data.code);
     localStorage.setItem('sf_playerId', data.playerId);
     localStorage.setItem('sf_playerNum', data.playerNum);
+    localStorage.setItem('sf_matchType', data.matchType || 'private_casual');
+    if (data.league) localStorage.setItem('sf_league', data.league);
+    else localStorage.removeItem('sf_league');
 
     // P2 joins → room is now "selecting" → go straight to controller selection
     showRoomControllerScreen();
@@ -1408,6 +1414,8 @@ function startRoomPolling() {
 
 async function handleRoomStatusUpdate(data) {
   const myNum = localStorage.getItem('sf_playerNum');
+  if (data.matchType) localStorage.setItem('sf_matchType', data.matchType);
+  if (data.league) localStorage.setItem('sf_league', data.league);
 
   if (data.status === 'selecting' && (state === 'roomLobby' || state === 'victoryOverlay' || state === 'matchResults')) {
     // Both players in room — go to controller selection (e.g. after a rematch reset)
@@ -1740,6 +1748,31 @@ function stopWaitingInArena() {
   waitingArenaDeadline = 0;
 }
 
+function updateRankedFightStatus(competition = null, myNum = 1) {
+  const status = document.getElementById('ranked-fight-status');
+  if (!status) return;
+  const matchType = localStorage.getItem('sf_matchType') || 'private_casual';
+  const specialButton = document.getElementById('btn-hadouken');
+  if (matchType !== 'ranked_skill' && matchType !== 'ranked_boosted') {
+    status.classList.add('hidden');
+    if (specialButton) specialButton.disabled = false;
+    return;
+  }
+
+  status.classList.remove('hidden');
+  if (matchType === 'ranked_skill') {
+    status.textContent = 'SKILL CHAMPIONSHIP · PAID SPECIALS DISABLED · SERVER-RANKED';
+    if (specialButton) specialButton.disabled = true;
+    return;
+  }
+
+  if (specialButton) specialButton.disabled = false;
+  const mine = Number(competition?.[`p${myNum}_boost_charges_used`] || 0);
+  const theirs = Number(competition?.[`p${myNum === 1 ? 2 : 1}_boost_charges_used`] || 0);
+  const cap = Number(competition?.max_paid_boost_charges || 3);
+  status.textContent = `BOOSTED LEAGUE · YOUR PAID CHARGES ${mine}/${cap} · OPPONENT ${theirs}/${cap} · SERVER-RANKED`;
+}
+
 /** Start a multiplayer fight using the locally selected controller */
 async function startMultiplayerFight(_roomData) {
   if (multiplayerFightStarting) {
@@ -1777,6 +1810,7 @@ async function startMultiplayerFight(_roomData) {
 
     const fightStripEl = document.getElementById('fight-trending-strip');
     if (fightStripEl) fightStripEl.style.display = 'block';
+    updateRankedFightStatus(null, myNum);
 
     // Create input for local player based on room controller selection
     const localInput = createInput(myNum, roomModeIdx, roomProviderIdx);
@@ -1851,6 +1885,7 @@ async function startMultiplayerFight(_roomData) {
       peerConnection.onServerState((msg) => {
         if (msg.type === 'state' && predictionManager) {
           predictionManager.applyServerState(msg);
+          updateRankedFightStatus(msg.competition, myNum);
         }
         if (msg.type === 'round_over' && game) {
           game.roundOver = true;
@@ -1989,15 +2024,22 @@ async function handleMultiplayerRoundOver(msg) {
 
   // Stop the game and clean up peer connection
   if (game) { game.running = false; }
+  document.getElementById('ranked-fight-status')?.classList.add('hidden');
+  const specialButton = document.getElementById('btn-hadouken');
+  if (specialButton) specialButton.disabled = false;
   cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
-
-  // Start polling room status so we know when a rematch starts
-  startRoomPolling();
 
   const myNum = parseInt(localStorage.getItem('sf_playerNum') || '1', 10);
   const roomCode = localStorage.getItem('sf_roomCode');
   const playerId = localStorage.getItem('sf_playerId');
+  const matchType = localStorage.getItem('sf_matchType') || 'private_casual';
+  const rankedMatch = matchType === 'ranked_skill' || matchType === 'ranked_boosted';
+
+  // Private rooms poll for a rematch reset. Ranked matches are immutable and
+  // require a fresh public queue entry instead.
+  if (rankedMatch) stopRoomPolling();
+  else startRoomPolling();
 
   // Determine result text
   safeClass('results-winner', 'remove', 'p1-wins');
@@ -2037,26 +2079,10 @@ async function handleMultiplayerRoundOver(msg) {
   document.getElementById('results-p2-hp').textContent =
     `P2: ${Math.max(0, Math.round(msg.p2_health))} HP`;
 
-  // Call match complete endpoint with ELO data
-  const user = isLoggedIn() ? getUser() : null;
-  const body = {
-    code: roomCode,
-    playerId,
-    winner: msg.winner,
-    p1Health: msg.p1_health,
-    p2Health: msg.p2_health,
-  };
-
-  // Add user info for ELO if logged in
-  if (user) {
-    if (myNum === 1) {
-      body.p1UserId = user.sub || user.id;
-      body.p1Name = user.name || 'Player';
-    } else {
-      body.p2UserId = user.sub || user.id;
-      body.p2Name = user.name || 'Player';
-    }
-  }
+  // This acknowledgement can only retry the immutable server result. It does
+  // not submit winner, health, wallet identity, or rating data.
+  const body = { code: roomCode, playerId };
+  let settlement = msg.settlement || { settled: false, ranked: rankedMatch };
 
   try {
     const resp = await fetch('/api/match/complete', {
@@ -2066,10 +2092,29 @@ async function handleMultiplayerRoundOver(msg) {
     });
     if (resp.ok) {
       const result = await resp.json();
-      window.multiplayerEloData = result.elo; // Store rating changes globally
+      const settlementStatus = result.settlementStatus || settlement.settlementStatus;
+      const stored = ['recorded', 'failed', 'failed_database_unavailable', 'settled']
+        .includes(settlementStatus);
+      settlement = {
+        ...settlement,
+        ...(result.elo || {}),
+        league: result.league || settlement.league,
+        settlementStatus,
+        stored,
+      };
+    } else {
+      settlement = { ...settlement, completionError: true };
     }
   } catch (err) {
     console.warn('[match] Failed to report match result:', err);
+    settlement = { ...settlement, completionError: true };
+  }
+
+  window.multiplayerEloData = settlement;
+  renderRankedResultSummary(settlement, myNum, rankedMatch);
+  const victoryRematch = document.getElementById('btn-victory-rematch');
+  if (victoryRematch) {
+    victoryRematch.textContent = rankedMatch ? 'FIND NEXT RANKED MATCH ⚔' : 'REMATCH 🥊';
   }
 
   // Show premium victory overlay instead of results screen!
@@ -2089,13 +2134,16 @@ function showEloChanges(elo, myNum) {
 
   if (!myElo) return;
 
-  const ratingChange = myElo.rating - 1000; // Approximate — rating was updated
+  const ratingChange = Number(myElo.rating) - Number(myElo.old_rating ?? myElo.rating);
   const changeClass = ratingChange > 0 ? 'elo-positive' : ratingChange < 0 ? 'elo-negative' : 'elo-neutral';
+  const record = Number.isFinite(Number(myElo.wins))
+    ? ` | W:${myElo.wins} L:${myElo.losses}`
+    : '';
 
   eloEl.innerHTML = `
     <div class="elo-change">
       <span class="${changeClass}">Your ELO: ${Math.round(myElo.rating)}</span>
-      <br><small>${elo.category} | W:${myElo.wins} L:${myElo.losses}</small>
+      <br><small>${elo.league || ''} ${elo.category || ''} | ${ratingChange >= 0 ? '+' : ''}${Math.round(ratingChange)}${record}</small>
     </div>
   `;
   if (opElo) {
@@ -2107,6 +2155,60 @@ function showEloChanges(elo, myNum) {
   }
   const resultsElo = document.getElementById('results-elo');
   if (resultsElo) resultsElo.classList.remove('hidden');
+}
+
+function renderRankedResultSummary(settlement, myNum, rankedMatch) {
+  const summary = document.getElementById('ranked-result-summary');
+  if (!summary) return;
+  if (!rankedMatch) {
+    summary.textContent = '';
+    summary.classList.add('hidden');
+    return;
+  }
+
+  const league = (settlement?.league || localStorage.getItem('sf_league') || 'ranked').toUpperCase();
+  const myElo = myNum === 1 ? settlement?.p1 : settlement?.p2;
+  if (settlement?.settled && myElo) {
+    const change = Number(myElo.rating) - Number(myElo.old_rating ?? myElo.rating);
+    const signedChange = `${change >= 0 ? '+' : ''}${Math.round(change)}`;
+    summary.textContent = `${league} RESULT RECORDED · ELO ${Math.round(myElo.rating)} (${signedChange}) · TOKEN REWARDS ARE NOT LIVE`;
+  } else if (settlement?.stored || settlement?.retryPending) {
+    summary.textContent = `${league} SERVER RESULT STORED · ELO SETTLEMENT RETRY PENDING · TOKEN REWARDS ARE NOT LIVE`;
+  } else {
+    summary.textContent = `${league} RESULT NOT CONFIRMED · NO ELO UPDATE APPLIED · TOKEN REWARDS ARE NOT LIVE`;
+  }
+  summary.classList.remove('hidden');
+}
+
+function isCurrentRankedMatch() {
+  return ['ranked_skill', 'ranked_boosted'].includes(localStorage.getItem('sf_matchType'));
+}
+
+async function returnToRankedQueue() {
+  const previousLeague = localStorage.getItem('sf_league');
+  if (previousLeague === 'skill' || previousLeague === 'boosted') {
+    mmLeague = previousLeague;
+    localStorage.setItem('sf_rankedLeague', previousLeague);
+  }
+  stopRoomPolling();
+  stopWaitingInArena();
+  if (peerConnection) { peerConnection.close(); peerConnection = null; }
+  if (game) { game.running = false; game.roundOver = true; }
+  await cleanupAdapters();
+  game = null;
+  window.currentGame = null;
+  window.game = null;
+  window.isMultiplayerMatch = false;
+  localStorage.removeItem('sf_roomCode');
+  localStorage.removeItem('sf_playerId');
+  localStorage.removeItem('sf_playerNum');
+  localStorage.removeItem('sf_matchType');
+  localStorage.removeItem('sf_league');
+  const overlay = document.getElementById('victory-overlay');
+  if (overlay) overlay.classList.add('hidden');
+  const summary = document.getElementById('ranked-result-summary');
+  if (summary) summary.classList.add('hidden');
+  showMatchmakingScreen();
 }
 
 /** Handle room expiry — server cleaned up the room due to inactivity TTL */
@@ -2121,6 +2223,8 @@ function handleRoomExpired() {
   localStorage.removeItem('sf_roomCode');
   localStorage.removeItem('sf_playerId');
   localStorage.removeItem('sf_playerNum');
+  localStorage.removeItem('sf_matchType');
+  localStorage.removeItem('sf_league');
   // Show landing with a brief alert
   showLanding();
   alert('Room expired due to inactivity.');
@@ -2128,6 +2232,10 @@ function handleRoomExpired() {
 
 // Results screen: Rematch button
 safeListener('btn-rematch', 'click', async () => {
+  if (isCurrentRankedMatch()) {
+    await returnToRankedQueue();
+    return;
+  }
   const roomCode = localStorage.getItem('sf_roomCode');
   const playerId = localStorage.getItem('sf_playerId');
   if (!roomCode || !playerId) { showLanding(); return; }
@@ -2159,6 +2267,8 @@ safeListener('btn-leave', 'click', () => {
   localStorage.removeItem('sf_roomCode');
   localStorage.removeItem('sf_playerId');
   localStorage.removeItem('sf_playerNum');
+  localStorage.removeItem('sf_matchType');
+  localStorage.removeItem('sf_league');
   showLanding();
 });
 
@@ -2169,9 +2279,56 @@ let mmModeIdx = 0;
 let mmProviderIdx = 0;
 let mmPlayerId = null;
 let mmPollTimer = null;
+let mmPollInFlight = false;
 let mmWaitingGame = false;
 let mmSearchStart = 0;
 let mmSearchTimer = null;
+let mmWallet = '';
+let mmLeague = localStorage.getItem('sf_rankedLeague') === 'boosted' ? 'boosted' : 'skill';
+
+function setMatchmakingAuthStatus(message, isError = false) {
+  const status = document.getElementById('mm-auth-status');
+  if (!status) return;
+  status.textContent = message;
+  status.classList.toggle('error', isError);
+}
+
+function getRankedWalletSession(wallet = '') {
+  const profile = getProfile();
+  const expectedWallet = wallet || profile.walletAddress || '';
+  if (!profile.walletConnected || !expectedWallet) {
+    return { ok: false, reason: 'Connect a Solana wallet before entering public ranked matchmaking.' };
+  }
+  if (profile.walletReadOnly) {
+    return { ok: false, reason: 'Read-only wallet mode cannot enter ranked matchmaking.' };
+  }
+  if (profile.walletAddress !== expectedWallet) {
+    return { ok: false, reason: 'The active wallet changed. Start a new ranked search.' };
+  }
+  const headers = getStoredWalletAuthHeaders(expectedWallet);
+  if (!headers) {
+    return { ok: false, reason: 'Secure wallet sign-in is required before ranked matchmaking.' };
+  }
+  return { ok: true, profile, wallet: expectedWallet, headers };
+}
+
+function requestRankedWalletAccess(session) {
+  setMatchmakingAuthStatus(session.reason, true);
+  const profile = getProfile();
+  if (profile.walletConnected && !profile.walletReadOnly && window.requestWalletSecurityFlow) {
+    window.requestWalletSecurityFlow({ autoPause: false });
+  } else if (window.showWalletConnect) {
+    window.showWalletConnect();
+  }
+}
+
+function resetMatchmakingSearchButton() {
+  const button = document.getElementById('btn-mm-search');
+  if (!button) return;
+  button.disabled = false;
+  button.classList.remove('loading');
+  button.textContent = 'SEARCH FOR OPPONENT';
+}
 
 /** Map controller id to ELO category (mirrors elo.py) */
 function controllerToCategory(controller) {
@@ -2184,12 +2341,39 @@ function showMatchmakingScreen() {
   mmModeIdx = 0;
   mmProviderIdx = 0;
   mmPlayerId = null;
+  mmWallet = '';
   const mmSelect = document.getElementById('mm-select');
   if (mmSelect) mmSelect.classList.remove('hidden');
   const mmSearching = document.getElementById('mm-searching');
   if (mmSearching) mmSearching.classList.add('hidden');
+  const searchingText = document.getElementById('mm-searching-text');
+  if (searchingText) {
+    searchingText.classList.add('mm-searching-text');
+    searchingText.classList.remove('mm-match-found');
+  }
+  resetMatchmakingSearchButton();
+  updateMatchmakingLeagueUI();
   updateMatchmakingControllerUI();
+  const session = getRankedWalletSession();
+  if (session.ok) {
+    setMatchmakingAuthStatus(`Wallet ready ${session.wallet.slice(0, 4)}…${session.wallet.slice(-4)} · choose a league and input division.`);
+  } else {
+    setMatchmakingAuthStatus(session.reason, true);
+  }
   showScreen('matchmaking');
+}
+
+function updateMatchmakingLeagueUI() {
+  document.querySelectorAll('#mm-leagues .mm-league').forEach(button => {
+    button.classList.toggle('selected', button.dataset.league === mmLeague);
+  });
+  const policy = document.getElementById('mm-league-policy');
+  if (policy) {
+    policy.textContent = mmLeague === 'skill'
+      ? 'Skill Championship: specials that consume paid boosts are disabled for both fighters.'
+      : 'Boosted League: each fighter may authorize at most 3 paid boost charges; its ELO never mixes with Skill.';
+  }
+  localStorage.setItem('sf_rankedLeague', mmLeague);
 }
 
 function updateMatchmakingControllerUI() {
@@ -2241,6 +2425,13 @@ safeListener('mm-ctrl-pills', 'click', e => {
   updateMatchmakingControllerUI();
 });
 
+safeListener('mm-leagues', 'click', e => {
+  const button = e.target.closest('.mm-league');
+  if (!button || !['skill', 'boosted'].includes(button.dataset.league)) return;
+  mmLeague = button.dataset.league;
+  updateMatchmakingLeagueUI();
+});
+
 // LLM provider pill clicks (delegated from mm-ctrl-info)
 safeListener('mm-ctrl-info', 'click', e => {
   const pill = e.target.closest('.provider-pill');
@@ -2254,34 +2445,46 @@ safeListener('btn-mm-search', 'click', startMatchmakingSearch);
 
 async function startMatchmakingSearch() {
   const controller = INPUT_MODES[mmModeIdx].id;
-  const user = isLoggedIn() ? getUser() : null;
   const searchBtn = document.getElementById('btn-mm-search');
+  const session = getRankedWalletSession();
+  if (!session.ok) {
+    requestRankedWalletAccess(session);
+    resetMatchmakingSearchButton();
+    return;
+  }
+
   searchBtn.disabled = true;
   searchBtn.classList.add('loading');
   searchBtn.textContent = 'SEARCHING...';
+  setMatchmakingAuthStatus(`Authenticated wallet ${session.wallet.slice(0, 4)}…${session.wallet.slice(-4)} · ${mmLeague.toUpperCase()} queue`);
 
   try {
     const resp = await fetch('/api/matchmaking/join', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: session.headers,
       body: JSON.stringify({
         controller,
-        userId: user ? (user.sub || user.id || '') : '',
-        name: user ? (user.name || '') : '',
+        league: mmLeague,
+        name: session.profile.name || '',
       }),
     });
 
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({}));
       console.error('[matchmaking] Join failed:', err.detail || resp.status);
-      searchBtn.disabled = false;
-      searchBtn.classList.remove('loading');
-      searchBtn.textContent = 'SEARCH FOR OPPONENT';
+      setMatchmakingAuthStatus(err.detail || `Ranked search failed (HTTP ${resp.status}).`, true);
+      resetMatchmakingSearchButton();
+      if (resp.status === 401) {
+        requestRankedWalletAccess({ reason: 'Wallet sign-in was rejected or expired. Sign again to continue.' });
+      }
       return;
     }
 
     const data = await resp.json();
     mmPlayerId = data.playerId;
+    mmWallet = data.wallet || session.wallet;
+    mmLeague = data.league;
+    updateMatchmakingLeagueUI();
 
     // Toggle to searching state
     const mmSelect = document.getElementById('mm-select');
@@ -2291,15 +2494,14 @@ async function startMatchmakingSearch() {
     mmSearchStart = Date.now();
     document.getElementById('mm-searching-text').textContent = 'Searching for opponent... (0s)';
     document.getElementById('mm-wait-info').textContent =
-      `Category: ${data.category} | ELO: ${Math.round(data.elo)} | Queue: ${data.queueSize}`;
+      `${data.league.toUpperCase()} · ${data.category} · ELO ${Math.round(data.elo)} · Queue ${data.queueSize}`;
 
     startMmSearchTimer();
     startMatchmakingPoll();
   } catch (err) {
     console.error('[matchmaking] Error:', err);
-    searchBtn.disabled = false;
-    searchBtn.classList.remove('loading');
-    searchBtn.textContent = 'SEARCH FOR OPPONENT';
+    setMatchmakingAuthStatus('Network error while entering ranked matchmaking.', true);
+    resetMatchmakingSearchButton();
   }
 }
 
@@ -2308,14 +2510,39 @@ function startMatchmakingPoll() {
   if (!mmPlayerId) return;
 
   mmPollTimer = setInterval(async () => {
-    if (!mmPlayerId) return;
+    if (!mmPlayerId || mmPollInFlight) return;
+    const session = getRankedWalletSession(mmWallet);
+    if (!session.ok) {
+      stopMatchmakingPoll();
+      stopMmSearchTimer();
+      mmPlayerId = null;
+      showMatchmakingScreen();
+      requestRankedWalletAccess(session);
+      return;
+    }
+    mmPollInFlight = true;
     try {
-      const resp = await fetch(`/api/matchmaking/status?player_id=${encodeURIComponent(mmPlayerId)}`);
-      if (!resp.ok) return;
+      const resp = await fetch(
+        `/api/matchmaking/status?player_id=${encodeURIComponent(mmPlayerId)}`,
+        { headers: session.headers },
+      );
+      if (!resp.ok) {
+        if (resp.status === 401 || resp.status === 403 || resp.status === 409) {
+          const err = await resp.json().catch(() => ({}));
+          stopMatchmakingPoll();
+          stopMmSearchTimer();
+          mmPlayerId = null;
+          showMatchmakingScreen();
+          setMatchmakingAuthStatus(err.detail || 'Ranked wallet session expired.', true);
+        }
+        return;
+      }
       const data = await resp.json();
       handleMatchmakingStatus(data);
     } catch (err) {
       console.warn('[matchmaking] Poll error:', err);
+    } finally {
+      mmPollInFlight = false;
     }
   }, 2000);
 }
@@ -2325,6 +2552,7 @@ function stopMatchmakingPoll() {
     clearInterval(mmPollTimer);
     mmPollTimer = null;
   }
+  mmPollInFlight = false;
 }
 
 function startMmSearchTimer() {
@@ -2349,7 +2577,7 @@ function handleMatchmakingStatus(data) {
     handleMatchFound(data);
   } else if (data.status === 'searching') {
     document.getElementById('mm-wait-info').textContent =
-      `Wait: ${data.waitTime}s | Queue: ${data.queueSize} | Threshold: \u00b1${data.threshold}`;
+      `${String(data.league || mmLeague).toUpperCase()} · Wait ${data.waitTime}s · Queue ${data.queueSize} · ELO range \u00b1${data.threshold}`;
   } else if (data.status === 'not_queued') {
     // Player was removed (expired / pruned)
     stopMatchmakingPoll();
@@ -2361,6 +2589,7 @@ function handleMatchmakingStatus(data) {
       mmWaitingGame = false;
     }
     showMatchmakingScreen();
+    setMatchmakingAuthStatus('Search expired. Re-enter the public queue.', true);
   }
 }
 
@@ -2386,6 +2615,8 @@ async function handleMatchFound(data) {
   localStorage.setItem('sf_roomCode', data.roomCode);
   localStorage.setItem('sf_playerId', data.playerId);
   localStorage.setItem('sf_playerNum', String(data.playerNum));
+  localStorage.setItem('sf_matchType', data.matchType);
+  localStorage.setItem('sf_league', data.league);
 
   // Set controller indices for startMultiplayerFight
   roomModeIdx = mmModeIdx;
@@ -2395,15 +2626,21 @@ async function handleMatchFound(data) {
   await startMultiplayerFight(data);
 }
 
+async function cancelRankedSearch() {
+  const playerId = mmPlayerId;
+  if (!playerId) return;
+  const session = getRankedWalletSession(mmWallet);
+  if (!session.ok) return;
+  await fetch('/api/matchmaking/cancel', {
+    method: 'POST',
+    headers: session.headers,
+    body: JSON.stringify({ playerId }),
+  }).catch(() => {});
+}
+
 // Cancel button
 safeListener('btn-mm-cancel', 'click', async () => {
-  if (mmPlayerId) {
-    await fetch('/api/matchmaking/cancel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: mmPlayerId }),
-    }).catch(() => {});
-  }
+  await cancelRankedSearch();
   stopMatchmakingPoll();
   stopMmSearchTimer();
   mmPlayerId = null;
@@ -2413,6 +2650,7 @@ safeListener('btn-mm-cancel', 'click', async () => {
 // Play while you wait
 safeListener('btn-mm-play-wait', 'click', () => {
   mmWaitingGame = true;
+  window.isMultiplayerMatch = false;
   // Start a SIM fight — keys for P1, simulated for P2
   state = 'fighting';
   hideAllScreens();
@@ -2439,13 +2677,9 @@ safeListener('btn-mm-play-wait', 'click', () => {
 });
 
 // Back button
-safeListener('btn-mm-back', 'click', () => {
+safeListener('btn-mm-back', 'click', async () => {
   if (mmPlayerId) {
-    fetch('/api/matchmaking/cancel', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playerId: mmPlayerId }),
-    }).catch(() => {});
+    await cancelRankedSearch();
     stopMatchmakingPoll();
     stopMmSearchTimer();
     mmPlayerId = null;
@@ -2560,22 +2794,27 @@ safeListener('btn-char-back', 'click', () => showScreen('landing'));
 // ─────────────────────────────────────────────
 // Leaderboard
 // ─────────────────────────────────────────────
-/** Determine the default leaderboard league from the player's most recent controller. */
+/** Determine the default input division from the player's most recent controller. */
 function defaultLeaderboardCategory() {
   const modeIdx = parseInt(localStorage.getItem('sf_p1Mode') || '0', 10);
   // INPUT_MODES: 0=controller(keyboard), 1=voice, 2=phone, 3=simulated, 4=llm
   if (modeIdx === 1 || modeIdx === 2) return 'voice';
   if (modeIdx === 0) return 'keyboard';
-  return 'voice'; // default for non-ranked modes
+  return 'keyboard'; // default for non-ranked modes
 }
 let lbCategory = defaultLeaderboardCategory();
+let lbLeague = localStorage.getItem('sf_rankedLeague') === 'boosted' ? 'boosted' : 'skill';
 
 /** Fetch and render the leaderboard */
-async function loadLeaderboard(category = lbCategory) {
+async function loadLeaderboard(league = lbLeague, category = lbCategory) {
+  lbLeague = league;
   lbCategory = category;
 
   // Update filter button states
-  document.querySelectorAll('#lb-filters .lb-filter').forEach(btn => {
+  document.querySelectorAll('#lb-league-filters .lb-filter').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.league === league);
+  });
+  document.querySelectorAll('#lb-category-filters .lb-filter').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.category === category);
   });
 
@@ -2586,17 +2825,22 @@ async function loadLeaderboard(category = lbCategory) {
   emptyEl.classList.add('hidden');
   viewerRow.classList.add('hidden');
 
-  // Build URL with viewer's user ID if logged in
-  let url = `/api/leaderboard?category=${encodeURIComponent(category)}`;
-  const user = isLoggedIn() ? getUser() : null;
-  const viewerId = user ? (user.sub || user.id || '') : '';
-  if (viewerId) {
-    url += `&user_id=${encodeURIComponent(viewerId)}`;
+  // Standings are keyed by the connected Solana wallet, never an OIDC name.
+  let url = `/api/leaderboard?league=${encodeURIComponent(league)}&category=${encodeURIComponent(category)}`;
+  const profile = getProfile();
+  const viewerWallet = profile.walletConnected ? profile.walletAddress || '' : '';
+  if (viewerWallet) {
+    url += `&wallet=${encodeURIComponent(viewerWallet)}`;
   }
 
   try {
     const resp = await fetch(url);
-    if (!resp.ok) return;
+    if (!resp.ok) {
+      const error = await resp.json().catch(() => ({}));
+      emptyEl.textContent = error.detail || 'Ranked standings are unavailable.';
+      emptyEl.classList.remove('hidden');
+      return;
+    }
     const data = await resp.json();
 
     if (!data.entries || data.entries.length === 0) {
@@ -2606,7 +2850,7 @@ async function loadLeaderboard(category = lbCategory) {
 
     // Render entries
     for (const entry of data.entries) {
-      const isViewer = viewerId && String(entry.user_id) === viewerId;
+      const isViewer = viewerWallet && String(entry.wallet) === viewerWallet;
       const tr = document.createElement('tr');
       if (isViewer) tr.classList.add('lb-viewer');
       const wl = `${entry.wins}W-${entry.losses}L` + (entry.draws ? `-${entry.draws}D` : '');
@@ -2655,14 +2899,20 @@ function escapeHtml(str) {
 safeListener('btn-leaderboard', 'click', () => {
   sfx.playHeavyWhipImpact();
   showScreen('leaderboard');
-  loadLeaderboard(lbCategory);
+  loadLeaderboard(lbLeague, lbCategory);
 });
 
-// Filter buttons
-safeListener('lb-filters', 'click', e => {
+safeListener('lb-league-filters', 'click', e => {
   const btn = e.target.closest('.lb-filter');
   if (!btn) return;
-  loadLeaderboard(btn.dataset.category);
+  localStorage.setItem('sf_rankedLeague', btn.dataset.league);
+  loadLeaderboard(btn.dataset.league, lbCategory);
+});
+
+safeListener('lb-category-filters', 'click', e => {
+  const btn = e.target.closest('.lb-filter');
+  if (!btn) return;
+  loadLeaderboard(lbLeague, btn.dataset.category);
 });
 
 // Back button
@@ -2884,15 +3134,20 @@ window.addEventListener('keydown', e => {
       }
     }
   } else if (state === 'leaderboard') {
-    // Leaderboard: Left/Right switches league tabs
+    // Leaderboard: Left/Right switches input; Up/Down switches league.
     if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
       e.preventDefault();
-      const tabs = ['voice', 'keyboard'];
+      const tabs = ['keyboard', 'voice'];
       const currentIdx = tabs.indexOf(lbCategory);
       const newIdx = e.code === 'ArrowRight'
         ? (currentIdx + 1) % tabs.length
         : (currentIdx - 1 + tabs.length) % tabs.length;
-      loadLeaderboard(tabs[newIdx]);
+      loadLeaderboard(lbLeague, tabs[newIdx]);
+    } else if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+      e.preventDefault();
+      const league = lbLeague === 'skill' ? 'boosted' : 'skill';
+      localStorage.setItem('sf_rankedLeague', league);
+      loadLeaderboard(league, lbCategory);
     }
   } else if (state === 'characterSelect') {
     // Character select: Up/Down (or Left/Right) between characters; Enter fights
@@ -2934,12 +3189,9 @@ window.addEventListener('keydown', e => {
     else if (state === 'roomController') { stopRoomPolling(); showScreen('multiplayer'); }
     else if (state === 'matchmaking') {
       if (mmPlayerId) {
-        fetch('/api/matchmaking/cancel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ playerId: mmPlayerId }),
-        }).catch(() => {});
+        void cancelRankedSearch();
         stopMatchmakingPoll();
+        stopMmSearchTimer();
         mmPlayerId = null;
       }
       showScreen('multiplayer');
@@ -3167,7 +3419,7 @@ async function applyResolvedRoute(route, { replaceToRoot = false } = {}) {
   }
   if (route.type === 'leaderboard') {
     showScreen('leaderboard');
-    loadLeaderboard(lbCategory);
+    loadLeaderboard(lbLeague, lbCategory);
     lastHandledRouteKey = resolvedKey;
     return true;
   }
@@ -3737,8 +3989,14 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
 
   if (!overlay || !winContainer || !loseContainer) return;
 
-  const isPlayer = winnerNum === 1;
-  winText.textContent = isPlayer ? 'YOU WIN!' : 'K.O.';
+  const myNum = parseInt(localStorage.getItem('sf_playerNum') || '1', 10);
+  const isPlayer = window.isMultiplayerMatch ? winnerNum === myNum : winnerNum === 1;
+  const rankedMultiplayer = window.isMultiplayerMatch && isCurrentRankedMatch();
+  const summary = document.getElementById('ranked-result-summary');
+  if (summary && !rankedMultiplayer) summary.classList.add('hidden');
+  const victoryRematch = document.getElementById('btn-victory-rematch');
+  if (victoryRematch && !rankedMultiplayer) victoryRematch.textContent = 'REMATCH 🥊';
+  winText.textContent = winnerNum == null ? 'DRAW!' : (isPlayer ? 'YOU WIN!' : 'K.O.');
   winText.style.color = isPlayer ? 'var(--neon-blue)' : 'var(--neon-pink)';
   
   winText.style.transform = 'scale(1)';
@@ -4186,6 +4444,10 @@ window.rematchFight = async function() {
 
   // Check if we are in a multiplayer match
   if (window.isMultiplayerMatch) {
+    if (isCurrentRankedMatch()) {
+      await returnToRankedQueue();
+      return;
+    }
     const roomCode = localStorage.getItem('sf_roomCode');
     const playerId = localStorage.getItem('sf_playerId');
     if (!roomCode || !playerId) { showLanding(); return; }
