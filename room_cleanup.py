@@ -13,6 +13,8 @@ import asyncio
 import json
 from typing import TYPE_CHECKING
 
+from competition import INPUT_CATEGORIES, RANKED_LEAGUES, matchmaking_pool
+
 if TYPE_CHECKING:
     from game_loop import GameLoopManager
     from room_manager import RoomManager
@@ -82,10 +84,12 @@ class RoomCleanupTask:
 
         # Clean up expired matchmaking queue entries
         if self._room_manager:
-            for category in ("keyboard", "voice"):
-                expired = await self._room_manager.matchmaking_cleanup_expired(category)
-                if expired:
-                    print(f"[cleanup] Removed {len(expired)} expired matchmaking entries from '{category}'")
+            for league in sorted(RANKED_LEAGUES):
+                for category in sorted(INPUT_CATEGORIES):
+                    expired = await self._room_manager.matchmaking_cleanup_expired(league, category)
+                    if expired:
+                        pool = matchmaking_pool(league, category)
+                        print(f"[cleanup] Removed {len(expired)} expired matchmaking entries from '{pool}'")
 
         if cleaned:
             print(f"[cleanup] Swept {len(cleaned)} expired room(s): {', '.join(cleaned)}")

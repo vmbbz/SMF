@@ -8,6 +8,7 @@ import fakeredis.aioredis
 import pytest
 import pytest_asyncio
 
+from competition import BOOSTED_LEAGUE, KEYBOARD_CATEGORY, SKILL_LEAGUE, VOICE_CATEGORY, matchmaking_pool
 from game_loop import GameLoopManager
 from room_cleanup import CLEANUP_INTERVAL, RoomCleanupTask
 from room_manager import RoomManager
@@ -228,24 +229,34 @@ class TestExpiryNotification:
 
 
 class TestMatchmakingCleanup:
+    @pytest.mark.parametrize(
+        ("league", "category"),
+        [
+            (SKILL_LEAGUE, KEYBOARD_CATEGORY),
+            (SKILL_LEAGUE, VOICE_CATEGORY),
+            (BOOSTED_LEAGUE, KEYBOARD_CATEGORY),
+            (BOOSTED_LEAGUE, VOICE_CATEGORY),
+        ],
+    )
     @pytest.mark.asyncio
     async def test_sweep_cleans_expired_matchmaking_entries(
-        self, cleanup: RoomCleanupTask, room_mgr: RoomManager, redis
+        self, cleanup: RoomCleanupTask, room_mgr: RoomManager, redis, league: str, category: str
     ) -> None:
-        """Queue entries whose TTL key expired are removed during sweep."""
-        await room_mgr.matchmaking_join("keyboard", "player-1", 1000.0)
-        await room_mgr.matchmaking_join("keyboard", "player-2", 1100.0)
+        """Every league/input queue removes entries whose TTL key expired."""
+        pool = matchmaking_pool(league, category)
+        await room_mgr.matchmaking_join(league, category, "player-1", 1000.0)
+        await room_mgr.matchmaking_join(league, category, "player-2", 1100.0)
 
         # Simulate TTL expiry for player-1 by deleting TTL key
-        await redis.delete("matchmaking_ttl:keyboard:player-1")
+        await redis.delete(f"matchmaking_ttl:{pool}:player-1")
 
         await cleanup.sweep()
 
         # player-1 should be removed from the sorted set
-        score = await redis.zscore("matchmaking:keyboard", "player-1")
+        score = await redis.zscore(f"matchmaking:{pool}", "player-1")
         assert score is None
         # player-2 should still be in queue
-        score = await redis.zscore("matchmaking:keyboard", "player-2")
+        score = await redis.zscore(f"matchmaking:{pool}", "player-2")
         assert score is not None
 
 
