@@ -35,19 +35,21 @@ StickLash already has a credible foundation:
 - The production market endpoint returns current Solana trending-token metrics.
 - Birdeye supplies cached trending and newly listed token discovery; DexScreener supplies active-fight token details.
 - Market volume, momentum, and liquidity already alter opponent health, damage, and speed.
+- Arena Director v0.1 is implemented server-side and drives the first and subsequent Endless opponents with deterministic scoring, reason codes, a visible announcement, and a client-side market-queue fallback.
 - The game has AI and behavior-tree fighter controllers, AI-versus-AI simulation, an endless fight loop, voice control, multiplayer, victory sharing, and an Android build.
 - Solana wallet ownership is verified server-side, existing boost balances are server-authoritative, and new boost purchases are disabled while the retired burn path is replaced by game-token reward-vault transfers.
+- Public ranked now has wallet-bound random matchmaking, immutable Skill/Boosted room policies, separate league/input ELO, server-owned results, idempotent settlement, a Skill paid-special block, and a three-charge Boosted cap.
 - The backend can use an Alchemy Solana RPC through `SOLANA_RPC`, although the current discovery pipeline is not yet an Alchemy stream.
+- The JavaScript test runner is declared and repeatable; the current browser suite exercises the restored landing paths, wallet/session boundaries, AI fallback, WebRTC, and public economy copy.
 
 ## Material gaps
 
-- Endless mode currently rotates a client-side queue. It does not make or expose an autonomous market decision.
-- The fighter agent reacts inside a match, but no central agent selects matchups, explains its reasoning, or leaves an audit trail.
 - There is no Alchemy Yellowstone consumer, Solana DAS adapter, stream health telemetry, or replay cursor yet.
 - There is no registered AnsemHack project identity, verified project X handle, launched ClawPump token, canonical game-token mint, or confirmed $ANSEM mint in configuration.
-- The README describes Alchemy capabilities more strongly than the current implementation proves.
-- Agent decisions, fights, shares, wallet activity, and onchain transactions are not yet combined into judge-facing metrics.
-- JavaScript test files exist, but Jest is not declared as a development dependency and the npm scripts are recursively self-referential.
+- The README correctly describes Alchemy as an optional RPC and planned stream; the submission and demo must preserve that boundary until stream evidence exists.
+- Agent decisions are returned to clients but are not yet persisted with match outcomes or combined with shares, wallet activity, and verified onchain transactions in judge-facing metrics.
+- Reward reserves, epoch eligibility, anti-collusion scoring, snapshots, and token claims remain deliberately disabled and unimplemented.
+- After all non-breaking npm fixes, the production audit still reports 8 transitive advisories in the Solana Web3/SPL chain; npm's suggested forced resolutions are breaking downgrades and were rejected. The development-only Capacitor 6 CLI also retains `tar` advisories. These require isolated SDK/Capacitor migration testing, not an unsafe `npm audit fix --force`; until then, the CLI must process only trusted project inputs.
 
 ## Track strategy
 
@@ -55,9 +57,9 @@ The primary target is **ClawPump x pump.fun**, with automatic consideration for 
 
 Inference Markets remains out of scope unless the product later buys, routes, resells, or otherwise makes UsePod inference capacity economically load-bearing. EasyA should only replace ClawPump if the team deliberately gives up stackable ClawPump eligibility.
 
-## First vertical slice: Arena Director v0.1
+## Implemented vertical slice: Arena Director v0.1
 
-The first implementation adds an explainable server-side agent and routes the real endless-game loop through it.
+The explainable server-side agent and real Endless-game integration are now implemented. The next obligation is to persist its decisions and turn them into credible public evidence rather than expanding its scoring policy prematurely.
 
 ### Decision policy
 
@@ -89,7 +91,7 @@ Birdeye discovery + DexScreener detail
 
 The web app and Android bundle use the same director endpoint. If it is unavailable, the existing local trending queue remains a graceful fallback rather than blocking gameplay.
 
-### Acceptance criteria
+### Implemented acceptance criteria
 
 - A public endpoint returns a versioned, auditable next-opponent decision from live normalized market candidates.
 - Duplicate mints and the current opponent cannot be selected.
@@ -128,16 +130,24 @@ Do not implement staking, dual-token boost payments, burns, or unattended token 
 
 ## Delivery sequence
 
-1. Ship Arena Director v0.1 and route the public endless demo through it.
-2. Repair repeatable test tooling and add agent decision telemetry.
-3. Register the project and apply for Alchemy and Helius credits through the official flows; these are human account actions.
-4. Add the Alchemy provider behind the existing normalized market interface and prove it with replay/failover evidence.
-5. Add the public arena status view and a stream-ready 15-minute demo flow.
-6. Finalize both token identities and reserve accounts, then replace boost burns with the documented 100% game-token reward-vault transfer.
-7. Add the creator-fee SOL allocation ledger and one operator-approved `$ANSEM` market purchase before considering automation.
-8. Add one safe, visible `$ANSEM` Arena Director spend after verifying the official mint.
-9. Build separate Skill and Boosted League settlement, run a non-monetary reward epoch, and only then enable small funded claims.
-10. Freeze the submission build early enough to collect real usage, shares, and onchain evidence before 19 September.
+Completed foundations:
+
+1. Arena Director v0.1 selects and explains Endless opponents with a tested fallback.
+2. Repeatable JavaScript tests and explicit web-to-Android asset sync are configured.
+3. Wallet-bound, server-authoritative Skill and Boosted ranked settlement is implemented; token rewards remain off.
+
+Next work, in order:
+
+1. Persist Arena Director decisions and authoritative match outcomes in an append-only telemetry model, then expose honest judge-facing counts.
+2. Register the project and apply for Alchemy and Helius credits through the official flows; these are human account actions.
+3. Add the Alchemy provider behind the normalized market interface and prove reconnect, replay, fallback, and health telemetry.
+4. Add the public arena status view and rehearse a stream-ready 15-minute demo flow.
+5. Finalize both token identities and reserve accounts, then replace the retired burn path with the documented 100% game-token reward-vault transfer.
+6. Add the creator-fee SOL allocation ledger and execute one operator-approved `$ANSEM` market purchase before considering automation.
+7. Add one bounded, visible `$ANSEM` Arena Director spend after verifying the official mint.
+8. Build the epoch-only eligibility snapshot and anti-collusion rules on top of the completed ranked settlement, run a non-monetary epoch, and publish the dry-run evidence.
+9. Add an audited claim path and enable deliberately small funded claims only after all reserve and dry-run gates pass.
+10. Freeze the submission build early enough to collect real usage, shares, and verified onchain evidence before 19 September.
 
 ## Demo story
 

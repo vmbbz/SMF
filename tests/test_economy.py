@@ -53,8 +53,12 @@ def test_competitive_rewards_are_separated_70_30() -> None:
 
     assert leagues["skill"]["rewardBudgetBps"] == 7_000
     assert leagues["skill"]["purchasedBoosts"] == "disabled"
+    assert leagues["skill"]["rewardEligible"] is False
+    assert leagues["skill"]["rewardEligibleWhenEpochsEnabled"] is True
     assert leagues["boosted"]["rewardBudgetBps"] == 3_000
     assert leagues["boosted"]["maxPaidBoostChargesPerPlayerPerMatch"] == 3
+    assert leagues["boosted"]["rewardEligible"] is False
+    assert leagues["boosted"]["rewardEligibleWhenEpochsEnabled"] is True
     assert leagues["casual"]["rewardBudgetBps"] == 0
 
 
@@ -67,3 +71,18 @@ def test_unimplemented_value_paths_remain_disabled() -> None:
     assert runtime["ansemActionsEnabled"] is False
     assert runtime["rewardEpochsEnabled"] is False
     assert runtime["rewardClaimsEnabled"] is False
+
+
+def test_competition_policy_excludes_casual_and_ai_paths() -> None:
+    competition = _policy()["competition"]
+
+    assert competition["settlementAuthority"] == "server"
+    assert competition["ratingPartitions"] == ["league", "input-category"]
+    assert competition["eligibleMatchTypesWhenEpochsEnabled"] == [
+        "ranked_skill",
+        "ranked_boosted",
+    ]
+    assert "private_casual" in competition["excludedMatchTypes"]
+    assert "ai_practice" in competition["excludedMatchTypes"]
+    assert competition["perWinTokenPayouts"] is False
+    assert competition["currentTokenEarning"] == "disabled"

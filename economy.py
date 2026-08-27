@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 BASIS_POINTS = 10_000
-POLICY_VERSION = "2026-08-27.v2"
+POLICY_VERSION = "2026-08-27.v3"
 
 CREATOR_FEE_OPERATIONS_BPS = 5_000
 CREATOR_FEE_ANSEM_ACQUISITION_BPS = 5_000
@@ -120,20 +120,37 @@ def build_public_economy_policy(
                 "purchasedBoosts": "allowed",
                 "rewardBudgetBps": CASUAL_ARENA_REWARD_BPS,
                 "rewardEligible": False,
+                "rewardEligibleWhenEpochsEnabled": False,
             },
             "boosted": {
                 "purchasedBoosts": "allowed-capped",
                 "maxPaidBoostChargesPerPlayerPerMatch": BOOSTED_LEAGUE_MAX_PAID_CHARGES,
                 "rewardBudgetBps": BOOSTED_LEAGUE_REWARD_BPS,
-                "rewardEligible": True,
+                "rewardEligible": False,
+                "rewardEligibleWhenEpochsEnabled": True,
                 "rating": "separate-validated-elo",
             },
             "skill": {
                 "purchasedBoosts": "disabled",
                 "rewardBudgetBps": SKILL_CHAMPIONSHIP_REWARD_BPS,
-                "rewardEligible": True,
+                "rewardEligible": False,
+                "rewardEligibleWhenEpochsEnabled": True,
                 "rating": "main-validated-elo",
             },
+        },
+        "competition": {
+            "settlementAuthority": "server",
+            "ratingPartitions": ["league", "input-category"],
+            "eligibleMatchTypesWhenEpochsEnabled": ["ranked_skill", "ranked_boosted"],
+            "excludedMatchTypes": [
+                "private_casual",
+                "ai_practice",
+                "token_arena",
+                "endless",
+                "practice_while_waiting",
+            ],
+            "perWinTokenPayouts": False,
+            "currentTokenEarning": "disabled",
         },
         "runtime": {
             "boostSettlementMode": boost_settlement_mode,

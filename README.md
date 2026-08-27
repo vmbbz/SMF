@@ -43,6 +43,12 @@ The server-side **StickLash Arena Director** merges live trending and graduated-
 
 See [AnsemHack Readiness](ANSEMHACK_READINESS.md) for the verified competition scope and [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md) for the approved token flows, separated leagues, ranked-integrity rules, and rollout gates. The same plain-language policy is available in the app through **Help → Economy & Rewards** and at <https://sticklash.fun/economy>.
 
+### Ranked Competition and Reward Status
+
+Only wallet-authenticated **Public Ranked** fights against randomly matched online humans update competitive ELO. Skill Championship blocks paid specials; Boosted League has separate ELO and a server-enforced maximum of three paid boost charges per fighter per match. Private rooms, AI/LLM opponents, token arenas, Endless mode, and practice while waiting do not count.
+
+Token rewards are **not live**. Ranked fights currently update ELO only: there is no per-win payout and no match creates a claimable game-token or `$ANSEM` balance. Future rewards require a separately announced, pre-funded epoch with minimum-match and unique-opponent rules, an immutable snapshot, review, and explicit wallet claims.
+
 ---
 
 ## 🎨 Design & Traditional Eastern Aesthetics

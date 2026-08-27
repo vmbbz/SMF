@@ -2,9 +2,9 @@
 
 Status: approved product architecture for the AnsemHack build.
 
-Policy version: `2026-08-27.v2`.
+Policy version: `2026-08-27.v3`.
 
-Implementation status: documentation and public policy scaffolding exist. Token purchases, creator-fee routing, `$ANSEM` actions, reward epochs, and token claims are **not live**.
+Implementation status: the wallet-bound public ranked foundation is implemented: explicit Skill and Boosted match types, isolated ratings by league and input division, server-owned final results, idempotent settlement, Skill boost blocking, and the three-charge Boosted cap. Token purchases, creator-fee routing, `$ANSEM` actions, reward epochs, and token claims are **not live**.
 
 ## Executive decision
 
@@ -135,7 +135,7 @@ The Skill Championship remains the main prestige competition and receives 70% of
 
 ## What a boost is
 
-A purchased boost is a consumable special-action charge, not a permanent fighter-stat purchase. The current game uses boost units as Hadouken ammunition. Before Boosted League launches, the authoritative multiplayer engine must enforce the charge limit and the exact allowed effect. Permanent health, damage, or speed purchases are outside this architecture.
+A purchased boost is a consumable special-action charge, not a permanent fighter-stat purchase. The current game uses boost units as Hadouken ammunition. The authoritative multiplayer engine now blocks paid specials entirely in Skill Championship and enforces a maximum of three successful paid-charge consumptions for each fighter in a Boosted League match. A rejected, mistimed, or disallowed attempt does not become leaderboard score. Permanent health, damage, or speed purchases are outside this architecture.
 
 ## Leaderboards are rankings, not funding sources
 
@@ -156,6 +156,43 @@ The leaderboard answers **who placed where**. The two reward reserves answer **w
 ### Casual and token analytics
 
 Casual wins, browser-local token fights, token appearances, Arena Director selections, transaction volume, and social shares can be displayed as entertainment or hackathon analytics. They do not create reward eligibility.
+
+## Exactly how a player earns
+
+There are two different meanings of "earn," and the product must never blur them:
+
+- **Available now:** a player can earn a place in the public ranked standings by changing their server-authoritative ELO.
+- **Not available now:** no fight earns, accrues, reserves, or promises game tokens or `$ANSEM`. Token earning starts only after a funded reward epoch is explicitly announced.
+
+The current public-ranked journey is:
+
+1. Connect a Solana wallet.
+2. Sign the free StickLash sign-in message. This proves wallet control without transferring tokens.
+3. Choose Skill Championship or Boosted League and an allowed input division.
+4. Enter public matchmaking. StickLash randomly pairs the wallet with another online human; the player does not select a friend or target wallet.
+5. The server binds both wallet identities and the immutable league policy to the room, runs the authoritative match, freezes the final result, and settles one idempotent ELO update.
+6. The result changes only the matching league and input-division standings. It does not trigger a token payout.
+
+What counts is intentionally narrow:
+
+| Fight path | Ranked ELO now | Candidate for a future reward epoch | Reason |
+|---|---:|---:|---|
+| Public Ranked - Skill Championship | Yes | Yes, after epochs launch | Random wallet-authenticated human opponent under equal-power rules |
+| Public Ranked - Boosted League | Yes, separate ELO | Yes, after epochs launch | Random wallet-authenticated human opponent under the disclosed three-charge cap |
+| Private friend or invite room | No | No | Chosen opponents make farming and collusion too easy |
+| AI, LLM, token, Trending, or Endless fight | No | No | Practice and entertainment cannot manufacture competitive rewards |
+| AI practice while waiting for matchmaking | No | No | It is a local practice fight, not the queued human match |
+
+When reward epochs are eventually enabled, the earning journey adds these steps:
+
+7. StickLash announces the epoch window, eligible leagues and input divisions, funded game-token and `$ANSEM` budgets, minimum participation rules, and placement curve **before** play starts.
+8. At close, the server freezes the eligible match set and calculates an epoch-only rating from those matches. Every entrant starts the epoch calculation from the same seed; lifetime ELO remains a prestige and matchmaking rating, not a permanent weekly payout advantage.
+9. Ineligible, duplicate, replayed, impossible, or abuse-linked matches are excluded with recorded reasons. A review window opens before anything is claimable.
+10. Final qualified placements receive allocations from both independently funded reserves. The wallet explicitly claims; StickLash never signs for the user or treats a leaderboard row as a guaranteed balance.
+
+There is deliberately **no per-win token payment**. Per-win payouts invite bot loops, repeated-pair farming, and open-ended liabilities. An epoch converts a bounded set of validated results into a bounded, pre-funded placement budget instead.
+
+The first dry run will test these proposed safeguards before they become launch rules: at least 5 validated matches, at least 3 unique opponent wallets, and no more than the first 2 matches against the same opponent counting toward the epoch score. These numbers are **proposed dry-run parameters, not live code or promised final rules**. The dry run must also determine which input divisions have enough real participation to receive a separately published budget; divisions cannot be added, removed, or reweighted after a funded epoch begins.
 
 ## Reward-reserve accounting
 
@@ -180,29 +217,35 @@ A candidate top-ten placement curve is 25%, 18%, 14%, 10%, 8%, 7%, 6%, 5%, 4%, a
 
 ## Reward eligibility and anti-abuse
 
-The current live ELO table is useful for gameplay but is not payout-grade. A reward-bearing result must be built from an immutable eligibility snapshot containing only validated matches.
+The current ranked settlement path is payout-safety groundwork, not a payout system. It now provides wallet-bound rooms, immutable match metadata, server-owned outcomes, unique match IDs, atomic idempotent ELO settlement, isolated league/input ratings, and server-enforced boost policy. A reward-bearing epoch still requires a separate immutable eligibility snapshot and review process.
 
-Required controls:
+Implemented competitive controls:
 
 - wallet-linked, authenticated player identity bound to the room by the server;
 - server-authoritative match start, loadout, boost consumption, and final result;
 - one unique settlement ID per match and idempotent result processing;
+- one active ranked queue or match reservation per wallet;
+- separate Skill and Boosted match types, histories, and input-division ratings;
+- paid-special rejection in Skill and a three-charge server cap in Boosted;
+- public client acknowledgements that can retry a stored server outcome but cannot submit a winner, health, wallet identity, or rating.
+
+Still required before rewards:
+
 - minimum matches and minimum unique opponents per epoch;
 - caps or diminishing eligibility for repeated wallet pairs;
-- separate league identifiers and ratings;
 - disconnect, timeout, replay, collusion, and impossible-input checks;
 - Sybil and sanctions/compliance review appropriate to the final launch jurisdictions;
+- pre-published league and input-division token budgets;
+- an epoch-only scoring calculation reproducible from the frozen match set;
 - a published review window before claims open.
-
-The present match-complete path still accepts player identity fields supplied by clients, and each client currently appears to report only its own identity. That path must be replaced before any token payout is enabled.
 
 ## Weekly distribution lifecycle
 
-1. Publish the epoch start, close time, rules, and token-unit budgets.
+1. Publish the epoch start, close time, rules, active league/input divisions, and token-unit budgets.
 2. Close entry and freeze the validated match set.
-3. Calculate each league's final ELO and eligibility.
-4. Apply the 70/30 league allocation independently to both token budgets.
-5. Calculate the placement curve without increasing either funded budget.
+3. Recompute epoch-only ratings and eligibility from that frozen set; lifetime matchmaking ELO is not the payout score.
+4. Apply the 70/30 league allocation independently to both token budgets, then use only the input-division allocations published before the epoch.
+5. Calculate the placement curve without increasing either funded budget. Exact ties share the combined allocations of the tied places rather than being broken by spending or social activity.
 6. Publish the snapshot, reserve balances, calculations, and excluded-match reasons.
 7. Open a short fraud-review window.
 8. Finalize a claim manifest with a unique epoch identifier.
@@ -239,26 +282,33 @@ Automation can be considered only after the manual, auditable process has run sa
 | New boost purchases | Disabled |
 | Legacy burn settlement | Retired by policy; not a valid target settlement |
 | Game-token reward-vault transfer verifier | Not implemented |
-| Skill and Boosted League separation | Not implemented |
+| Explicit private, Skill, and Boosted match types | Implemented |
+| Wallet-authenticated public matchmaking | Implemented |
+| One active ranked queue or match per wallet | Implemented with Redis reservation and TTL recovery |
+| Server-owned immutable ranked result | Implemented |
+| Atomic, idempotent ELO settlement | Implemented; requires PostgreSQL in deployed multiplayer runtime |
+| Separate league and input-division ratings | Implemented |
+| Skill paid-special block and Boosted three-charge cap | Implemented in the authoritative engine |
 | Reward-eligibility snapshot | Not implemented |
+| Epoch-only reward score and anti-collusion filters | Not implemented |
 | Creator-fee SOL allocation ledger | Not implemented |
 | `$ANSEM` acquisition execution | Not implemented |
 | `$ANSEM` Arena Director spend | Not implemented |
 | Token reward claims | Not implemented |
-| Public economy policy endpoint and site page | Implemented in the first architecture round |
+| Public economy policy endpoint and Help-linked site page | Implemented |
 
 No public copy may describe an unimplemented row as active.
 
 ## Delivery gates
 
-### Gate 0 - policy and safety baseline
+### Gate 0 - policy and safety baseline (complete)
 
 - Publish this architecture and the public Economy & Rewards page.
 - Expose a read-only runtime policy endpoint.
 - Keep purchases and claims disabled.
 - Reject all legacy burn settlement attempts.
 
-### Gate 1 - canonical identities and accounts
+### Gate 1 - canonical identities and accounts (pending)
 
 - Launch and verify the StickLash game-token mint.
 - Verify the official `$ANSEM` mint.
@@ -266,37 +316,39 @@ No public copy may describe an unimplemented row as active.
 - Configure the creator-fee payout and operating treasury accounts.
 - Publish account labels and ownership controls.
 
-### Gate 2 - game-token boost settlement
+### Gate 2 - game-token boost settlement (pending)
 
 - Replace the client burn builder with a game-token transfer to the reward reserve.
 - Replace burn verification with exact destination-transfer verification.
 - Migrate database field names away from legacy `smf` and `burn` terminology.
 - Run a minimal-value mainnet verification before enabling catalog purchases.
 
-### Gate 3 - league integrity
+### Gate 3 - league integrity (complete)
 
-- Add explicit `casual`, `boosted`, and `skill` match types.
-- Bind authenticated wallets to server rooms.
-- Enforce standardized Skill Championship loadouts.
-- Enforce the 3-charge Boosted League limit.
-- Store unique, idempotent server-authoritative match settlements.
+- Explicit `private_casual`, `ranked_boosted`, and `ranked_skill` match types are immutable room metadata.
+- Authenticated Solana wallets are bound to public ranked rooms and cannot occupy concurrent queues or matches.
+- Skill Championship blocks paid special consumption.
+- Boosted League enforces the 3-charge per-player limit in the authoritative engine.
+- Unique match IDs and immutable server outcomes settle ELO atomically and idempotently.
 
-### Gate 4 - reserves and creator-fee routing
+### Gate 4 - reserves and creator-fee routing (pending)
 
 - Add append-only reserve and creator-fee allocation ledgers.
 - Reconcile the first creator-fee SOL deposit manually.
 - Execute the first operator-approved `$ANSEM` purchase with published evidence.
 - Verify the `$ANSEM` receipt before reserve credit.
 
-### Gate 5 - `$ANSEM` product utility
+### Gate 5 - `$ANSEM` product utility (pending)
 
 - Add one bounded Arena Director action.
 - Route its verified `$ANSEM` payment to the `$ANSEM` reward reserve.
 - Enforce per-wallet limits and keep the action outside competitive combat.
 
-### Gate 6 - rewards dry run and claims
+### Gate 6 - rewards dry run and claims (pending)
 
 - Run at least one non-monetary epoch using the complete eligibility pipeline.
+- Recompute epoch-only ratings from eligible matches and verify repeated-pair exclusions.
+- Publish active input divisions and their fixed budgets before the dry-run window.
 - Publish the dry-run snapshot and resolve observed abuse cases.
 - Fund deliberately small token budgets.
 - Audit the claim manifest and distributor.
