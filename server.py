@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from arena_director import arena_director
 from birdeye_service import birdeye_service
 from dexscreener_service import dexscreener_service
+from economy import build_public_economy_policy
 
 import asyncpg  # type: ignore[import-untyped]
 import httpx
@@ -595,29 +596,38 @@ def _get_boost_settlement_mode() -> str:
     return os.environ.get("BOOST_SETTLEMENT_MODE", "burn").strip().lower() or "burn"
 
 
+def _is_stablecoin_payment_config(mint: str, symbol: str) -> bool:
+    normalized_symbol = symbol.upper().lstrip("$")
+    return mint == SOLANA_MAINNET_USDC_MINT or normalized_symbol in {"USDC", "USDT"}
+
+
 def _get_boost_purchase_status() -> tuple[bool, str]:
     """Return whether new boost purchases are safe to create.
 
-    The current transaction verifier supports burns only. Production purchases
-    stay opt-in while the planned treasury split is built, and known stablecoin
-    burns are blocked even if an environment is accidentally enabled.
+    The approved economy retires burns and requires game-token payments to move
+    to the game-token reward reserve. That transfer builder and verifier do not
+    exist yet, so no settlement mode can currently pass this gate.
     """
     if not _env_bool("BOOST_PURCHASES_ENABLED", False):
-        return False, "Boost purchases are paused until the game-token settlement is configured."
+        return False, "Boost purchases are paused until reward-vault transfer settlement is verified."
 
     mint = _get_boost_payment_token_mint(required=False)
     if not mint:
         return False, "Boost payment token mint is not configured."
 
+    symbol = _get_boost_payment_token_symbol(mint)
+    if _is_stablecoin_payment_config(mint, symbol):
+        return False, "Stablecoins are not accepted for boosts. Configure the launched game token."
+
     settlement_mode = _get_boost_settlement_mode()
-    if settlement_mode != "burn":
+    if settlement_mode == "burn":
+        return False, "Boost burns are retired. Use verified reward-vault transfer settlement."
+    if settlement_mode != "reward_vault_transfer":
         return False, f"Unsupported boost settlement mode: {settlement_mode}."
+    if not os.environ.get("GAME_TOKEN_REWARD_VAULT", "").strip():
+        return False, "Game-token reward vault is not configured."
 
-    symbol = _get_boost_payment_token_symbol(mint).upper().lstrip("$")
-    if mint == SOLANA_MAINNET_USDC_MINT or symbol in {"USDC", "USDT"}:
-        return False, "Stablecoin burns are disabled. Configure the launched game token before selling boosts."
-
-    return True, ""
+    return False, "Reward-vault transfer verification is not implemented yet."
 
 
 def _get_public_boost_economy_config() -> dict[str, Any]:
@@ -1936,6 +1946,29 @@ async def api_smf_config() -> dict[str, Any]:
     }
 
 
+@get("/api/economy/policy")
+async def api_economy_policy() -> dict[str, Any]:
+    """Return approved token roles and honest runtime-readiness gates."""
+    boost_economy = _get_public_boost_economy_config()
+    game_token_mint = boost_economy["paymentTokenMint"]
+    game_token_symbol = boost_economy["paymentTokenSymbol"]
+    if _is_stablecoin_payment_config(game_token_mint, game_token_symbol):
+        game_token_mint = ""
+        game_token_symbol = "TOKEN"
+    return build_public_economy_policy(
+        game_token_mint=game_token_mint,
+        game_token_symbol=game_token_symbol,
+        ansem_token_mint=os.environ.get("ANSEM_TOKEN_MINT", ""),
+        boost_settlement_mode=boost_economy["settlementMode"],
+        boost_purchases_enabled=boost_economy["purchasesEnabled"],
+        boost_purchases_disabled_reason=boost_economy["purchasesDisabledReason"],
+        game_reward_reserve_configured=bool(os.environ.get("GAME_TOKEN_REWARD_VAULT", "").strip()),
+        ansem_reward_reserve_configured=bool(os.environ.get("ANSEM_REWARD_VAULT", "").strip()),
+        creator_fee_payout_configured=bool(os.environ.get("CREATOR_FEE_PAYOUT_WALLET", "").strip()),
+        operating_treasury_configured=bool(os.environ.get("OPERATING_TREASURY_WALLET", "").strip()),
+    )
+
+
 @post("/api/wallet-auth/challenge")
 async def api_wallet_auth_challenge(request: Request, data: dict[str, Any]) -> dict[str, Any]:
     """Create a short-lived wallet sign-in challenge."""
@@ -2320,9 +2353,13 @@ async def api_boost_create_intent(request: Request, data: dict[str, Any]) -> dic
 
 @post("/api/boost/confirm")
 async def api_boost_confirm(request: Request, data: dict[str, Any]) -> dict[str, Any]:
-    """Confirm a signed burn transaction and credit boosts exactly once."""
+    """Confirm the configured purchase settlement and credit boosts exactly once."""
     if boost_pg_pool is None:
         raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    purchases_enabled, disabled_reason = _get_boost_purchase_status()
+    if not purchases_enabled:
+        raise HTTPException(status_code=409, detail=disabled_reason)
 
     wallet = _normalize_wallet_address(data.get("wallet"))
     intent_id = str(data.get("intentId") or data.get("intent_id") or "").strip()
@@ -2747,6 +2784,13 @@ async def room_route(code: str) -> Response:
 @get("/leaderboard")
 async def leaderboard_page() -> Response:
     """Serve the game page for the leaderboard URL (JS reads the route)."""
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    return Response(content=html, media_type="text/html")
+
+
+@get("/economy")
+async def economy_page() -> Response:
+    """Serve the public Economy & Rewards page through the game shell."""
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     return Response(content=html, media_type="text/html")
 
@@ -4045,6 +4089,7 @@ app = Litestar(
         leaderboard,
         get_elo,
         api_smf_config,
+        api_economy_policy,
         api_wallet_auth_challenge,
         api_wallet_auth_verify,
         api_wallet_auth_verify_siws,
@@ -4062,6 +4107,7 @@ app = Litestar(
         api_graduates,
         api_token_details,
         proxy_image,
+        economy_page,
         create_static_files_router(path="/src", directories=[ROOT / "src"]),
         create_static_files_router(path="/assets", directories=[ROOT / "assets"]),
         create_static_files_router(path="/", directories=[ROOT / ""]),

@@ -35,4 +35,9 @@ describe('parseRoute', () => {
   it('parses leaderboard route', () => {
     expect(parseRoute('/leaderboard')).toEqual({ type: 'leaderboard' });
   });
+
+  it('parses economy route', () => {
+    expect(parseRoute('/economy')).toEqual({ type: 'economy' });
+    expect(parseRoute('/economy/')).toEqual({ type: 'economy' });
+  });
 });

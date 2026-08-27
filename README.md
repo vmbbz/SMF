@@ -41,7 +41,7 @@ Built with vanilla Canvas2D, a custom combat engine, and a Litestar/Python backe
 
 The server-side **StickLash Arena Director** merges live trending and graduated-token candidates, scores them using volume, volatility, liquidity, and discovery signals, and selects the next opponent for Trending and Endless modes. Each decision includes a deterministic decision ID, policy version, ranked candidates, reason codes, and provider errors so the autonomous choice can be explained and audited. If the director is unavailable, gameplay falls back to the existing local market queue.
 
-See [AnsemHack Readiness](ANSEMHACK_READINESS.md) for the verified competition scope and [Economy, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md) for the agreed token roles, boost-revenue split, ranked-integrity rules, and rollout gates.
+See [AnsemHack Readiness](ANSEMHACK_READINESS.md) for the verified competition scope and [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md) for the approved token flows, separated leagues, ranked-integrity rules, and rollout gates. The same plain-language policy is available in the app through **Help → Economy & Rewards** and at <https://sticklash.fun/economy>.
 
 ---
 
@@ -64,8 +64,8 @@ The STICKLASH backend and infrastructure are powered by standard-setting Web3 an
 |---|---|---|---|
 | **Upstash** | Serverless Redis | Multi-region WebRTC signaling, matchmaking queue, & active room lobby storage | `![Upstash](https://img.shields.io/badge/Upstash-Serverless--Redis-FF4F00?style=flat-square&logo=redis&logoColor=white)` |
 | **Deepgram** | Aura 2 Zeus & Flux v2 | Dynamic 24kHz Zeus voice lines, WebSocket speech capture, & AI-fighter command pipeline | `![Deepgram](https://img.shields.io/badge/Deepgram-Aura--Zeus-13EF95?style=flat-square&logo=deepgram&logoColor=black)` |
-| **Solana Web3** | On-Chain SPL Program | Phantom/Backpack/Solflare wallet pairing, token balance reads, and verified boost settlement; stablecoin burns are blocked while the game-token split-transfer flow is built | `![Solana](https://img.shields.io/badge/Solana-SPL--Token-9945FF?style=flat-square&logo=solana&logoColor=white)` |
-| **Alchemy** | Solana Node API | Optional private mainnet RPC for server-side wallet balance reads and boost-burn transaction verification; a bounded Yellowstone stream adapter is planned but is not a runtime dependency yet | `![Alchemy](https://img.shields.io/badge/Alchemy-Solana--RPC-1FC7D4?style=flat-square&logo=alchemy&logoColor=white)` |
+| **Solana Web3** | On-Chain SPL Program | Phantom/Backpack/Solflare wallet pairing, token balance reads, and server-verified boost balances; new purchases stay disabled until game-token transfers to the reward reserve are implemented | `![Solana](https://img.shields.io/badge/Solana-SPL--Token-9945FF?style=flat-square&logo=solana&logoColor=white)` |
+| **Alchemy** | Solana Node API | Optional private mainnet RPC for server-side wallet reads and transaction verification; a bounded Yellowstone stream adapter is planned but is not a runtime dependency yet | `![Alchemy](https://img.shields.io/badge/Alchemy-Solana--RPC-1FC7D4?style=flat-square&logo=alchemy&logoColor=white)` |
 | **Twitter / X** | Web Intent API | Zero-auth viral gameplay sharing, automated screenshot capture matching, & ELO brag links | `![Twitter](https://img.shields.io/badge/Twitter/X-Viral--Share-000000?style=flat-square&logo=x&logoColor=white)` |
 | **Birdeye** | DeFi Market API | Live on-chain price data, market cap scaling, & pump.fun graduated feeds | `![Birdeye](https://img.shields.io/badge/Birdeye-DeFi--Data-00C2FF?style=flat-square&logo=coinmarketcap&logoColor=white)` |
 | **Supabase** | PostgreSQL | Persistent multi-player ELO rating records, match stats, & active leaderboard graphs | `![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase&logoColor=white)` |
@@ -101,18 +101,19 @@ Multiplayer rooms, WebRTC SDP exchange, and matchmaking queues are managed on th
 * By forcing secure SSL connections (`rediss://`), Litestar securely holds transient game lobby state.
 * If Redis or PostgreSQL connection errors are encountered (e.g. during local developer bootstrap), the server initiates **Safe Mode**, falling back gracefully to in-memory mocks so that single-player, custom arena, and BGM music engines continue to run flawlessly offline.
 
-### 3. Dynamic SPL Token Burn Store: Hadouken Ammunition
-To keep the token economy highly active, firing **Hadouken projectiles** in P1 player mode requires **Premium Boosts**:
+### 3. Boost Ledger and Planned Reward-Vault Settlement
+Firing **Hadouken projectiles** in wallet-linked P1 mode can consume server-authoritative **Premium Boosts**:
 * **The Hadouken Intercept**: When P1 presses the Special attack button (`Actions.HADOUKEN`), wallet-linked players trigger a server-authoritative consume flow (`POST /api/boost/consume`) before the projectile fires. Each user begins with **15 free starter boosts**, and every Hadouken spends **1 boost**.
-* **Zero Boost Lockout**: If boosts reach 0, firing Hadouken is blocked, a warning `⚠️ Out of premium boosts!` displays, and the player is prompted to buy more.
-* **SPL On-Chain Burn + Server Ledger (`wallet-connect.js` + `server.py`)**: To replenish ammo, the player completes wallet-auth message signing, signs a burn transaction in wallet, and submits the signature to backend verification. Boosts are credited only after the server verifies the on-chain burn instruction and records it in the purchase ledger.
+* **Zero Boost Lockout**: If boosts reach 0, firing Hadouken is blocked and a warning `⚠️ Out of premium boosts!` displays. The store also shows that replenishment purchases are currently paused.
+* **Purchases Are Gated**: New boost purchases are disabled. The retired adapter still contains legacy SPL-burn parsing for historical compatibility, but the purchase gate rejects burn settlement.
+* **Approved Target**: Boost packs will be paid only in the launched game token, with 100% transferred to the game-token reward reserve. Boosts will be credited only after the server verifies the exact signer, mint, reserve destination, amount, finality, and unused signature.
 
 ### 4. Solana Mobile Wallet Adapter Security
 The Android APK includes a native Solana Mobile Wallet Adapter bridge so mobile wallets can verify the dApp and sign secure actions without exposing keys to STICKLASH.
 * **Native MWA bridge**: `android/app/src/main/java/com/solanamemefighter/app/SolanaMwaPlugin.kt` caches the Android `ActivityResultSender` during plugin load and reuses it for wallet connect, message signing, transaction signing, and disconnect flows. Fresh Phantom auth tokens are also applied to the in-memory adapter immediately so the next secure action does not reopen as a cold wallet session.
-* **Explicit wallet journey**: `wallet-connect.js` separates wallet connect from StickLash security sign-in. After Phantom returns the account, the modal shows the connected address and asks for one free message signature before boost buying/spending is unlocked.
+* **Explicit wallet journey**: `wallet-connect.js` separates wallet connect from StickLash security sign-in. After Phantom returns the account, the modal shows the connected address and asks for one free message signature before authenticated boost routes can be used; the independent purchase-policy gate remains disabled.
 * **Wallet sign-in session**: `POST /api/wallet-auth/challenge` creates a short-lived Solana sign-in challenge, `POST /api/wallet-auth/verify` verifies the wallet signature server-side with PyNaCl, and boost purchase/consume routes require the resulting bearer token. Gameplay boost spends use only an existing signed session, so a Hadouken never triggers a surprise wallet signature in the middle of a fight.
-* **On-chain proof before credit**: `POST /api/boost/confirm` credits boosts only after the backend fetches the Solana transaction and verifies a matching SPL Token burn instruction for the expected wallet, mint, and amount.
+* **On-chain proof before future credit**: The current confirm route contains the retired burn verifier, but purchase creation is blocked. It must be replaced by exact game-token reward-vault transfer verification before new purchases are enabled.
 * **DApp identity relationship**: Android App Links and Digital Asset Links bind `https://sticklash.fun` to package `com.solanamemefighter.app` and release certificate fingerprint `84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76`.
 * **Public verification file**: The backend serves `.well-known/assetlinks.json` at `https://sticklash.fun/.well-known/assetlinks.json`. Wallets and Android can use this relationship to confirm the APK/domain identity instead of trusting an arbitrary app name.
 

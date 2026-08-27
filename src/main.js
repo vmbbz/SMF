@@ -16,6 +16,7 @@ import { StageMusicManager } from './stage-music.js';
 import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
 import { announceArenaDirectorDecision, fetchArenaDirectorDecision } from './arena-director-client.js';
 import { getTokenCoverSource, getTokenImageSource, loadGameImage } from './image-utils.js';
+import { initializeEconomyPage, openEconomyPage } from './economy-page.js';
 
 window.generatePersonality = generatePersonality;
 
@@ -126,6 +127,8 @@ const screens = {
   characterSelect: document.getElementById('character-select'),
   onboarding: document.getElementById('onboarding'),
 };
+
+initializeEconomyPage();
 
 // Restored Name Extraction Engine (Commit 90323e43b1)
 function extractNameFromUrl(url) {
@@ -3165,6 +3168,12 @@ async function applyResolvedRoute(route, { replaceToRoot = false } = {}) {
   if (route.type === 'leaderboard') {
     showScreen('leaderboard');
     loadLeaderboard(lbCategory);
+    lastHandledRouteKey = resolvedKey;
+    return true;
+  }
+  if (route.type === 'economy') {
+    showScreen('landing');
+    openEconomyPage();
     lastHandledRouteKey = resolvedKey;
     return true;
   }

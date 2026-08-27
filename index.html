@@ -87,6 +87,312 @@
       border-width: 1px !important;
     }
 
+    #economy-page {
+      top: 50%;
+      width: min(96vw, 980px);
+      max-width: 980px;
+      height: min(90vh, 900px);
+      padding: 0;
+      overflow: hidden;
+      text-align: left;
+      border: 2px solid rgba(0, 255, 157, 0.7);
+      background: rgba(5, 7, 11, 0.98);
+      box-shadow: 0 0 40px rgba(0, 255, 157, 0.22), 0 24px 80px rgba(0, 0, 0, 0.8);
+      z-index: 2200;
+    }
+
+    .economy-page-header {
+      position: relative;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 24px 28px 18px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      background: linear-gradient(135deg, rgba(0, 255, 157, 0.11), rgba(255, 0, 255, 0.08));
+    }
+
+    .economy-page-header > div {
+      min-width: 0;
+    }
+
+    .economy-page-header h1 {
+      margin: 0 0 8px;
+      color: #fff;
+      font-size: clamp(20px, 3vw, 31px);
+      text-shadow: 0 0 12px rgba(0, 255, 157, 0.7);
+    }
+
+    .economy-eyebrow {
+      margin-bottom: 7px;
+      color: var(--neon-blue);
+      font-family: var(--font-print);
+      font-size: 9px;
+      letter-spacing: 1.4px;
+    }
+
+    .economy-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 10px;
+      border: 1px solid #ffcc00;
+      border-radius: 999px;
+      color: #ffdd55;
+      background: rgba(255, 204, 0, 0.08);
+      font-family: var(--font-print);
+      font-size: 8px;
+      line-height: 1.4;
+      text-align: center;
+      white-space: normal;
+    }
+
+    .economy-status::before {
+      content: '';
+      width: 7px;
+      height: 7px;
+      flex: 0 0 7px;
+      border-radius: 50%;
+      background: #ffcc00;
+      box-shadow: 0 0 9px #ffcc00;
+    }
+
+    .economy-close {
+      width: 42px;
+      height: 42px;
+      flex: 0 0 42px;
+      border: 1px solid rgba(255, 0, 255, 0.65);
+      border-radius: 50%;
+      background: rgba(255, 0, 255, 0.08);
+      color: var(--neon-pink);
+      font-size: 25px;
+      cursor: pointer;
+    }
+
+    .economy-page-scroll {
+      width: 100%;
+      height: calc(100% - 111px);
+      overflow-x: hidden;
+      overflow-y: auto;
+      padding: 24px 28px 34px;
+      font-family: var(--font-print);
+      scrollbar-color: var(--neon-green) rgba(255, 255, 255, 0.05);
+    }
+
+    .economy-lead {
+      max-width: 820px;
+      margin: 0 0 22px;
+      color: #e9fff7;
+      font-size: 11px;
+      line-height: 1.8;
+      overflow-wrap: anywhere;
+    }
+
+    .economy-runtime {
+      margin-bottom: 24px;
+      padding: 15px 17px;
+      border: 1px solid rgba(255, 204, 0, 0.4);
+      border-radius: 14px;
+      background: rgba(255, 204, 0, 0.05);
+      color: #f8efc1;
+      font-size: 9px;
+      line-height: 1.7;
+      overflow-wrap: anywhere;
+    }
+
+    .economy-runtime strong {
+      display: block;
+      margin-bottom: 5px;
+      color: #ffdd55;
+      font-size: 10px;
+    }
+
+    .economy-section {
+      margin-top: 28px;
+    }
+
+    .economy-section h2 {
+      margin: 0 0 13px;
+      color: var(--neon-blue);
+      font-size: 16px;
+      text-shadow: 0 0 9px rgba(0, 212, 255, 0.35);
+    }
+
+    .economy-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .economy-card {
+      min-width: 0;
+      overflow: hidden;
+      padding: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 15px;
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .economy-card h3 {
+      min-height: 34px;
+      margin: 0 0 10px;
+      color: var(--neon-green);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .economy-card p,
+    .economy-card li {
+      color: #d7dbe1;
+      font-size: 8px;
+      line-height: 1.75;
+      overflow-wrap: anywhere;
+    }
+
+    .economy-card ul {
+      margin: 8px 0 0 17px;
+      padding: 0;
+    }
+
+    .economy-flow {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .economy-flow-step {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 58px;
+      padding: 10px;
+      border: 1px solid rgba(0, 255, 157, 0.28);
+      border-radius: 10px;
+      background: rgba(0, 255, 157, 0.05);
+      color: #edfff8;
+      font-size: 7px;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    .economy-flow-arrow {
+      align-self: center;
+      color: var(--neon-pink);
+      font-size: 16px;
+    }
+
+    .economy-allocation {
+      display: grid;
+      grid-template-columns: 7fr 3fr;
+      overflow: hidden;
+      margin: 12px 0;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 10px;
+    }
+
+    .economy-allocation span {
+      padding: 10px;
+      font-size: 8px;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .economy-allocation .skill {
+      color: #001a10;
+      background: var(--neon-green);
+    }
+
+    .economy-allocation .boosted {
+      color: #fff;
+      background: linear-gradient(135deg, #9b16b7, #ff00ff);
+    }
+
+    .economy-table-wrap {
+      overflow-x: auto;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 13px;
+    }
+
+    .economy-table {
+      width: 100%;
+      min-width: 650px;
+      border-collapse: collapse;
+      font-size: 8px;
+      line-height: 1.6;
+    }
+
+    .economy-table th,
+    .economy-table td {
+      padding: 11px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .economy-table th {
+      color: var(--neon-blue);
+      background: rgba(0, 212, 255, 0.06);
+    }
+
+    .economy-table td {
+      color: #dde3e8;
+    }
+
+    .economy-note {
+      margin-top: 14px;
+      padding: 13px 15px;
+      border-left: 3px solid var(--neon-pink);
+      background: rgba(255, 0, 255, 0.055);
+      color: #f4e3f4;
+      font-size: 8px;
+      line-height: 1.75;
+    }
+
+    .economy-checks {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 18px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .economy-checks li {
+      position: relative;
+      padding-left: 18px;
+      color: #dce3e7;
+      font-size: 8px;
+      line-height: 1.65;
+    }
+
+    .economy-checks li::before {
+      content: '◆';
+      position: absolute;
+      left: 0;
+      color: var(--neon-green);
+    }
+
+    .economy-sources {
+      margin-top: 28px;
+      padding-top: 18px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      color: #8d969d;
+      font-size: 7px;
+      line-height: 1.8;
+    }
+
+    .economy-sources a {
+      color: var(--neon-blue);
+    }
+
+    .economy-footer-button {
+      margin-top: 22px;
+      padding: 13px 18px;
+      font-size: 10px;
+    }
+
     #game-container {
       position: relative;
       width: 100vw;
@@ -2128,6 +2434,62 @@
       }
     }
 
+    @media (max-width: 760px) {
+      #economy-page {
+        left: 2vw !important;
+        width: 96vw !important;
+        max-width: 96vw !important;
+        height: 92vh;
+        transform: translate(0, -50%) !important;
+      }
+      .economy-page-header {
+        padding: 18px 60px 14px 18px;
+      }
+      .economy-page-header h1 {
+        overflow-wrap: anywhere;
+      }
+      .economy-status {
+        max-width: 100%;
+      }
+      .economy-close {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+      }
+      .economy-page-scroll {
+        height: calc(100% - 96px);
+        padding: 18px 16px 28px;
+      }
+      .economy-grid,
+      .economy-checks {
+        grid-template-columns: 1fr;
+      }
+      .economy-card h3 {
+        min-height: 0;
+      }
+      .economy-flow {
+        flex-direction: column;
+      }
+      .economy-flow-arrow {
+        align-self: center;
+        transform: rotate(90deg);
+      }
+    }
+
+    @media (max-height: 820px) {
+      #economy-page:not(.hidden) {
+        top: 50% !important;
+        height: 94vh;
+        transform: translate(-50%, -50%) scale(1) !important;
+      }
+    }
+
+    @media (max-width: 760px) and (max-height: 820px) {
+      #economy-page:not(.hidden) {
+        transform: translate(0, -50%) scale(1) !important;
+      }
+    }
+
   </style>
 </head>
 
@@ -2178,6 +2540,9 @@
     </div>
 
     <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 10px;">
+      <button id="btn-help-economy" class="premium-btn print-font" style="font-size: 10px; padding: 11px 14px; margin: 0 0 8px; letter-spacing: 1px; border-color: rgba(0,212,255,0.55); color: var(--neon-blue);">
+        ECONOMY &amp; REWARDS →
+      </button>
       <button id="btn-help-socials" class="premium-btn print-font" onclick="toggleHelpSocials()" style="font-size: 10px; padding: 10px 14px; margin: 0; letter-spacing: 1px;">
         SOCIALS ▾
       </button>
@@ -2199,7 +2564,7 @@
           <li>Dreams of Seeker Store.</li>
         </ul>
         <div style="color: #c7c7c7; font-size: 9px; line-height: 1.55;">
-          All fees go to buybacks and continued game development: Seeker Store, Google Play, and Product Hunt.
+          Approved plan: 50% of confirmed creator-fee SOL supports operations; 50% is reserved for market buys of $ANSEM for rewards. These flows are not live yet.
         </div>
       </div>
       <audio id="help-socials-audio" src="assets/help-socials-hype.mp3" preload="auto"></audio>
@@ -2208,6 +2573,154 @@
     <!-- Close Button -->
     <button class="premium-btn pink" onclick="closeHelpModal()" style="margin-top: 10px; font-weight: bold; letter-spacing: 2px;">CLOSE</button>
   </div>
+
+  <!-- PUBLIC ECONOMY & REWARDS PAGE -->
+  <section id="economy-page" class="screen hidden" aria-labelledby="economy-page-title">
+    <header class="economy-page-header">
+      <div>
+        <div class="economy-eyebrow">STICKLASH PUBLIC POLICY · 2026-08-27.V2</div>
+        <h1 id="economy-page-title">ECONOMY &amp; REWARDS</h1>
+        <div id="economy-runtime-status" class="economy-status">DESIGN APPROVED · TOKEN FLOWS NOT LIVE</div>
+      </div>
+      <button id="btn-economy-close" class="economy-close" type="button" aria-label="Close Economy and Rewards page">&times;</button>
+    </header>
+
+    <div class="economy-page-scroll">
+      <p class="economy-lead">
+        One job per asset: the game token buys gameplay boosts, creator-fee SOL funds operations and market buys of $ANSEM, and both tokens can fund transparent competitive rewards. Spending never becomes leaderboard score.
+      </p>
+
+      <div class="economy-runtime">
+        <strong>CURRENT RUNTIME</strong>
+        <span id="economy-runtime-detail">Boost purchases, creator-fee routing, $ANSEM actions, reward epochs, and token claims remain disabled while their on-chain verification paths are built.</span>
+      </div>
+
+      <section class="economy-section" aria-labelledby="economy-flow-title">
+        <h2 id="economy-flow-title">THE THREE FLOWS</h2>
+        <div class="economy-grid">
+          <article class="economy-card">
+            <h3>1. CREATOR-FEE SOL</h3>
+            <p>The 50/50 policy starts only after StickLash receives its confirmed creator share.</p>
+            <div class="economy-flow">
+              <div class="economy-flow-step">50%<br>OPERATIONS</div>
+              <span class="economy-flow-arrow">+</span>
+              <div class="economy-flow-step">50%<br>BUY $ANSEM</div>
+            </div>
+          </article>
+
+          <article class="economy-card">
+            <h3>2. GAME-TOKEN BOOSTS</h3>
+            <p>Boost packs are paid only in the StickLash game token.</p>
+            <div class="economy-flow">
+              <div class="economy-flow-step">BOOST<br>PURCHASE</div>
+              <span class="economy-flow-arrow">→</span>
+              <div class="economy-flow-step">100% GAME-TOKEN<br>REWARD RESERVE</div>
+            </div>
+          </article>
+
+          <article class="economy-card">
+            <h3>3. $ANSEM UTILITY</h3>
+            <p>Bounded Director actions spend $ANSEM without altering human ranked combat.</p>
+            <div class="economy-flow">
+              <div class="economy-flow-step">REROLL · NOMINATE<br>SHOWCASE</div>
+              <span class="economy-flow-arrow">→</span>
+              <div class="economy-flow-step">$ANSEM<br>REWARD RESERVE</div>
+            </div>
+          </article>
+        </div>
+        <div class="economy-note">
+          USDC has no target role. The first economy has no staking, revenue-share claim, dual-token boost payment, governance, or token burn.
+        </div>
+      </section>
+
+      <section class="economy-section" aria-labelledby="economy-modes-title">
+        <h2 id="economy-modes-title">BOOST-ENABLED WITHOUT CORRUPTING SKILL</h2>
+        <div class="economy-table-wrap">
+          <table class="economy-table">
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Purchased power</th>
+                <th>Ranking</th>
+                <th>Weekly competitive budget</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Casual Arena</td>
+                <td>Allowed; entertainment mode</td>
+                <td>No reward-bearing rank</td>
+                <td>0%</td>
+              </tr>
+              <tr>
+                <td>Boosted League</td>
+                <td>Maximum 3 paid boost charges per player per match</td>
+                <td>Separate validated ELO</td>
+                <td>30%</td>
+              </tr>
+              <tr>
+                <td>Skill Championship</td>
+                <td>Disabled; standardized loadout</td>
+                <td>Main validated ELO</td>
+                <td>70%</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="economy-allocation" aria-label="70 percent Skill Championship, 30 percent Boosted League">
+          <span class="skill">70% SKILL CHAMPIONSHIP</span>
+          <span class="boosted">30% BOOSTED</span>
+        </div>
+        <p class="economy-note">
+          Boosted League is openly boost-enabled, capped, and isolated. Buying more never adds ranking points. Skill Championship results and ratings cannot be affected by paid boosts.
+        </p>
+      </section>
+
+      <section class="economy-section" aria-labelledby="economy-rewards-title">
+        <h2 id="economy-rewards-title">HOW DUAL REWARDS WORK</h2>
+        <div class="economy-grid">
+          <article class="economy-card">
+            <h3>GAME-TOKEN RESERVE</h3>
+            <p>Funded by 100% of verified game-token boost receipts and clearly labelled sponsor deposits.</p>
+          </article>
+          <article class="economy-card">
+            <h3>$ANSEM RESERVE</h3>
+            <p>Funded by verified creator-fee market buys, Director-action spends, and clearly labelled sponsor deposits.</p>
+          </article>
+          <article class="economy-card">
+            <h3>ONE PLACEMENT, TWO ASSETS</h3>
+            <p>Eligible winners can receive both tokens. Each payout is capped by its own confirmed reserve and pre-published token-unit budget.</p>
+          </article>
+        </div>
+        <div class="economy-note">
+          The leaderboard decides placement; it does not create funds. Rewards are enabled only after both reserves, server-authoritative results, anti-abuse review, and a verified claim process exist.
+        </div>
+      </section>
+
+      <section class="economy-section" aria-labelledby="economy-safety-title">
+        <h2 id="economy-safety-title">REQUIRED BEFORE TOKEN REWARDS GO LIVE</h2>
+        <ul class="economy-checks">
+          <li>Official game-token and $ANSEM mints verified</li>
+          <li>Dedicated reserve and treasury accounts configured</li>
+          <li>Burn purchase path replaced by exact reserve transfer</li>
+          <li>Authenticated wallets bound to server match rooms</li>
+          <li>Separate Skill and Boosted ELO histories</li>
+          <li>Unique, idempotent match settlement IDs</li>
+          <li>Minimum-match, unique-opponent, replay, and Sybil controls</li>
+          <li>Dry-run epoch completed before token claims</li>
+        </ul>
+      </section>
+
+      <div class="economy-sources">
+        External basis: <a href="https://clawpump.tech/docs" target="_blank" rel="noopener noreferrer">ClawPump documentation</a>,
+        <a href="https://clawpump.tech/ansemhack" target="_blank" rel="noopener noreferrer">official AnsemHack page</a>, and
+        <a href="https://developers.jup.ag/docs/api-reference/swap/v1/quote" target="_blank" rel="noopener noreferrer">Jupiter quote reference</a>.
+        The 50/50 creator-fee allocation, 100% game-token boost reserve, 70/30 league allocation, and three-charge Boosted League cap are StickLash product decisions.
+      </div>
+
+      <button id="btn-economy-back" class="premium-btn pink economy-footer-button" type="button">BACK TO GUIDE</button>
+    </div>
+  </section>
 
   <!-- TRENDING STRIP (Floor level for main menu) -->
   <div id="trending-strip" class="trending-strip"
@@ -3004,11 +3517,13 @@
       }
     };
 
-    window.closeHelpModal = () => {
+    window.closeHelpModal = (options = {}) => {
       if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
-      window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
-        detail: { paused: false, reason: 'help_modal' }
-      }));
+      if (options.resumeFight !== false) {
+        window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
+          detail: { paused: false, reason: 'help_modal' }
+        }));
+      }
       const modal = document.getElementById('help-modal');
       if (modal) {
         modal.classList.add('hidden');

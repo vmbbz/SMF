@@ -178,23 +178,32 @@ def test_stablecoin_burn_is_blocked_even_when_enabled(monkeypatch: pytest.Monkey
     enabled, reason = server._get_boost_purchase_status()
 
     assert enabled is False
-    assert "Stablecoin burns are disabled" in reason
+    assert "Stablecoins are not accepted" in reason
 
 
-def test_game_token_burn_requires_explicit_enable(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_game_token_burn_is_retired_even_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOOST_PAYMENT_TOKEN_MINT", "game-token-mint")
     monkeypatch.setenv("BOOST_PAYMENT_TOKEN_SYMBOL", "STICK")
     monkeypatch.setenv("BOOST_SETTLEMENT_MODE", "burn")
-    monkeypatch.delenv("BOOST_PURCHASES_ENABLED", raising=False)
-
-    disabled, reason = server._get_boost_purchase_status()
     monkeypatch.setenv("BOOST_PURCHASES_ENABLED", "true")
-    enabled, enabled_reason = server._get_boost_purchase_status()
 
-    assert disabled is False
-    assert "paused" in reason
-    assert enabled is True
-    assert enabled_reason == ""
+    enabled, reason = server._get_boost_purchase_status()
+
+    assert enabled is False
+    assert "burns are retired" in reason
+
+
+def test_reward_vault_transfer_stays_disabled_until_verifier_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_MINT", "game-token-mint")
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_SYMBOL", "STICK")
+    monkeypatch.setenv("BOOST_SETTLEMENT_MODE", "reward_vault_transfer")
+    monkeypatch.setenv("BOOST_PURCHASES_ENABLED", "true")
+    monkeypatch.setenv("GAME_TOKEN_REWARD_VAULT", "reward-vault")
+
+    enabled, reason = server._get_boost_purchase_status()
+
+    assert enabled is False
+    assert "not implemented" in reason
 
 
 def test_boost_catalog_exposes_payment_policy(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -209,6 +218,41 @@ def test_boost_catalog_exposes_payment_policy(monkeypatch: pytest.MonkeyPatch) -
     assert payload["economy"]["settlementMode"] == "burn"
     assert payload["economy"]["purchasesEnabled"] is False
     assert [pack["packId"] for pack in payload["packs"]] == ["micro", "degen", "chaos"]
+
+
+def test_public_economy_policy_exposes_design_and_runtime_gates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_MINT", "game-token-mint")
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_SYMBOL", "STICK")
+    monkeypatch.setenv("BOOST_SETTLEMENT_MODE", "reward_vault_transfer")
+    monkeypatch.setenv("BOOST_PURCHASES_ENABLED", "1")
+    monkeypatch.setenv("GAME_TOKEN_REWARD_VAULT", "game-reward-vault")
+    monkeypatch.setenv("ANSEM_TOKEN_MINT", "official-ansem-mint")
+    monkeypatch.setenv("ANSEM_REWARD_VAULT", "ansem-reward-vault")
+
+    payload = asyncio.run(server.api_economy_policy.fn())
+
+    assert payload["policyStatus"] == "design-approved-not-live"
+    assert payload["assets"]["usdc"]["role"] == "none"
+    assert payload["flows"]["creatorFeeSol"]["operationsBps"] == 5_000
+    assert payload["flows"]["creatorFeeSol"]["ansemAcquisitionBps"] == 5_000
+    assert payload["flows"]["gameTokenBoostPayment"]["gameTokenRewardReserveBps"] == 10_000
+    assert payload["leagues"]["skill"]["rewardBudgetBps"] == 7_000
+    assert payload["leagues"]["boosted"]["rewardBudgetBps"] == 3_000
+    assert payload["runtime"]["boostPurchasesEnabled"] is False
+    assert payload["runtime"]["rewardClaimsEnabled"] is False
+
+
+def test_public_economy_policy_does_not_mislabel_legacy_usdc_as_game_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_MINT", server.SOLANA_MAINNET_USDC_MINT)
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_SYMBOL", "USDC")
+
+    payload = asyncio.run(server.api_economy_policy.fn())
+
+    assert payload["assets"]["usdc"]["role"] == "none"
+    assert payload["assets"]["gameToken"]["mint"] == ""
+    assert payload["assets"]["gameToken"]["configured"] is False
 
 
 def test_boost_balance_without_db_returns_503() -> None:
@@ -304,6 +348,14 @@ def test_room_route_single_word() -> None:
         resp = client.get("/room/test")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
+
+
+def test_economy_route_returns_public_page() -> None:
+    with TestClient(app=app) as client:
+        resp = client.get("/economy")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "ECONOMY &amp; REWARDS" in resp.text
 
 
 # ─── Room creation endpoint ───────────────────────

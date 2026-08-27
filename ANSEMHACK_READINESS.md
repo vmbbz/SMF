@@ -36,7 +36,7 @@ StickLash already has a credible foundation:
 - Birdeye supplies cached trending and newly listed token discovery; DexScreener supplies active-fight token details.
 - Market volume, momentum, and liquidity already alter opponent health, damage, and speed.
 - The game has AI and behavior-tree fighter controllers, AI-versus-AI simulation, an endless fight loop, voice control, multiplayer, victory sharing, and an Android build.
-- Solana wallet ownership is verified server-side, and boost purchases require a confirmed SPL burn before server-authoritative boosts are credited.
+- Solana wallet ownership is verified server-side, existing boost balances are server-authoritative, and new boost purchases are disabled while the retired burn path is replaced by game-token reward-vault transfers.
 - The backend can use an Alchemy Solana RPC through `SOLANA_RPC`, although the current discovery pipeline is not yet an Alchemy stream.
 
 ## Material gaps
@@ -116,15 +116,15 @@ The stream should enrich the director; it should not replace Birdeye/DexScreener
 
 ### Judge-facing evidence
 
-Persist append-only agent decisions and match outcomes with provider timestamps and selected metrics. Build a small public arena status view showing fights directed, unique tokens featured, decisions with live data, shares generated, wallet sessions, verified burns, and linked Solana transaction signatures. Never label simulated activity as onchain volume.
+Persist append-only agent decisions and match outcomes with provider timestamps and selected metrics. Build a small public arena status view showing fights directed, unique tokens featured, decisions with live data, shares generated, wallet sessions, and linked verified Solana transaction signatures. Never label simulated activity as onchain volume.
 
 ### Token utility boundary
 
-The game token and `$ANSEM` have separate jobs. The launched StickLash token will pay for casual boost packs; `$ANSEM` holdings will unlock a bounded daily Arena Director action without changing ranked combat power. Ranked ELO rewards use equal fighter rules and a separate validated eligibility ledger.
+The game token and `$ANSEM` have separate jobs. The launched StickLash token will pay for boost packs, with 100% of verified receipts entering the game-token reward reserve. Bounded Arena Director actions will spend `$ANSEM` into a separate `$ANSEM` reward reserve without changing human ranked combat power.
 
-The target boost transaction sends 50% of verified game-token receipts directly to the weekly reward vault and 50% to the operating treasury. Creator rewards received from the launch platform are an additional reward-vault source. The current pre-launch burn adapter generates no revenue and must not be described as prize funding. See [Economy, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md) for the full decision and delivery gates.
+Confirmed creator-fee SOL follows a separate 50/50 flow: 50% operations and infrastructure, 50% reserved for market purchases of `$ANSEM` that enter the `$ANSEM` reward reserve. Competitive budgets are split 70% to an equal-power Skill Championship and 30% to a separate Boosted League capped at three paid boost charges per player per match. See [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md) for the full decision and delivery gates.
 
-Do not implement staking, dual-token boost payments, or automatic token distributions. Do not configure an `$ANSEM` mint until it is verified from an official source. Every value-moving action must require explicit wallet approval and independent server-side transaction verification.
+Do not implement staking, dual-token boost payments, burns, or unattended token distributions. Do not configure an `$ANSEM` mint until it is verified from an official source. Every value-moving action must use an authorized treasury or explicit user-wallet approval and independent server-side transaction verification.
 
 ## Delivery sequence
 
@@ -133,9 +133,11 @@ Do not implement staking, dual-token boost payments, or automatic token distribu
 3. Register the project and apply for Alchemy and Helius credits through the official flows; these are human account actions.
 4. Add the Alchemy provider behind the existing normalized market interface and prove it with replay/failover evidence.
 5. Add the public arena status view and a stream-ready 15-minute demo flow.
-6. Finalize the game-token identity, reward-vault and operating-treasury addresses, then replace boost burns with the documented atomic split transfer.
-7. Add one safe, visible `$ANSEM` Arena Director privilege after verifying the official mint.
-8. Freeze the submission build early enough to collect real usage, shares, and onchain evidence before 19 September.
+6. Finalize both token identities and reserve accounts, then replace boost burns with the documented 100% game-token reward-vault transfer.
+7. Add the creator-fee SOL allocation ledger and one operator-approved `$ANSEM` market purchase before considering automation.
+8. Add one safe, visible `$ANSEM` Arena Director spend after verifying the official mint.
+9. Build separate Skill and Boosted League settlement, run a non-monetary reward epoch, and only then enable small funded claims.
+10. Freeze the submission build early enough to collect real usage, shares, and onchain evidence before 19 September.
 
 ## Demo story
 

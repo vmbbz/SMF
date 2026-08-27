@@ -17,6 +17,9 @@ export function parseRoute(pathname) {
   if (pathname === '/leaderboard' || pathname === '/leaderboard/') {
     return { type: 'leaderboard' };
   }
+  if (pathname === '/economy' || pathname === '/economy/') {
+    return { type: 'economy' };
+  }
   if (pathname === '/multiplayer' || pathname === '/multiplayer/') {
     return { type: 'multiplayer' };
   }
