@@ -2471,19 +2471,31 @@ async def api_boost_consume(request: Request, data: dict[str, Any]) -> dict[str,
         "idempotent": False,
     }
 
-@get(MARKET_TRENDING_ROUTE)
-async def api_market_trending(count: int = 12) -> List[Dict[str, Any]]:
+async def _fetch_market_trending(count: int = 12) -> List[Dict[str, Any]]:
     return await birdeye_service.fetch_trending_tokens(count)
 
-@get(MARKET_GRADUATES_ROUTE)
-async def api_market_graduates(count: int = 8) -> List[Dict[str, Any]]:
+
+async def _fetch_market_graduates(count: int = 8) -> List[Dict[str, Any]]:
     return await birdeye_service.fetch_graduated_tokens(count)
 
-@get(MARKET_TOKEN_ROUTE)
-async def api_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
+
+async def _fetch_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
     # Token details are gameplay hot-path data. Keep Birdeye reserved for
     # discovery lists; DexScreener handles per-token logo/banner/price refreshes.
     return await dexscreener_service.get_cached_token(mint)
+
+
+@get(MARKET_TRENDING_ROUTE)
+async def api_market_trending(count: int = 12) -> List[Dict[str, Any]]:
+    return await _fetch_market_trending(count)
+
+@get(MARKET_GRADUATES_ROUTE)
+async def api_market_graduates(count: int = 8) -> List[Dict[str, Any]]:
+    return await _fetch_market_graduates(count)
+
+@get(MARKET_TOKEN_ROUTE)
+async def api_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
+    return await _fetch_market_token_details(mint)
 
 def _assert_legacy_market_endpoint_allowed() -> None:
     if ALLOW_LEGACY_MARKET_ENDPOINTS:
@@ -2496,17 +2508,17 @@ def _assert_legacy_market_endpoint_allowed() -> None:
 @get("/api/trending")
 async def api_trending(count: int = 12) -> List[Dict[str, Any]]:
     _assert_legacy_market_endpoint_allowed()
-    return await api_market_trending(count)
+    return await _fetch_market_trending(count)
 
 @get("/api/graduates")
 async def api_graduates(count: int = 8) -> List[Dict[str, Any]]:
     _assert_legacy_market_endpoint_allowed()
-    return await api_market_graduates(count)
+    return await _fetch_market_graduates(count)
 
 @get("/api/token/{mint:str}")
 async def api_token_details(mint: str) -> Optional[Dict[str, Any]]:
     _assert_legacy_market_endpoint_allowed()
-    return await api_market_token_details(mint)
+    return await _fetch_market_token_details(mint)
 
 @get("/api/proxy/image")
 async def proxy_image(url: str) -> Response:
