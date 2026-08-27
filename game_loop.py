@@ -11,11 +11,15 @@ import asyncio
 import json
 import time
 from dataclasses import dataclass, field
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from litestar.connection import WebSocket
 
 from game_engine import GameEngine
+from game_engine.actions import Actions
+
+from competition import PRIVATE_CASUAL, RANKED_BOOSTED, RANKED_SKILL
 
 
 # ─────────────────────────────────────────────
@@ -61,6 +65,18 @@ class RoomLoop:
     disconnect_timers: dict[int, float] = field(default_factory=dict)
     # Winner from forfeit (set when grace period expires)
     forfeit_winner: int | None = None
+    match_type: str = PRIVATE_CASUAL
+    league: str = ""
+    input_category: str = ""
+    match_id: str = ""
+    p1_wallet: str = ""
+    p2_wallet: str = ""
+    max_paid_boost_charges: int = 0
+    boost_charges_used: dict[int, int] = field(default_factory=lambda: {1: 0, 2: 0})
+
+
+RoundSettlementCallback = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+BoostAuthorizationCallback = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 def _serialize_fighter(f: Any) -> dict[str, Any]:
@@ -110,6 +126,14 @@ def _build_snapshot(room: RoomLoop) -> dict[str, Any]:
         ],
         "p1_input_seq": p1_seq,
         "p2_input_seq": p2_seq,
+        "competition": {
+            "match_type": room.match_type,
+            "league": room.league,
+            "reward_candidate": room.match_type in {RANKED_SKILL, RANKED_BOOSTED},
+            "p1_boost_charges_used": room.boost_charges_used[1],
+            "p2_boost_charges_used": room.boost_charges_used[2],
+            "max_paid_boost_charges": room.max_paid_boost_charges,
+        },
     }
 
 
@@ -151,20 +175,38 @@ def _drain_inputs(player: PlayerConnection) -> tuple[set[str], set[str]]:
 class GameLoopManager:
     """Manages game loops for all active rooms."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        on_round_over: RoundSettlementCallback | None = None,
+        authorize_boost: BoostAuthorizationCallback | None = None,
+    ) -> None:
         self._rooms: dict[str, RoomLoop] = {}
+        self._on_round_over = on_round_over
+        self._authorize_boost = authorize_boost
 
     @property
     def rooms(self) -> dict[str, RoomLoop]:
         """Read-only access to active room loops."""
         return self._rooms
 
-    def create_room_loop(self, code: str) -> RoomLoop:
+    def create_room_loop(self, code: str, metadata: dict[str, Any] | None = None) -> RoomLoop:
         """Create a new room loop (does not start the task yet)."""
         if code in self._rooms:
             return self._rooms[code]
 
-        room = RoomLoop(code=code, engine=GameEngine())
+        metadata = metadata or {}
+        room = RoomLoop(
+            code=code,
+            engine=GameEngine(),
+            match_type=str(metadata.get("match_type") or PRIVATE_CASUAL),
+            league=str(metadata.get("league") or ""),
+            input_category=str(metadata.get("input_category") or ""),
+            match_id=str(metadata.get("match_id") or ""),
+            p1_wallet=str(metadata.get("p1_wallet") or ""),
+            p2_wallet=str(metadata.get("p2_wallet") or ""),
+            max_paid_boost_charges=int(metadata.get("max_paid_boost_charges") or 0),
+        )
         self._rooms[code] = room
         return room
 
@@ -179,6 +221,9 @@ class GameLoopManager:
             raise ValueError(f"No game loop for room {code}")
         if player not in (1, 2):
             raise ValueError("player must be 1 or 2")
+        existing = room.players.get(player)
+        if existing is not None and existing.connected:
+            raise ValueError(f"Player {player} already has an active game connection")
 
         conn = PlayerConnection(player=player, socket=socket)
         room.players[player] = conn
@@ -275,6 +320,13 @@ class GameLoopManager:
                 if 2 in room.players:
                     p2_actions, p2_pressed = _drain_inputs(room.players[2])
 
+                p1_actions, p1_pressed = await self._apply_special_action_policy(
+                    room, 1, p1_actions, p1_pressed
+                )
+                p2_actions, p2_pressed = await self._apply_special_action_policy(
+                    room, 2, p2_actions, p2_pressed
+                )
+
                 # Advance simulation
                 room.engine.tick(TICK_INTERVAL, p1_actions, p1_pressed, p2_actions, p2_pressed)
                 room.tick_count += 1
@@ -290,6 +342,36 @@ class GameLoopManager:
                     reason = "forfeit" if room.forfeit_winner is not None else "ko"
                     if room.forfeit_winner is None and room.engine.p1.health > 0 and room.engine.p2.health > 0:
                         reason = "timeout"
+                    settlement: dict[str, Any] = {
+                        "settled": False,
+                        "ranked": room.match_type in {RANKED_SKILL, RANKED_BOOSTED},
+                    }
+                    if self._on_round_over is not None:
+                        try:
+                            settlement = await self._on_round_over({
+                                "match_id": room.match_id,
+                                "room_code": room.code,
+                                "match_type": room.match_type,
+                                "league": room.league,
+                                "input_category": room.input_category,
+                                "p1_wallet": room.p1_wallet,
+                                "p2_wallet": room.p2_wallet,
+                                "winner": winner,
+                                "reason": reason,
+                                "p1_health": round(room.engine.p1.health, 1),
+                                "p2_health": round(room.engine.p2.health, 1),
+                                "server_tick": room.tick_count,
+                                "p1_boost_charges": room.boost_charges_used[1],
+                                "p2_boost_charges": room.boost_charges_used[2],
+                            })
+                        except Exception as exc:
+                            settlement = {
+                                "settled": False,
+                                "ranked": room.match_type in {RANKED_SKILL, RANKED_BOOSTED},
+                                "error": "authoritative_settlement_failed",
+                            }
+                            print(f"[game-loop:{room.code}] Settlement failed: {type(exc).__name__}: {exc}")
+
                     # Send final state and stop
                     end_msg = json.dumps({
                         "type": "round_over",
@@ -298,6 +380,7 @@ class GameLoopManager:
                         "reason": reason,
                         "p1_health": round(room.engine.p1.health, 1),
                         "p2_health": round(room.engine.p2.health, 1),
+                        "settlement": settlement,
                     })
                     await self._broadcast(room, end_msg)
                     print(f"[game-loop:{room.code}] Round over at tick {room.tick_count} (reason={reason})")
@@ -318,6 +401,48 @@ class GameLoopManager:
             self._rooms.pop(room.code, None)
             room.stopped = True
             print(f"[game-loop:{room.code}] Loop exited")
+
+    async def _apply_special_action_policy(
+        self,
+        room: RoomLoop,
+        player: int,
+        actions: set[str],
+        just_pressed: set[str],
+    ) -> tuple[set[str], set[str]]:
+        """Enforce league special-action rules before the engine sees input."""
+        if Actions.HADOUKEN not in just_pressed:
+            return actions, just_pressed
+
+        if room.match_type == RANKED_SKILL:
+            actions.discard(Actions.HADOUKEN)
+            just_pressed.discard(Actions.HADOUKEN)
+            return actions, just_pressed
+
+        if room.match_type != RANKED_BOOSTED:
+            return actions, just_pressed
+
+        fighter = room.engine.p1 if player == 1 else room.engine.p2
+        can_start = fighter.state != "attack" and fighter.hadouken_cooldown <= 0 and fighter.grounded
+        used = room.boost_charges_used[player]
+        if not can_start or used >= room.max_paid_boost_charges or self._authorize_boost is None:
+            actions.discard(Actions.HADOUKEN)
+            just_pressed.discard(Actions.HADOUKEN)
+            return actions, just_pressed
+
+        authorization = await self._authorize_boost({
+            "match_id": room.match_id,
+            "room_code": room.code,
+            "player": player,
+            "wallet": room.p1_wallet if player == 1 else room.p2_wallet,
+            "charge_number": used + 1,
+        })
+        if not authorization.get("authorized"):
+            actions.discard(Actions.HADOUKEN)
+            just_pressed.discard(Actions.HADOUKEN)
+            return actions, just_pressed
+
+        room.boost_charges_used[player] = used + 1
+        return actions, just_pressed
 
     @staticmethod
     async def _broadcast(room: RoomLoop, msg: str) -> None:

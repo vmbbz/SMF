@@ -1,11 +1,13 @@
 """ELO rating system with PostgreSQL persistence.
 
-Ratings are stored per-user per-category (voice / keyboard):
+Legacy ratings are stored per-user per-category (voice / keyboard):
   - Table ``players`` → user_id, name
   - Table ``elo_ratings`` → user_id, category, rating, wins, losses, draws, matches
   - Table ``match_history`` → per-match audit trail
 
-Leaderboard queries use ``ORDER BY rating DESC`` on the elo_ratings table.
+Reward-candidate competitive ratings use separate Skill/Boosted tables keyed
+by authenticated wallet, league, and input division.  A unique authoritative
+match settlement is committed in the same transaction as both rating updates.
 """
 from __future__ import annotations
 
@@ -15,6 +17,14 @@ import re
 from typing import Any
 
 import asyncpg  # type: ignore[import-untyped]
+
+from competition import (
+    BOOSTED_LEAGUE,
+    BOOSTED_MAX_PAID_CHARGES,
+    INPUT_CATEGORIES,
+    RANKED_LEAGUES,
+    SKILL_LEAGUE,
+)
 
 
 # ─────────────────────────────────────────────
@@ -164,6 +174,73 @@ CREATE TABLE IF NOT EXISTS match_history (
 
 CREATE INDEX IF NOT EXISTS idx_match_history_played_at
     ON match_history (played_at DESC);
+
+CREATE TABLE IF NOT EXISTS competitive_ratings (
+    wallet_address  TEXT NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
+    league          TEXT NOT NULL CHECK (league IN ('skill', 'boosted')),
+    input_category  TEXT NOT NULL CHECK (input_category IN ('voice', 'keyboard')),
+    rating          REAL NOT NULL DEFAULT 1000,
+    wins            INTEGER NOT NULL DEFAULT 0,
+    losses          INTEGER NOT NULL DEFAULT 0,
+    draws           INTEGER NOT NULL DEFAULT 0,
+    matches         INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (wallet_address, league, input_category)
+);
+
+CREATE INDEX IF NOT EXISTS idx_competitive_leaderboard
+    ON competitive_ratings (league, input_category, rating DESC);
+
+CREATE TABLE IF NOT EXISTS ranked_match_settlements (
+    match_id          TEXT PRIMARY KEY,
+    room_code         TEXT NOT NULL UNIQUE,
+    league            TEXT NOT NULL CHECK (league IN ('skill', 'boosted')),
+    input_category    TEXT NOT NULL CHECK (input_category IN ('voice', 'keyboard')),
+    p1_wallet         TEXT NOT NULL REFERENCES players(user_id),
+    p2_wallet         TEXT NOT NULL REFERENCES players(user_id),
+    winner_player     SMALLINT CHECK (winner_player IN (1, 2)),
+    result            TEXT NOT NULL CHECK (result IN ('p1_win', 'p2_win', 'draw')),
+    reason            TEXT NOT NULL,
+    p1_health         REAL NOT NULL,
+    p2_health         REAL NOT NULL,
+    server_tick       BIGINT NOT NULL,
+    p1_boost_charges  INTEGER NOT NULL DEFAULT 0 CHECK (p1_boost_charges >= 0),
+    p2_boost_charges  INTEGER NOT NULL DEFAULT 0 CHECK (p2_boost_charges >= 0),
+    p1_rating_before  REAL NOT NULL,
+    p2_rating_before  REAL NOT NULL,
+    p1_rating_after   REAL NOT NULL,
+    p2_rating_after   REAL NOT NULL,
+    played_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (p1_wallet <> p2_wallet),
+    CONSTRAINT ranked_match_settlements_boost_policy CHECK (
+        (league = 'skill' AND p1_boost_charges = 0 AND p2_boost_charges = 0)
+        OR
+        (league = 'boosted' AND p1_boost_charges <= 3 AND p2_boost_charges <= 3)
+    )
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ranked_match_settlements_boost_policy'
+    ) THEN
+        ALTER TABLE ranked_match_settlements
+            ADD CONSTRAINT ranked_match_settlements_boost_policy CHECK (
+                (league = 'skill' AND p1_boost_charges = 0 AND p2_boost_charges = 0)
+                OR
+                (league = 'boosted' AND p1_boost_charges <= 3 AND p2_boost_charges <= 3)
+            );
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_ranked_settlements_epoch
+    ON ranked_match_settlements (league, input_category, played_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ranked_settlements_p1
+    ON ranked_match_settlements (p1_wallet, played_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ranked_settlements_p2
+    ON ranked_match_settlements (p2_wallet, played_at DESC);
 """
 
 
@@ -182,6 +259,361 @@ class EloManager:
 
     def __init__(self, pool: asyncpg.Pool) -> None:  # type: ignore[type-arg]
         self._pool: asyncpg.Pool = pool  # type: ignore[type-arg]
+
+    @staticmethod
+    def _validate_competitive_dimensions(league: str, input_category: str) -> None:
+        if league not in RANKED_LEAGUES:
+            raise ValueError(f"Invalid ranked league: {league}")
+        if input_category not in INPUT_CATEGORIES:
+            raise ValueError(f"Invalid input category: {input_category}")
+
+    @staticmethod
+    def _competitive_stats(row: Any, *, wallet: str, league: str, input_category: str) -> dict[str, Any]:
+        return {
+            "wallet": wallet,
+            "user_id": wallet,
+            "league": league,
+            "category": input_category,
+            "rating": float(row["rating"]),
+            "wins": int(row["wins"]),
+            "losses": int(row["losses"]),
+            "draws": int(row["draws"]),
+            "matches": int(row["matches"]),
+        }
+
+    async def get_competitive_rating(
+        self,
+        wallet: str,
+        league: str,
+        input_category: str,
+    ) -> dict[str, Any]:
+        """Return wallet rating in one league/input division."""
+        self._validate_competitive_dimensions(league, input_category)
+        row = await self._pool.fetchrow(
+            "SELECT rating, wins, losses, draws, matches FROM competitive_ratings "
+            "WHERE wallet_address = $1 AND league = $2 AND input_category = $3",
+            wallet,
+            league,
+            input_category,
+        )
+        if row is None:
+            return {
+                "wallet": wallet,
+                "user_id": wallet,
+                "league": league,
+                "category": input_category,
+                "rating": DEFAULT_RATING,
+                "wins": 0,
+                "losses": 0,
+                "draws": 0,
+                "matches": 0,
+            }
+        return self._competitive_stats(
+            row,
+            wallet=wallet,
+            league=league,
+            input_category=input_category,
+        )
+
+    async def settle_competitive_match(
+        self,
+        *,
+        match_id: str,
+        room_code: str,
+        league: str,
+        input_category: str,
+        p1_wallet: str,
+        p2_wallet: str,
+        winner: int | None,
+        reason: str,
+        p1_health: float,
+        p2_health: float,
+        server_tick: int,
+        p1_boost_charges: int = 0,
+        p2_boost_charges: int = 0,
+        p1_name: str = "",
+        p2_name: str = "",
+    ) -> dict[str, Any]:
+        """Atomically persist one authoritative result and both rating updates.
+
+        The transaction takes a match-scoped advisory lock before checking the
+        unique settlement row. Replays therefore return the original outcome
+        without applying rating changes twice, even under concurrent delivery.
+        """
+        self._validate_competitive_dimensions(league, input_category)
+        if not match_id or not room_code:
+            raise ValueError("Competitive settlement requires match_id and room_code")
+        if not p1_wallet or not p2_wallet or p1_wallet == p2_wallet:
+            raise ValueError("Competitive settlement requires two distinct wallets")
+        if winner not in (1, 2, None):
+            raise ValueError("winner must be 1, 2, or None")
+        if p1_boost_charges < 0 or p2_boost_charges < 0:
+            raise ValueError("Boost charge counts cannot be negative")
+        if league == SKILL_LEAGUE and (p1_boost_charges or p2_boost_charges):
+            raise ValueError("Skill Championship settlements cannot contain paid boost charges")
+        if league == BOOSTED_LEAGUE and max(p1_boost_charges, p2_boost_charges) > BOOSTED_MAX_PAID_CHARGES:
+            raise ValueError("Boosted League settlement exceeds the paid charge cap")
+
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", match_id)
+                existing = await conn.fetchrow(
+                    "SELECT match_id, room_code, league, input_category, p1_wallet, p2_wallet, "
+                    "result, winner_player, reason, server_tick, p1_boost_charges, p2_boost_charges, "
+                    "p1_rating_before, p2_rating_before, p1_rating_after, p2_rating_after "
+                    "FROM ranked_match_settlements WHERE match_id = $1",
+                    match_id,
+                )
+                if existing is not None:
+                    expected_result = "draw" if winner is None else ("p1_win" if winner == 1 else "p2_win")
+                    replay_identity = (
+                        str(existing["room_code"]),
+                        str(existing["league"]),
+                        str(existing["input_category"]),
+                        str(existing["p1_wallet"]),
+                        str(existing["p2_wallet"]),
+                        existing["winner_player"],
+                        str(existing["result"]),
+                        str(existing["reason"]),
+                        int(existing["server_tick"]),
+                        int(existing["p1_boost_charges"]),
+                        int(existing["p2_boost_charges"]),
+                    )
+                    incoming_identity = (
+                        room_code,
+                        league,
+                        input_category,
+                        p1_wallet,
+                        p2_wallet,
+                        winner,
+                        expected_result,
+                        reason[:32],
+                        int(server_tick),
+                        int(p1_boost_charges),
+                        int(p2_boost_charges),
+                    )
+                    if replay_identity != incoming_identity:
+                        raise ValueError("Competitive settlement idempotency conflict")
+                    return {
+                        "settled": True,
+                        "idempotent": True,
+                        "matchId": str(existing["match_id"]),
+                        "league": str(existing["league"]),
+                        "category": str(existing["input_category"]),
+                        "result": str(existing["result"]),
+                        "winner": existing["winner_player"],
+                        "p1": {
+                            "old_rating": float(existing["p1_rating_before"]),
+                            "rating": float(existing["p1_rating_after"]),
+                        },
+                        "p2": {
+                            "old_rating": float(existing["p2_rating_before"]),
+                            "rating": float(existing["p2_rating_after"]),
+                        },
+                    }
+
+                await conn.execute(
+                    "INSERT INTO players (user_id, name) VALUES ($1, $2) "
+                    "ON CONFLICT (user_id) DO UPDATE SET name = "
+                    "CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE players.name END",
+                    p1_wallet,
+                    p1_name[:30],
+                )
+                await conn.execute(
+                    "INSERT INTO players (user_id, name) VALUES ($1, $2) "
+                    "ON CONFLICT (user_id) DO UPDATE SET name = "
+                    "CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE players.name END",
+                    p2_wallet,
+                    p2_name[:30],
+                )
+                for wallet in (p1_wallet, p2_wallet):
+                    await conn.execute(
+                        "INSERT INTO competitive_ratings (wallet_address, league, input_category) "
+                        "VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+                        wallet,
+                        league,
+                        input_category,
+                    )
+
+                rows = await conn.fetch(
+                    "SELECT wallet_address, rating, wins, losses, draws, matches "
+                    "FROM competitive_ratings "
+                    "WHERE wallet_address = ANY($1::text[]) AND league = $2 AND input_category = $3 "
+                    "ORDER BY wallet_address FOR UPDATE",
+                    [p1_wallet, p2_wallet],
+                    league,
+                    input_category,
+                )
+                by_wallet = {str(row["wallet_address"]): row for row in rows}
+                if set(by_wallet) != {p1_wallet, p2_wallet}:
+                    raise RuntimeError("Failed to lock both competitive rating rows")
+
+                p1_before = self._competitive_stats(
+                    by_wallet[p1_wallet],
+                    wallet=p1_wallet,
+                    league=league,
+                    input_category=input_category,
+                )
+                p2_before = self._competitive_stats(
+                    by_wallet[p2_wallet],
+                    wallet=p2_wallet,
+                    league=league,
+                    input_category=input_category,
+                )
+                result_value = 0.5 if winner is None else (1.0 if winner == 1 else 0.0)
+                p1_after_rating, p2_after_rating = calculate_elo_change(
+                    float(p1_before["rating"]),
+                    float(p2_before["rating"]),
+                    int(p1_before["matches"]),
+                    int(p2_before["matches"]),
+                    result_value,
+                )
+
+                p1_win = 1 if winner == 1 else 0
+                p2_win = 1 if winner == 2 else 0
+                p1_loss = 1 if winner == 2 else 0
+                p2_loss = 1 if winner == 1 else 0
+                draw_inc = 1 if winner is None else 0
+
+                await conn.execute(
+                    "UPDATE competitive_ratings SET rating = $4, wins = wins + $5, "
+                    "losses = losses + $6, draws = draws + $7, matches = matches + 1 "
+                    "WHERE wallet_address = $1 AND league = $2 AND input_category = $3",
+                    p1_wallet,
+                    league,
+                    input_category,
+                    p1_after_rating,
+                    p1_win,
+                    p1_loss,
+                    draw_inc,
+                )
+                await conn.execute(
+                    "UPDATE competitive_ratings SET rating = $4, wins = wins + $5, "
+                    "losses = losses + $6, draws = draws + $7, matches = matches + 1 "
+                    "WHERE wallet_address = $1 AND league = $2 AND input_category = $3",
+                    p2_wallet,
+                    league,
+                    input_category,
+                    p2_after_rating,
+                    p2_win,
+                    p2_loss,
+                    draw_inc,
+                )
+
+                result_label = "draw" if winner is None else ("p1_win" if winner == 1 else "p2_win")
+                await conn.execute(
+                    "INSERT INTO ranked_match_settlements ("
+                    "match_id, room_code, league, input_category, p1_wallet, p2_wallet, "
+                    "winner_player, result, reason, p1_health, p2_health, server_tick, "
+                    "p1_boost_charges, p2_boost_charges, p1_rating_before, p2_rating_before, "
+                    "p1_rating_after, p2_rating_after) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)",
+                    match_id,
+                    room_code,
+                    league,
+                    input_category,
+                    p1_wallet,
+                    p2_wallet,
+                    winner,
+                    result_label,
+                    reason[:32],
+                    float(p1_health),
+                    float(p2_health),
+                    int(server_tick),
+                    int(p1_boost_charges),
+                    int(p2_boost_charges),
+                    float(p1_before["rating"]),
+                    float(p2_before["rating"]),
+                    p1_after_rating,
+                    p2_after_rating,
+                )
+
+        p1_after = {
+            **p1_before,
+            "old_rating": float(p1_before["rating"]),
+            "rating": p1_after_rating,
+            "wins": int(p1_before["wins"]) + p1_win,
+            "losses": int(p1_before["losses"]) + p1_loss,
+            "draws": int(p1_before["draws"]) + draw_inc,
+            "matches": int(p1_before["matches"]) + 1,
+        }
+        p2_after = {
+            **p2_before,
+            "old_rating": float(p2_before["rating"]),
+            "rating": p2_after_rating,
+            "wins": int(p2_before["wins"]) + p2_win,
+            "losses": int(p2_before["losses"]) + p2_loss,
+            "draws": int(p2_before["draws"]) + draw_inc,
+            "matches": int(p2_before["matches"]) + 1,
+        }
+        return {
+            "settled": True,
+            "idempotent": False,
+            "matchId": match_id,
+            "league": league,
+            "category": input_category,
+            "result": result_label,
+            "winner": winner,
+            "p1": p1_after,
+            "p2": p2_after,
+        }
+
+    async def get_competitive_leaderboard(
+        self,
+        league: str,
+        input_category: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Return one isolated league/input leaderboard."""
+        self._validate_competitive_dimensions(league, input_category)
+        rows = await self._pool.fetch(
+            "SELECT e.wallet_address, COALESCE(p.name, '') AS name, e.rating, "
+            "e.wins, e.losses, e.draws, e.matches FROM competitive_ratings e "
+            "LEFT JOIN players p ON p.user_id = e.wallet_address "
+            "WHERE e.league = $1 AND e.input_category = $2 "
+            "ORDER BY e.rating DESC, e.matches DESC, e.wallet_address ASC LIMIT $3 OFFSET $4",
+            league,
+            input_category,
+            limit,
+            offset,
+        )
+        return [
+            {
+                "rank": offset + index + 1,
+                "wallet": str(row["wallet_address"]),
+                "user_id": str(row["wallet_address"]),
+                "name": str(row["name"]),
+                "league": league,
+                "category": input_category,
+                "rating": float(row["rating"]),
+                "wins": int(row["wins"]),
+                "losses": int(row["losses"]),
+                "draws": int(row["draws"]),
+                "matches": int(row["matches"]),
+            }
+            for index, row in enumerate(rows)
+        ]
+
+    async def get_competitive_player_rank(self, wallet: str, league: str, input_category: str) -> int | None:
+        self._validate_competitive_dimensions(league, input_category)
+        row = await self._pool.fetchrow(
+            "SELECT COUNT(*) + 1 AS rank FROM competitive_ratings WHERE league = $1 "
+            "AND input_category = $2 AND rating > (SELECT rating FROM competitive_ratings "
+            "WHERE wallet_address = $3 AND league = $1 AND input_category = $2)",
+            league,
+            input_category,
+            wallet,
+        )
+        exists = await self._pool.fetchrow(
+            "SELECT 1 FROM competitive_ratings WHERE wallet_address = $1 AND league = $2 AND input_category = $3",
+            wallet,
+            league,
+            input_category,
+        )
+        if exists is None:
+            return None
+        return int(row["rank"]) if row else None
 
     async def get_rating(self, user_id: str, category: str) -> dict[str, Any]:
         """Get a player's rating data for a category.

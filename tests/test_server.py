@@ -11,10 +11,16 @@ import pytest
 from litestar.testing import TestClient
 
 import server
-from elo import EloManager
 from matchmaking import MatchmakingTask
 from room_manager import RoomManager
 from server import app
+
+
+@pytest.fixture(autouse=True)
+def disable_external_lifespan_services(monkeypatch: pytest.MonkeyPatch):
+    """Unit tests inject fakes; never probe configured live Redis/Postgres."""
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
 
 @pytest.fixture()
@@ -843,6 +849,38 @@ def _create_fighting_room(
     sync_redis.expire(key, 300)
 
 
+def _create_ranked_fighting_room(
+    sync_redis,
+    code: str = "red-tiger-paw",
+    *,
+    match_type: str = "ranked_skill",
+    league: str = "skill",
+) -> None:
+    """Pre-populate the immutable metadata required by a ranked room."""
+    key = f"room:{code}"
+    sync_redis.hset(key, mapping={
+        "code": code,
+        "p1_id": "p1-uuid",
+        "p2_id": "p2-uuid",
+        "p1_controller": "controller",
+        "p2_controller": "controller",
+        "status": "fighting",
+        "created_at": str(int(time.time())),
+        "match_type": match_type,
+        "league": league,
+        "input_category": "keyboard",
+        "match_id": "match-uuid",
+        "p1_wallet": "11111111111111111111111111111111",
+        "p2_wallet": "So11111111111111111111111111111111111111112",
+        "p1_name": "Alice",
+        "p2_name": "Bob",
+        "reward_candidate": "1",
+        "max_paid_boost_charges": "3" if league == "boosted" else "0",
+        "settlement_status": "awaiting_result",
+    })
+    sync_redis.expire(key, 300)
+
+
 class TestRoomRematch:
     def test_rematch_resets_room(self, room_client_with_sync) -> None:
         client, sync_redis = room_client_with_sync
@@ -939,7 +977,8 @@ class TestMatchComplete:
         assert resp.status_code == 201
         data = resp.json()
         assert data["ok"] is True
-        assert data["winner"] == 1
+        assert data["authoritative"] is False
+        assert data["ranked"] is False
         # Room should be "finished" in Redis
         assert sync_redis.hget("room:red-tiger-paw", "status") == "finished"
 
@@ -958,15 +997,9 @@ class TestMatchComplete:
         data = resp.json()
         assert data["elo"]["updated"] is False
 
-    def test_complete_with_elo_updates_ratings(self, room_client_with_sync) -> None:
+    def test_complete_ignores_client_supplied_winner_and_identity(self, room_client_with_sync) -> None:
         client, sync_redis = room_client_with_sync
         _create_fighting_room(sync_redis, "red-tiger-paw", p1_ctrl="controller", p2_ctrl="controller")
-
-        # The lifespan creates a Postgres-backed EloManager.
-        # Use unique user IDs to avoid cross-test interference.
-        import uuid
-        uid1 = f"test-{uuid.uuid4()}"
-        uid2 = f"test-{uuid.uuid4()}"
 
         resp = client.post(
             "/api/match/complete",
@@ -974,18 +1007,46 @@ class TestMatchComplete:
                 "code": "red-tiger-paw",
                 "playerId": "p1-uuid",
                 "winner": 1,
-                "p1UserId": uid1,
-                "p2UserId": uid2,
+                "p1UserId": "attacker-controlled-p1",
+                "p2UserId": "attacker-controlled-p2",
                 "p1Name": "Alice",
                 "p2Name": "Bob",
             }),
             headers={"Content-Type": "application/json"},
         )
         data = resp.json()
-        assert data["elo"]["updated"] is True
-        assert data["elo"]["category"] == "keyboard"
-        assert data["elo"]["p1"]["wins"] == 1
-        assert data["elo"]["p2"]["losses"] == 1
+        assert data["elo"] == {"updated": False}
+        assert data["authoritative"] is False
+        assert sync_redis.hget("room:red-tiger-paw", "status") == "finished"
+
+    def test_ranked_client_cannot_create_result(
+        self,
+        room_client_with_sync,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        client, sync_redis = room_client_with_sync
+        _create_ranked_fighting_room(sync_redis)
+        mock_elo = MagicMock()
+        mock_elo.settle_competitive_match = AsyncMock()
+        monkeypatch.setattr(server, "elo_manager", mock_elo)
+
+        resp = client.post(
+            "/api/match/complete",
+            json={
+                "code": "red-tiger-paw",
+                "playerId": "p1-uuid",
+                "winner": 1,
+                "p1Health": 100,
+                "p2Health": 0,
+            },
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["ranked"] is True
+        assert resp.json()["elo"] == {"updated": False}
+        assert sync_redis.hget("room:red-tiger-paw", "status") == "fighting"
+        assert sync_redis.hget("room:red-tiger-paw", "authoritative_recorded_at") is None
+        mock_elo.settle_competitive_match.assert_not_awaited()
 
     def test_complete_nonexistent_room_returns_404(self, room_client_with_sync) -> None:
         client, _ = room_client_with_sync
@@ -1049,11 +1110,184 @@ class TestMatchComplete:
             assert resp.status_code == 503
 
 
+async def _make_ranked_room(
+    manager: RoomManager,
+    *,
+    match_type: str = "ranked_skill",
+    league: str = "skill",
+) -> dict[str, str]:
+    room = await manager.create_room(
+        "p1-uuid",
+        match_type=match_type,
+        league=league,
+        input_category="keyboard",
+        match_id="match-uuid",
+        p1_wallet="11111111111111111111111111111111",
+        p1_name="Alice",
+    )
+    await manager.join_room(
+        room["code"],
+        "p2-uuid",
+        wallet="So11111111111111111111111111111111111111112",
+        name="Bob",
+    )
+    await manager.transition_status(room["code"], "selecting")
+    return await manager.transition_status(room["code"], "fighting")
+
+
+class TestAuthoritativeRankedBridge:
+    @pytest.mark.asyncio
+    async def test_server_result_is_recorded_settled_and_releases_wallets(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+        manager = RoomManager(redis)
+        room = await _make_ranked_room(manager)
+        mock_elo = MagicMock()
+        mock_elo.settle_competitive_match = AsyncMock(return_value={
+            "settled": True,
+            "idempotent": False,
+            "p1": {"old_rating": 1000, "rating": 1016},
+            "p2": {"old_rating": 1000, "rating": 984},
+        })
+        mock_matchmaking = MagicMock()
+        mock_matchmaking.release_match = AsyncMock(return_value=True)
+        monkeypatch.setattr(server, "room_manager", manager)
+        monkeypatch.setattr(server, "elo_manager", mock_elo)
+        monkeypatch.setattr(server, "matchmaking_task", mock_matchmaking)
+
+        result = await server._settle_authoritative_round({
+            "room_code": room["code"],
+            "match_id": "match-uuid",
+            "league": "skill",
+            "input_category": "keyboard",
+            "p1_wallet": "11111111111111111111111111111111",
+            "p2_wallet": "So11111111111111111111111111111111111111112",
+            "winner": 1,
+            "reason": "ko",
+            "p1_health": 42,
+            "p2_health": 0,
+            "server_tick": 900,
+            "p1_boost_charges": 0,
+            "p2_boost_charges": 0,
+        })
+
+        assert result["settled"] is True
+        stored = await manager.get_room(room["code"])
+        assert stored is not None
+        assert stored["status"] == "finished"
+        assert stored["settlement_status"] == "settled"
+        assert stored["authoritative_winner"] == "1"
+        kwargs = mock_elo.settle_competitive_match.await_args.kwargs
+        assert kwargs["p1_wallet"] == stored["p1_wallet"]
+        assert kwargs["p2_wallet"] == stored["p2_wallet"]
+        assert kwargs["winner"] == 1
+        mock_matchmaking.release_match.assert_awaited_once_with(
+            "match-uuid",
+            (
+                ("11111111111111111111111111111111", "p1-uuid"),
+                ("So11111111111111111111111111111111111111112", "p2-uuid"),
+            ),
+        )
+        await redis.aclose()
+
+    @pytest.mark.asyncio
+    async def test_metadata_mismatch_cannot_settle_ranked_room(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+        manager = RoomManager(redis)
+        room = await _make_ranked_room(manager)
+        mock_elo = MagicMock()
+        mock_elo.settle_competitive_match = AsyncMock()
+        monkeypatch.setattr(server, "room_manager", manager)
+        monkeypatch.setattr(server, "elo_manager", mock_elo)
+
+        with pytest.raises(RuntimeError, match="metadata does not match"):
+            await server._settle_authoritative_round({
+                "room_code": room["code"],
+                "match_id": "attacker-match",
+                "league": "skill",
+                "input_category": "keyboard",
+                "p1_wallet": room["p1_wallet"],
+                "p2_wallet": room["p2_wallet"],
+                "winner": 1,
+            })
+
+        stored = await manager.get_room(room["code"])
+        assert stored is not None
+        assert stored.get("authoritative_recorded_at") is None
+        assert stored["settlement_status"] == "rejected_metadata_mismatch"
+        mock_elo.settle_competitive_match.assert_not_awaited()
+        await redis.aclose()
+
+    @pytest.mark.asyncio
+    async def test_boost_authorization_rechecks_live_ranked_room(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+        manager = RoomManager(redis)
+        room = await _make_ranked_room(manager, match_type="ranked_boosted", league="boosted")
+        pool = MagicMock()
+        monkeypatch.setattr(server, "room_manager", manager)
+        monkeypatch.setattr(server, "boost_pg_pool", pool)
+
+        rejected = await server._authorize_ranked_boost({
+            "room_code": room["code"],
+            "match_id": "wrong-match",
+            "wallet": room["p1_wallet"],
+            "player": 1,
+            "charge_number": 1,
+        })
+
+        assert rejected == {"authorized": False, "reason": "ranked_boost_room_mismatch"}
+        pool.acquire.assert_not_called()
+        await redis.aclose()
+
+    @pytest.mark.asyncio
+    async def test_live_boosted_charge_is_consumed_atomically(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+        manager = RoomManager(redis)
+        room = await _make_ranked_room(manager, match_type="ranked_boosted", league="boosted")
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(side_effect=[None, {"boosts": 5}, {"boosts": 4}])
+        conn.execute = AsyncMock()
+        transaction = MagicMock()
+        transaction.__aenter__ = AsyncMock(return_value=None)
+        transaction.__aexit__ = AsyncMock(return_value=False)
+        conn.transaction.return_value = transaction
+        acquire = MagicMock()
+        acquire.__aenter__ = AsyncMock(return_value=conn)
+        acquire.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.acquire.return_value = acquire
+        monkeypatch.setattr(server, "room_manager", manager)
+        monkeypatch.setattr(server, "boost_pg_pool", pool)
+
+        result = await server._authorize_ranked_boost({
+            "room_code": room["code"],
+            "match_id": room["match_id"],
+            "wallet": room["p1_wallet"],
+            "player": 1,
+            "charge_number": 1,
+        })
+
+        assert result == {"authorized": True, "idempotent": False, "boosts": 4}
+        assert conn.execute.await_count == 2
+        await redis.aclose()
+
+
 # ─── Matchmaking endpoints ─────────────────────
 
 
 @pytest.fixture()
-def mm_client():
+def mm_client(monkeypatch: pytest.MonkeyPatch):
     """TestClient with fakeredis-backed RoomManager + MatchmakingTask."""
     fake_server = fakeredis.FakeServer()
     with TestClient(app=app) as client:
@@ -1061,13 +1295,35 @@ def mm_client():
             decode_responses=True, server=fake_server
         )
         rm = RoomManager(async_redis)
-        em = EloManager(async_redis)
+        em = MagicMock()
+        em.get_competitive_rating = AsyncMock(return_value={
+            "wallet": "11111111111111111111111111111111",
+            "league": "skill",
+            "category": "keyboard",
+            "rating": 1000.0,
+            "wins": 0,
+            "losses": 0,
+            "draws": 0,
+            "matches": 0,
+        })
+        pool = MagicMock()
+        acquire_context = MagicMock()
+        acquire_context.__aenter__ = AsyncMock(return_value=MagicMock())
+        acquire_context.__aexit__ = AsyncMock(return_value=False)
+        pool.acquire.return_value = acquire_context
+        monkeypatch.setattr(
+            server,
+            "_authenticated_wallet",
+            AsyncMock(return_value="11111111111111111111111111111111"),
+        )
         server.room_manager = rm
         server.elo_manager = em
+        server.boost_pg_pool = pool
         task = MatchmakingTask(rm, em)
         server.matchmaking_task = task
         yield client
         server.matchmaking_task = None
+        server.boost_pg_pool = None
         server.elo_manager = None
         server.room_manager = None
 
@@ -1223,12 +1479,15 @@ def lb_client():
     """TestClient with a mocked EloManager for leaderboard tests."""
     with TestClient(app=app) as client:
         mock_elo = MagicMock()
-        mock_elo.get_leaderboard = AsyncMock(return_value=[])
-        mock_elo.get_rating = AsyncMock(return_value={
-            "user_id": "u1", "category": "voice", "rating": 1000,
+        mock_elo.get_competitive_leaderboard = AsyncMock(return_value=[])
+        mock_elo.get_competitive_rating = AsyncMock(return_value={
+            "wallet": "11111111111111111111111111111111",
+            "league": "skill",
+            "category": "voice",
+            "rating": 1000,
             "wins": 0, "losses": 0, "draws": 0, "matches": 0,
         })
-        mock_elo.get_player_rank = AsyncMock(return_value=None)
+        mock_elo.get_competitive_player_rank = AsyncMock(return_value=None)
         mock_elo.get_player_name = AsyncMock(return_value="Test")
         server.elo_manager = mock_elo
         yield client
@@ -1257,13 +1516,16 @@ class TestLeaderboardEndpoint:
     def test_default_category_is_voice(self, lb_client) -> None:
         resp = lb_client.get("/api/leaderboard")
         assert resp.status_code == 200
-        assert resp.json()["category"] == "voice"
+        assert resp.json()["category"] == "keyboard"
+        assert resp.json()["league"] == "skill"
 
     def test_viewer_included_when_ranked(self, lb_client) -> None:
         mock_elo = server.elo_manager
         assert mock_elo is not None
-        mock_elo.get_player_rank = AsyncMock(return_value=5)  # type: ignore[method-assign]
-        resp = lb_client.get("/api/leaderboard?category=voice&user_id=u1")
+        mock_elo.get_competitive_player_rank = AsyncMock(return_value=5)  # type: ignore[method-assign]
+        resp = lb_client.get(
+            "/api/leaderboard?category=voice&wallet=11111111111111111111111111111111"
+        )
         assert resp.status_code == 200
         data = resp.json()
         assert data["viewer"] is not None

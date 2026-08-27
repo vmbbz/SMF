@@ -170,17 +170,16 @@ class TestGenerateFighterUsername:
 # EloManager async tests (requires Postgres)
 # ─────────────────────────────────────────────
 
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql://stick:fighter@localhost:5433/stickfighter",
-)
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 
 
 @pytest_asyncio.fixture
 async def pg_pool():
     """Create a connection pool and clean tables before each test."""
+    if not TEST_DATABASE_URL:
+        pytest.skip("TEST_DATABASE_URL is not configured")
     try:
-        pool = await asyncpg.create_pool(TEST_DATABASE_URL, min_size=1, max_size=3)
+        pool = await asyncpg.create_pool(TEST_DATABASE_URL, min_size=1, max_size=3, timeout=5.0)
     except (OSError, ConnectionRefusedError, asyncpg.InterfaceError, asyncpg.PostgresError) as e:
         pytest.skip(f"Postgres not available: {e}")
         return
@@ -189,6 +188,8 @@ async def pg_pool():
         await ensure_schema(pool)
         # Clean tables before each test (order matters for FK constraints)
         async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM ranked_match_settlements")
+            await conn.execute("DELETE FROM competitive_ratings")
             await conn.execute("DELETE FROM match_history")
             await conn.execute("DELETE FROM elo_ratings")
             await conn.execute("DELETE FROM players")
@@ -205,6 +206,91 @@ async def pg_pool():
 async def elo(pg_pool) -> EloManager:
     """Create an EloManager backed by the test Postgres pool."""
     return EloManager(pg_pool)
+
+
+async def settle_ranked(
+    elo: EloManager,
+    *,
+    match_id: str = "match-1",
+    room_code: str = "room-1",
+    league: str = "skill",
+    winner: int | None = 1,
+    p1_boost_charges: int = 0,
+    p2_boost_charges: int = 0,
+) -> dict:
+    return await elo.settle_competitive_match(
+        match_id=match_id,
+        room_code=room_code,
+        league=league,
+        input_category="keyboard",
+        p1_wallet="wallet-1",
+        p2_wallet="wallet-2",
+        winner=winner,
+        reason="ko",
+        p1_health=50,
+        p2_health=0,
+        server_tick=120,
+        p1_boost_charges=p1_boost_charges,
+        p2_boost_charges=p2_boost_charges,
+        p1_name="Alice",
+        p2_name="Bob",
+    )
+
+
+class TestCompetitiveSettlement:
+    @pytest.mark.asyncio
+    async def test_atomic_settlement_updates_isolated_skill_ratings(self, elo: EloManager) -> None:
+        result = await settle_ranked(elo)
+        assert result["settled"] is True
+        assert result["idempotent"] is False
+        assert result["p1"]["wins"] == 1
+        assert result["p2"]["losses"] == 1
+
+        skill = await elo.get_competitive_rating("wallet-1", "skill", "keyboard")
+        boosted = await elo.get_competitive_rating("wallet-1", "boosted", "keyboard")
+        assert skill["matches"] == 1
+        assert skill["rating"] > DEFAULT_RATING
+        assert boosted["matches"] == 0
+        assert boosted["rating"] == DEFAULT_RATING
+
+    @pytest.mark.asyncio
+    async def test_identical_replay_is_idempotent(self, elo: EloManager, pg_pool) -> None:
+        first = await settle_ranked(elo)
+        replay = await settle_ranked(elo)
+        assert first["idempotent"] is False
+        assert replay["idempotent"] is True
+        assert replay["p1"]["rating"] == first["p1"]["rating"]
+        async with pg_pool.acquire() as conn:
+            count = await conn.fetchval("SELECT COUNT(*) FROM ranked_match_settlements")
+        assert count == 1
+        assert (await elo.get_competitive_rating("wallet-1", "skill", "keyboard"))["matches"] == 1
+
+    @pytest.mark.asyncio
+    async def test_conflicting_replay_is_rejected(self, elo: EloManager) -> None:
+        await settle_ranked(elo)
+        with pytest.raises(ValueError, match="idempotency conflict"):
+            await settle_ranked(elo, winner=2)
+
+    @pytest.mark.asyncio
+    async def test_competitive_leaderboard_is_league_specific(self, elo: EloManager) -> None:
+        await settle_ranked(elo)
+        skill = await elo.get_competitive_leaderboard("skill", "keyboard")
+        boosted = await elo.get_competitive_leaderboard("boosted", "keyboard")
+        assert [entry["wallet"] for entry in skill] == ["wallet-1", "wallet-2"]
+        assert boosted == []
+        assert await elo.get_competitive_player_rank("wallet-1", "skill", "keyboard") == 1
+
+    @pytest.mark.asyncio
+    async def test_league_boost_charge_invariants(self) -> None:
+        manager = EloManager(None)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="Skill Championship"):
+            await settle_ranked(manager, p1_boost_charges=1)
+        with pytest.raises(ValueError, match="charge cap"):
+            await settle_ranked(
+                manager,
+                league="boosted",
+                p1_boost_charges=4,
+            )
 
 
 class TestGetRating:

@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from competition import RANKED_BOOSTED, RANKED_SKILL
+from game_engine.actions import Actions
 from game_loop import (
     DISCONNECT_GRACE_PERIOD,
     TICK_INTERVAL,
@@ -199,6 +201,21 @@ class TestBuildSnapshot:
         assert snap["p1_input_seq"] == 42
         assert snap["p2_input_seq"] == 37
 
+    def test_snapshot_exposes_server_boost_charge_counts(self) -> None:
+        room = RoomLoop(
+            code="ranked",
+            engine=GameEngine(),
+            match_type=RANKED_BOOSTED,
+            league="boosted",
+            max_paid_boost_charges=3,
+        )
+        room.boost_charges_used = {1: 2, 2: 1}
+        competition = _build_snapshot(room)["competition"]
+        assert competition["reward_candidate"] is True
+        assert competition["p1_boost_charges_used"] == 2
+        assert competition["p2_boost_charges_used"] == 1
+        assert competition["max_paid_boost_charges"] == 3
+
 
 # ─── GameLoopManager CRUD ────────────────────────
 
@@ -217,6 +234,27 @@ class TestGameLoopManagerCrud:
         r1 = mgr.create_room_loop("abc")
         r2 = mgr.create_room_loop("abc")
         assert r1 is r2
+
+    def test_create_room_loop_copies_ranked_metadata(self) -> None:
+        room = GameLoopManager().create_room_loop("abc", {
+            "match_type": RANKED_SKILL,
+            "league": "skill",
+            "input_category": "keyboard",
+            "match_id": "match-1",
+            "p1_wallet": "wallet-1",
+            "p2_wallet": "wallet-2",
+            "max_paid_boost_charges": "0",
+        })
+        assert room.match_type == RANKED_SKILL
+        assert room.match_id == "match-1"
+        assert room.p1_wallet == "wallet-1"
+
+    def test_duplicate_active_player_connection_rejected(self) -> None:
+        mgr = GameLoopManager()
+        mgr.create_room_loop("abc")
+        mgr.add_player("abc", 1, _make_mock_socket())
+        with pytest.raises(ValueError, match="active game connection"):
+            mgr.add_player("abc", 1, _make_mock_socket())
 
     def test_get_room_loop(self) -> None:
         mgr = GameLoopManager()
@@ -323,6 +361,116 @@ class TestGameLoopLifecycle:
         assert len(mgr.rooms) == 3
         await mgr.stop_all()
         assert len(mgr.rooms) == 0
+
+
+class TestCompetitivePolicy:
+    @pytest.mark.asyncio
+    async def test_skill_league_strips_paid_special(self) -> None:
+        authorize = AsyncMock(return_value={"authorized": True})
+        mgr = GameLoopManager(authorize_boost=authorize)
+        room = mgr.create_room_loop("skill", {"match_type": RANKED_SKILL})
+
+        actions, pressed = await mgr._apply_special_action_policy(
+            room,
+            1,
+            {Actions.HADOUKEN},
+            {Actions.HADOUKEN},
+        )
+
+        assert Actions.HADOUKEN not in actions
+        assert Actions.HADOUKEN not in pressed
+        authorize.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_boosted_league_authorizes_and_caps_three_charges(self) -> None:
+        authorize = AsyncMock(return_value={"authorized": True})
+        mgr = GameLoopManager(authorize_boost=authorize)
+        room = mgr.create_room_loop("boosted", {
+            "match_type": RANKED_BOOSTED,
+            "match_id": "match-1",
+            "p1_wallet": "wallet-1",
+            "max_paid_boost_charges": 3,
+        })
+
+        for expected_charge in (1, 2, 3):
+            actions, pressed = await mgr._apply_special_action_policy(
+                room,
+                1,
+                {Actions.HADOUKEN},
+                {Actions.HADOUKEN},
+            )
+            assert Actions.HADOUKEN in pressed
+            assert room.boost_charges_used[1] == expected_charge
+
+        actions, pressed = await mgr._apply_special_action_policy(
+            room,
+            1,
+            {Actions.HADOUKEN},
+            {Actions.HADOUKEN},
+        )
+        assert Actions.HADOUKEN not in actions
+        assert Actions.HADOUKEN not in pressed
+        assert authorize.await_count == 3
+        assert authorize.await_args_list[-1].args[0]["charge_number"] == 3
+
+    @pytest.mark.asyncio
+    async def test_denied_boost_never_reaches_engine(self) -> None:
+        authorize = AsyncMock(return_value={"authorized": False, "reason": "insufficient_boosts"})
+        mgr = GameLoopManager(authorize_boost=authorize)
+        room = mgr.create_room_loop("boosted", {
+            "match_type": RANKED_BOOSTED,
+            "max_paid_boost_charges": 3,
+        })
+
+        actions, pressed = await mgr._apply_special_action_policy(
+            room,
+            2,
+            {Actions.HADOUKEN},
+            {Actions.HADOUKEN},
+        )
+        assert Actions.HADOUKEN not in actions
+        assert Actions.HADOUKEN not in pressed
+        assert room.boost_charges_used[2] == 0
+
+    @pytest.mark.asyncio
+    async def test_round_callback_receives_server_owned_result(self) -> None:
+        settlement = {
+            "settled": True,
+            "ranked": True,
+            "league": "skill",
+            "p1": {"old_rating": 1000.0, "rating": 1016.0},
+            "p2": {"old_rating": 1000.0, "rating": 984.0},
+        }
+        on_round_over = AsyncMock(return_value=settlement)
+        mgr = GameLoopManager(on_round_over=on_round_over)
+        room = mgr.create_room_loop("ranked", {
+            "match_type": RANKED_SKILL,
+            "league": "skill",
+            "input_category": "keyboard",
+            "match_id": "match-1",
+            "p1_wallet": "wallet-1",
+            "p2_wallet": "wallet-2",
+        })
+        room.engine.p2.health = 0
+        room.engine.round_over = True
+        sock1 = _make_mock_socket()
+        mgr.add_player("ranked", 1, sock1)
+        mgr.add_player("ranked", 2, _make_mock_socket())
+
+        mgr.start_loop("ranked")
+        await asyncio.sleep(0.12)
+
+        on_round_over.assert_awaited_once()
+        payload = on_round_over.await_args.args[0]
+        assert payload["winner"] == 1
+        assert payload["match_id"] == "match-1"
+        assert payload["p1_wallet"] == "wallet-1"
+        final_messages = [
+            json.loads(call.args[0])
+            for call in sock1.send_data.call_args_list
+            if json.loads(call.args[0]).get("type") == "round_over"
+        ]
+        assert final_messages[0]["settlement"] == settlement
 
 
 # ─── Game loop tick behavior ─────────────────────

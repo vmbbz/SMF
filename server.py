@@ -49,6 +49,14 @@ from elo import EloManager, controller_to_category, ensure_schema
 from room_cleanup import RoomCleanupTask
 from matchmaking import MatchmakingTask
 from characters import CHARACTER_LIST, get_character
+from competition import (
+    INPUT_CATEGORIES,
+    PRIVATE_CASUAL,
+    RANKED_BOOSTED,
+    RANKED_LEAGUES,
+    SKILL_LEAGUE,
+    is_ranked_match_type,
+)
 import sys
 
 def safe_print(*args, **kwargs):
@@ -312,6 +320,192 @@ def _cancel_controller_wait_timer(code: str) -> None:
         task.cancel()
 
 
+async def _authorize_ranked_boost(payload: dict[str, Any]) -> dict[str, Any]:
+    """Atomically consume one server-approved Boosted League charge."""
+    if boost_pg_pool is None or room_manager is None:
+        return {"authorized": False, "reason": "boost_ledger_unavailable"}
+
+    match_id = str(payload.get("match_id") or "")
+    room_code = str(payload.get("room_code") or "")
+    wallet = _normalize_wallet_address(payload.get("wallet"))
+    try:
+        player = int(payload.get("player") or 0)
+        charge_number = int(payload.get("charge_number") or 0)
+    except (TypeError, ValueError):
+        return {"authorized": False, "reason": "invalid_ranked_boost_context"}
+    if not match_id or not room_code or not _is_valid_wallet_address(wallet) or player not in (1, 2) or charge_number not in (1, 2, 3):
+        return {"authorized": False, "reason": "invalid_ranked_boost_context"}
+
+    room = await room_manager.get_room(room_code)
+    expected_wallet = room.get(f"p{player}_wallet", "") if room else ""
+    if (
+        room is None
+        or room.get("status") != "fighting"
+        or room.get("match_type") != RANKED_BOOSTED
+        or room.get("match_id") != match_id
+        or expected_wallet != wallet
+        or charge_number > int(room.get("max_paid_boost_charges") or 0)
+        or room.get("authoritative_recorded_at")
+    ):
+        return {"authorized": False, "reason": "ranked_boost_room_mismatch"}
+
+    consume_id = f"ranked:{match_id}:p{player}:charge:{charge_number}"
+    async with boost_pg_pool.acquire() as conn:
+        async with conn.transaction():
+            existing = await conn.fetchrow(
+                "SELECT wallet_address, units, balance_after FROM boost_consumption_ledger WHERE consume_id = $1",
+                consume_id,
+            )
+            if existing is not None:
+                if str(existing["wallet_address"]) != wallet or int(existing["units"]) != 1:
+                    return {"authorized": False, "reason": "boost_idempotency_conflict"}
+                return {
+                    "authorized": True,
+                    "idempotent": True,
+                    "boosts": int(existing["balance_after"]),
+                }
+
+            await _get_or_create_boost_balance(conn, wallet)
+            updated = await conn.fetchrow(
+                "UPDATE player_boost_balances SET boosts = boosts - 1, "
+                "total_spent_boosts = total_spent_boosts + 1, updated_at = NOW() "
+                "WHERE wallet_address = $1 AND boosts >= 1 RETURNING boosts",
+                wallet,
+            )
+            if updated is None:
+                return {"authorized": False, "reason": "insufficient_boosts"}
+
+            boosts_left = int(updated["boosts"])
+            await conn.execute(
+                "INSERT INTO boost_consumption_ledger "
+                "(consume_id, wallet_address, units, reason, balance_after) VALUES ($1, $2, 1, $3, $4)",
+                consume_id,
+                wallet,
+                "ranked_boosted_hadouken",
+                boosts_left,
+            )
+            return {"authorized": True, "idempotent": False, "boosts": boosts_left}
+
+
+async def _release_ranked_match_reservation(room: dict[str, str]) -> None:
+    """Release both wallet locks once the server has frozen the match result."""
+    if matchmaking_task is None:
+        return
+    participants = (
+        (room.get("p1_wallet", ""), room.get("p1_id", "")),
+        (room.get("p2_wallet", ""), room.get("p2_id", "")),
+    )
+    if not room.get("match_id") or any(not wallet or not player_id for wallet, player_id in participants):
+        return
+    try:
+        await matchmaking_task.release_match(room["match_id"], participants)
+    except Exception as exc:
+        # Redis locks also have a room-lifetime TTL, so a transient release
+        # failure must not invalidate an otherwise authoritative settlement.
+        safe_print(f"[ranked:{room.get('code', '?')}] wallet lock release failed: {exc}")
+
+
+async def _settle_recorded_ranked_outcome(
+    code: str,
+    room: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Settle ELO using only the immutable outcome stored by the game loop."""
+    if room_manager is None:
+        raise RuntimeError("Room manager unavailable during settlement")
+    room = room or await room_manager.get_room(code)
+    if room is None:
+        raise RuntimeError("Room expired before authoritative settlement")
+    if not is_ranked_match_type(room.get("match_type", PRIVATE_CASUAL)):
+        raise RuntimeError("Only ranked rooms use competitive settlement")
+    if not room.get("authoritative_recorded_at"):
+        raise RuntimeError("Ranked room has no authoritative outcome to settle")
+
+    # Once the authoritative result exists, no gameplay may restart even if
+    # Postgres is temporarily unavailable. The recorded result remains the
+    # sole retry source for later acknowledgements.
+    if room["status"] == "fighting":
+        room = await room_manager.transition_status(code, "finished")
+    elif room["status"] != "finished":
+        raise RuntimeError(f"Ranked room cannot settle from status '{room['status']}'")
+
+    # The gameplay result is now immutable and the room cannot restart. Permit
+    # both wallets to queue for their next match even if Postgres settlement
+    # needs an idempotent retry.
+    await _release_ranked_match_reservation(room)
+
+    if elo_manager is None:
+        await room_manager.set_settlement_status(code, "failed_database_unavailable")
+        raise RuntimeError("Competitive ELO database unavailable")
+
+    winner_raw = room.get("authoritative_winner", "")
+    winner = None if winner_raw == "" else int(winner_raw)
+    try:
+        settlement = await elo_manager.settle_competitive_match(
+            match_id=room["match_id"],
+            room_code=code,
+            league=room["league"],
+            input_category=room["input_category"],
+            p1_wallet=room["p1_wallet"],
+            p2_wallet=room["p2_wallet"],
+            winner=winner,
+            reason=room.get("authoritative_reason", "unknown"),
+            p1_health=float(room.get("authoritative_p1_health") or 0),
+            p2_health=float(room.get("authoritative_p2_health") or 0),
+            server_tick=int(room.get("authoritative_server_tick") or 0),
+            p1_boost_charges=int(room.get("authoritative_p1_boost_charges") or 0),
+            p2_boost_charges=int(room.get("authoritative_p2_boost_charges") or 0),
+            p1_name=room.get("p1_name", ""),
+            p2_name=room.get("p2_name", ""),
+        )
+    except Exception:
+        await room_manager.set_settlement_status(code, "failed")
+        raise
+
+    await room_manager.set_settlement_status(code, "settled")
+    return {**settlement, "ranked": True, "matchType": room["match_type"]}
+
+
+async def _settle_authoritative_round(payload: dict[str, Any]) -> dict[str, Any]:
+    """Record the game-loop result, then settle ranked ELO idempotently."""
+    if room_manager is None:
+        raise RuntimeError("Room manager unavailable during settlement")
+
+    code = str(payload.get("room_code") or "")
+    room = await room_manager.get_room(code)
+    if room is None:
+        raise RuntimeError("Room expired before authoritative settlement")
+
+    match_type = room.get("match_type", PRIVATE_CASUAL)
+    ranked = is_ranked_match_type(match_type)
+
+    if not ranked:
+        if room["status"] == "fighting":
+            await room_manager.transition_status(code, "finished")
+        return {
+            "settled": False,
+            "ranked": False,
+            "matchType": match_type,
+            "status": "not_applicable",
+        }
+
+    identity_fields = ("match_id", "league", "input_category", "p1_wallet", "p2_wallet")
+    if any(str(payload.get(field) or "") != str(room.get(field) or "") for field in identity_fields):
+        await room_manager.set_settlement_status(code, "rejected_metadata_mismatch")
+        raise RuntimeError("Game-loop metadata does not match the ranked room")
+
+    room = await room_manager.record_authoritative_outcome(
+        code,
+        winner=payload.get("winner"),
+        reason=str(payload.get("reason") or "unknown"),
+        p1_health=float(payload.get("p1_health") or 0),
+        p2_health=float(payload.get("p2_health") or 0),
+        server_tick=int(payload.get("server_tick") or 0),
+        p1_boost_charges=int(payload.get("p1_boost_charges") or 0),
+        p2_boost_charges=int(payload.get("p2_boost_charges") or 0),
+    )
+    return await _settle_recorded_ranked_outcome(code, room)
+
+
 @asynccontextmanager
 async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
     """Safe lifespan for $SMF Stick Lash - no required Redis or Postgres"""
@@ -331,7 +525,7 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                 # Force rediss:// for secure Upstash connection if not already set
                 if redis_url.startswith("redis://") and "upstash" in redis_url:
                     redis_url = redis_url.replace("redis://", "rediss://", 1)
-                
+
                 redis_pool = aioredis.from_url(
                     redis_url,
                     decode_responses=True,
@@ -349,19 +543,26 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
             redis_pool = None
 
 
-        # Postgres (optional)
-        try:
-            pg_pool = await asyncpg.create_pool(
-                os.environ.get("DATABASE_URL", "postgresql://stick:fighter@localhost:5433/stickfighter"),
-                min_size=2, max_size=10,
-                timeout=8.0 # Prevent 60s hangs from database startup/networking issues
-            )
-            await ensure_schema(pg_pool)
-            await ensure_boost_schema(pg_pool)
-            boost_pg_pool = pg_pool
-            print("[postgres] Connected")
-        except Exception:
-            print("[postgres] Skipped - running without database")
+        # Postgres is optional, but an explicit DATABASE_URL is required. This
+        # avoids an eight-second localhost probe in offline builds and tests.
+        database_url = os.environ.get("DATABASE_URL")
+        if database_url:
+            try:
+                pg_pool = await asyncpg.create_pool(
+                    database_url,
+                    min_size=2,
+                    max_size=10,
+                    timeout=8.0,
+                )
+                await ensure_schema(pg_pool)
+                await ensure_boost_schema(pg_pool)
+                boost_pg_pool = pg_pool
+                print("[postgres] Connected")
+            except Exception:
+                print("[postgres] Skipped - running without database")
+                boost_pg_pool = None
+        else:
+            print("[postgres] No DATABASE_URL found. Ranked identity, boosts, and ELO are disabled.")
             boost_pg_pool = None
 
         # Authentication and ELO depend on their own configuration/Postgres,
@@ -372,7 +573,10 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         # Only create room-dependent background tasks if Redis is available.
         if redis_pool:
             room_manager = RoomManager(redis_pool)
-            game_loop_manager = GameLoopManager()
+            game_loop_manager = GameLoopManager(
+                on_round_over=_settle_authoritative_round,
+                authorize_boost=_authorize_ranked_boost,
+            )
             signaling_manager = SignalingManager()
 
             cleanup_task = RoomCleanupTask(room_manager, game_loop_manager, signaling_manager)
@@ -540,7 +744,8 @@ def _parse_siws_message_fields(message: str) -> dict[str, str]:
     return fields
 
 
-async def _require_wallet_session(conn: asyncpg.Connection, request: Request, wallet: str) -> None:  # type: ignore[type-arg]
+async def _authenticated_wallet(conn: asyncpg.Connection, request: Request) -> str:  # type: ignore[type-arg]
+    """Resolve a live wallet session from the bearer token without trusting body data."""
     token = _extract_bearer_token(request)
     if not token:
         raise HTTPException(status_code=401, detail="Wallet auth token required")
@@ -555,13 +760,18 @@ async def _require_wallet_session(conn: asyncpg.Connection, request: Request, wa
     )
     if row is None:
         raise HTTPException(status_code=401, detail="Invalid wallet auth token")
-    if str(row["wallet_address"]) != wallet:
-        raise HTTPException(status_code=403, detail="Wallet auth token does not match wallet")
     if row["revoked_at"] is not None:
         raise HTTPException(status_code=401, detail="Wallet auth token revoked")
     expires_at = row["expires_at"]
     if expires_at is not None and expires_at.timestamp() < time.time():
         raise HTTPException(status_code=401, detail="Wallet auth token expired")
+    return str(row["wallet_address"])
+
+
+async def _require_wallet_session(conn: asyncpg.Connection, request: Request, wallet: str) -> None:  # type: ignore[type-arg]
+    authenticated = await _authenticated_wallet(conn, request)
+    if authenticated != wallet:
+        raise HTTPException(status_code=403, detail="Wallet auth token does not match wallet")
 
 
 def _get_boost_payment_token_mint(*, required: bool = True) -> str:
@@ -1260,7 +1470,7 @@ async def _call_llm_provider(
         return await _llm_openai(messages, system_prompt, temperature=temperature)
     elif provider == "gemini":
         return await _llm_gemini(messages, system_prompt, temperature=temperature)
-    
+
     # Smart fallbacks to free Gemini API or Grok if preferred keys are missing
     if provider == "anthropic" and not os.environ.get("ANTHROPIC_API_KEY"):
         if os.environ.get("XAI_API_KEY"):
@@ -1269,7 +1479,7 @@ async def _call_llm_provider(
         elif os.environ.get("GEMINI_API_KEY"):
             print("[llm-fighter:fallback] ANTHROPIC_API_KEY not set, using GEMINI_API_KEY instead")
             return await _llm_gemini(messages, system_prompt, temperature=temperature)
-        
+
     if provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
         if os.environ.get("XAI_API_KEY"):
             print("[llm-fighter:fallback] OPENAI_API_KEY not set, using XAI_API_KEY instead")
@@ -1277,7 +1487,7 @@ async def _call_llm_provider(
         elif os.environ.get("GEMINI_API_KEY"):
             print("[llm-fighter:fallback] OPENAI_API_KEY not set, using GEMINI_API_KEY instead")
             return await _llm_gemini(messages, system_prompt, temperature=temperature)
-        
+
     return await _llm_anthropic(messages, system_prompt, temperature=temperature)
 
 
@@ -1520,7 +1730,7 @@ async def _llm_gemini(
     }
     if temperature is not None:
         body["generationConfig"]["temperature"] = temperature
-    
+
     if system_prompt:
         body["systemInstruction"] = {
             "parts": [{"text": system_prompt}]
@@ -2706,7 +2916,7 @@ async def safety_tweets(cashtag: str) -> dict:
         or os.environ.get("VITE_X_BEARER_TOKEN")
         or os.environ.get("X_API_KEY")
     )
-    
+
     # Mock data as robust fallback
     mock_tweets = [
         {"author": "@novasolana", "text": f"{cashtag} contract is clean. LP burned, mint revoked. Good to go. 🛡️"},
@@ -2734,19 +2944,19 @@ async def safety_tweets(cashtag: str) -> dict:
             "Authorization": f"Bearer {bearer_token}",
             "Content-Type": "application/json"
         }
-        
+
         async with httpx.AsyncClient(timeout=8) as client:
             resp = await client.get(url, headers=headers, params=params)
-            
+
             if resp.status_code != 200:
                 print(f"[x-api] Search failed with status {resp.status_code}: {resp.text}")
                 random.shuffle(mock_tweets)
                 return {"tweets": mock_tweets[:2]}
-            
+
             data = resp.json()
             tweets_data = data.get("data", [])
             users_data = {u["id"]: u for u in data.get("includes", {}).get("users", [])}
-            
+
             formatted_tweets = []
             for t in tweets_data:
                 author_id = t.get("author_id")
@@ -2756,13 +2966,13 @@ async def safety_tweets(cashtag: str) -> dict:
                     "author": f"@{username}",
                     "text": t.get("text", "")
                 })
-            
+
             if not formatted_tweets:
                 random.shuffle(mock_tweets)
                 return {"tweets": mock_tweets[:2]}
-                
+
             return {"tweets": formatted_tweets[:5]}  # Return up to 5 real tweets
-            
+
     except Exception as e:
         print(f"[x-api] Error fetching tweets: {e}")
         random.shuffle(mock_tweets)
@@ -2802,7 +3012,7 @@ async def room_create(request: Request) -> dict[str, str]:
         raise HTTPException(status_code=503, detail="Room manager not available")
 
     player_id = str(uuid.uuid4())
-    room = await room_manager.create_room(player_id)
+    room = await room_manager.create_room(player_id, match_type=PRIVATE_CASUAL)
 
     # Build shareable URL: prefer BASE_URL env var, fall back to request origin
     base = os.environ.get("BASE_URL", "").rstrip("/") or str(request.base_url).rstrip("/")
@@ -2812,6 +3022,8 @@ async def room_create(request: Request) -> dict[str, str]:
         "code": code,
         "playerId": player_id,
         "url": f"{base}/room/{code}",
+        "matchType": room.get("match_type", PRIVATE_CASUAL),
+        "league": room.get("league", ""),
     }
 
 
@@ -2843,6 +3055,8 @@ async def room_join(data: dict[str, str]) -> dict[str, str]:
         "code": room["code"],
         "playerId": player_id,
         "playerNum": "2",
+        "matchType": room.get("match_type", PRIVATE_CASUAL),
+        "league": room.get("league", ""),
     }
 
 
@@ -2867,6 +3081,11 @@ async def room_status(code: str) -> dict[str, Any]:
         "p2Ready": bool(room["p2_controller"]),
         "controllerWaitDeadline": int(room.get("controller_wait_deadline", "0") or "0"),
         "forfeitWinner": int(room["forfeit_winner"]) if room.get("forfeit_winner") else None,
+        "matchType": room.get("match_type", PRIVATE_CASUAL),
+        "league": room.get("league", ""),
+        "rewardCandidate": room.get("reward_candidate", "0") == "1",
+        "maxPaidBoostCharges": int(room.get("max_paid_boost_charges", "0") or "0"),
+        "settlementStatus": room.get("settlement_status", "not_applicable"),
     }
 
 
@@ -2897,6 +3116,9 @@ async def room_controller(data: dict[str, str]) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Room not found")
 
     player_num = _resolve_player_num(room, player_id)
+
+    if is_ranked_match_type(room.get("match_type", PRIVATE_CASUAL)):
+        raise HTTPException(status_code=409, detail="Ranked controllers are locked by matchmaking")
 
     room = await room_manager.set_controller(code, player_num, controller)
 
@@ -2940,6 +3162,9 @@ async def room_rematch(data: dict[str, str]) -> dict[str, Any]:
     # Validate player belongs to this room
     _resolve_player_num(room, player_id)
 
+    if is_ranked_match_type(room.get("match_type", PRIVATE_CASUAL)):
+        raise HTTPException(status_code=409, detail="Ranked matches do not support direct rematches")
+
     try:
         room = await room_manager.reset_for_rematch(code)
     except ValueError as e:
@@ -2962,10 +3187,11 @@ async def room_rematch(data: dict[str, str]) -> dict[str, Any]:
 
 @post("/api/match/complete")
 async def match_complete(data: dict[str, Any]) -> dict[str, Any]:
-    """Process end-of-match: transition room to finished, update ELO if applicable.
+    """Acknowledge a client seeing match completion.
 
-    Body: { code, playerId, winner (1|2|null), p1Health, p2Health,
-            p1UserId?, p2UserId?, p1Name?, p2Name? }
+    This endpoint is deliberately non-authoritative.  Client-provided winner,
+    health, identity, and name fields never update competitive standings.
+    Ranked settlement is owned by the authoritative server game loop.
     """
     if room_manager is None:
         raise HTTPException(status_code=503, detail="Room manager not available")
@@ -2981,74 +3207,38 @@ async def match_complete(data: dict[str, Any]) -> dict[str, Any]:
 
     _resolve_player_num(room, player_id)
 
-    # Transition to finished (idempotent — skip if already finished)
-    if room["status"] == "fighting":
+    ranked = is_ranked_match_type(room.get("match_type", PRIVATE_CASUAL))
+
+    settlement: dict[str, Any] = {"updated": False}
+    # Casual rooms retain the legacy acknowledgement transition. A ranked
+    # acknowledgement may retry only the result already stored by the server;
+    # no field supplied by this client is consulted for settlement.
+    if not ranked and room["status"] == "fighting":
         try:
             await room_manager.transition_status(code, "finished")
         except ValueError:
             pass  # Already transitioned
-
-    winner = data.get("winner")  # 1, 2, or None for draw
-
-    # ELO update — only if both players are logged in and controllers are ranked
-    elo_result: dict[str, Any] = {"updated": False}
-
-    p1_user_id = data.get("p1UserId", "")
-    p2_user_id = data.get("p2UserId", "")
-    p1_name = data.get("p1Name", "")
-    p2_name = data.get("p2Name", "")
-
-    if elo_manager is not None and p1_user_id and p2_user_id:
-        # Determine ELO category from controllers
-        p1_cat = controller_to_category(room.get("p1_controller", ""))
-        p2_cat = controller_to_category(room.get("p2_controller", ""))
-
-        # Both must map to the same ranked category
-        if p1_cat and p2_cat and p1_cat == p2_cat:
-            category = p1_cat
-
-            # Store display names
-            if p1_name:
-                await elo_manager.set_player_name(p1_user_id, p1_name)
-            if p2_name:
-                await elo_manager.set_player_name(p2_user_id, p2_name)
-
-            is_draw = winner is None
-            if is_draw:
-                w_stats, l_stats = await elo_manager.update_ratings(
-                    p1_user_id, p2_user_id, category, draw=True
-                )
-                elo_result = {
-                    "updated": True,
-                    "category": category,
-                    "p1": w_stats,
-                    "p2": l_stats,
-                }
-            elif winner == 1:
-                w_stats, l_stats = await elo_manager.update_ratings(
-                    p1_user_id, p2_user_id, category
-                )
-                elo_result = {
-                    "updated": True,
-                    "category": category,
-                    "p1": w_stats,
-                    "p2": l_stats,
-                }
-            elif winner == 2:
-                w_stats, l_stats = await elo_manager.update_ratings(
-                    p2_user_id, p1_user_id, category
-                )
-                elo_result = {
-                    "updated": True,
-                    "category": category,
-                    "p1": l_stats,
-                    "p2": w_stats,
-                }
+    elif ranked and room.get("authoritative_recorded_at"):
+        try:
+            settlement = await _settle_recorded_ranked_outcome(code, room)
+            room = await room_manager.get_room(code) or room
+        except Exception as exc:
+            settlement = {
+                "settled": False,
+                "ranked": True,
+                "retryPending": True,
+                "error": "authoritative_settlement_pending",
+            }
+            print(f"[match-complete:{code}] Settlement retry pending: {type(exc).__name__}: {exc}")
 
     return {
         "ok": True,
-        "winner": winner,
-        "elo": elo_result,
+        "authoritative": False,
+        "ranked": ranked,
+        "matchType": room.get("match_type", PRIVATE_CASUAL),
+        "league": room.get("league", ""),
+        "settlementStatus": room.get("settlement_status", "not_applicable"),
+        "elo": settlement,
     }
 
 
@@ -3438,7 +3628,7 @@ async def game_ws(socket: WebSocket, code: str) -> None:
     Client sends: {"actions": ["left","down"], "just_pressed": ["heavyKick"]}
     Server sends: state snapshots at 20Hz + round_over events
     """
-    if game_loop_manager is None:
+    if game_loop_manager is None or room_manager is None:
         await socket.close(code=4000, reason="Game loop manager not initialized")
         return
 
@@ -3454,16 +3644,41 @@ async def game_ws(socket: WebSocket, code: str) -> None:
         await socket.close(code=4001, reason="player must be 1 or 2")
         return
 
+    player_id = str(socket.query_params.get("player_id") or "").strip()
+    if not player_id:
+        await socket.close(code=4003, reason="player_id is required")
+        return
+
+    room_data = await room_manager.get_room(code)
+    if room_data is None:
+        await socket.close(code=4004, reason="Room not found")
+        return
+    try:
+        bound_player = _resolve_player_num(room_data, player_id)
+    except HTTPException:
+        await socket.close(code=4003, reason="Player is not bound to this room")
+        return
+    if bound_player != player:
+        await socket.close(code=4003, reason="player_id does not match player number")
+        return
+    if room_data.get("status") != "fighting":
+        await socket.close(code=4005, reason="Room is not fighting")
+        return
+
     await socket.accept()
     print(f"[game-ws:{code}] Player {player} connected")
 
     # Get or create the room loop
     room = game_loop_manager.get_room_loop(code)
     if room is None:
-        room = game_loop_manager.create_room_loop(code)
+        room = game_loop_manager.create_room_loop(code, room_data)
 
     # Register this player (and cancel any disconnect timer if reconnecting)
-    conn = game_loop_manager.add_player(code, player, socket)
+    try:
+        conn = game_loop_manager.add_player(code, player, socket)
+    except ValueError as exc:
+        await socket.close(code=4006, reason=str(exc))
+        return
     game_loop_manager.cancel_disconnect_timer(code, player)
 
     # Start the game loop if both players are connected
@@ -3867,18 +4082,24 @@ async def auth_username(request: Request, data: dict[str, str]) -> dict[str, Any
 
 
 @post("/api/matchmaking/join")
-async def matchmaking_join_endpoint(data: dict[str, Any]) -> dict[str, Any]:
+async def matchmaking_join_endpoint(request: Request, data: dict[str, Any]) -> dict[str, Any]:
     """Join the ELO matchmaking queue.
 
-    Body: { controller, userId?, name? }
-    Returns: { playerId, category, elo, queueSize }
+    Body: { controller, league, name? }
+    The wallet identity comes only from the signed bearer session.
+    Returns: { playerId, league, category, elo, queueSize }
     """
     if room_manager is None or matchmaking_task is None:
         raise HTTPException(status_code=503, detail="Service not available")
+    if boost_pg_pool is None or elo_manager is None:
+        raise HTTPException(status_code=503, detail="Ranked identity or ELO database not available")
 
     controller = data.get("controller", "").strip() if isinstance(data.get("controller"), str) else ""
-    user_id = data.get("userId", "") or ""
+    league = data.get("league", SKILL_LEAGUE)
     name = data.get("name", "") or ""
+
+    if league not in RANKED_LEAGUES:
+        raise HTTPException(status_code=400, detail="league must be 'skill' or 'boosted'")
 
     if not controller:
         raise HTTPException(status_code=400, detail="controller is required")
@@ -3889,56 +4110,87 @@ async def matchmaking_join_endpoint(data: dict[str, Any]) -> dict[str, Any]:
     if category is None:
         raise HTTPException(status_code=400, detail="Controller not eligible for ranked matchmaking")
 
-    # Get ELO (default 1000 for anonymous / new players)
-    elo = 1000.0
-    if user_id and elo_manager is not None:
-        stats = await elo_manager.get_rating(user_id, category)
-        elo = float(stats["rating"])
+    async with boost_pg_pool.acquire() as conn:
+        wallet = await _authenticated_wallet(conn, request)
+
+    stats = await elo_manager.get_competitive_rating(wallet, league, category)
+    elo = float(stats["rating"])
 
     player_id = str(uuid.uuid4())
-    await matchmaking_task.join(player_id, category, controller, elo, user_id, name)
+    try:
+        await matchmaking_task.join(player_id, league, category, controller, elo, wallet, name)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
-    queue_size = sum(1 for e in matchmaking_task._entries.values() if e["category"] == category)
+    queue_size = sum(
+        1 for e in matchmaking_task._entries.values()
+        if e["category"] == category and e["league"] == league
+    )
 
     return {
         "playerId": player_id,
         "category": category,
+        "league": league,
         "elo": elo,
         "queueSize": queue_size,
+        "wallet": wallet,
     }
 
 
 @get("/api/matchmaking/status")
-async def matchmaking_status_endpoint(player_id: str) -> dict[str, Any]:
+async def matchmaking_status_endpoint(request: Request, player_id: str) -> dict[str, Any]:
     """Poll matchmaking status for a player.
 
     Query: player_id=X
     Returns: { status: "searching"|"matched"|"not_queued", ... }
     """
-    if matchmaking_task is None:
+    if matchmaking_task is None or boost_pg_pool is None:
         raise HTTPException(status_code=503, detail="Service not available")
+
+    async with boost_pg_pool.acquire() as conn:
+        wallet = await _authenticated_wallet(conn, request)
+
+    entry = matchmaking_task._entries.get(player_id)
+    match = matchmaking_task._matches.get(player_id)
+    owner = str((entry or match or {}).get("wallet") or "")
+    if not owner:
+        return {"status": "not_queued"}
+    if owner != wallet:
+        raise HTTPException(status_code=403, detail="Matchmaking player does not belong to this wallet")
 
     # Refresh player's activity (prevents stale pruning + Redis TTL expiry)
     matchmaking_task.refresh(player_id)
-    entry = matchmaking_task._entries.get(player_id)
     if entry and room_manager is not None:
-        await room_manager.matchmaking_refresh_ttl(entry["category"], player_id)
+        await room_manager.matchmaking_refresh_ttl(entry["league"], entry["category"], player_id)
+    if room_manager is not None:
+        lock_ok = await room_manager.refresh_ranked_wallet(owner, player_id)
+        if entry and not lock_ok:
+            await matchmaking_task.cancel(player_id)
+            raise HTTPException(status_code=409, detail="Ranked wallet reservation expired; join again")
 
     return matchmaking_task.get_status(player_id)
 
 
 @post("/api/matchmaking/cancel")
-async def matchmaking_cancel_endpoint(data: dict[str, str]) -> dict[str, bool]:
+async def matchmaking_cancel_endpoint(request: Request, data: dict[str, str]) -> dict[str, bool]:
     """Cancel matchmaking for a player.
 
     Body: { playerId }
     """
-    if matchmaking_task is None:
+    if matchmaking_task is None or boost_pg_pool is None:
         raise HTTPException(status_code=503, detail="Service not available")
 
     player_id = data.get("playerId", "").strip()
     if not player_id:
         raise HTTPException(status_code=400, detail="playerId is required")
+
+    async with boost_pg_pool.acquire() as conn:
+        wallet = await _authenticated_wallet(conn, request)
+    entry = matchmaking_task._entries.get(player_id)
+    match = matchmaking_task._matches.get(player_id)
+    owner = str((entry or match or {}).get("wallet") or "")
+    if owner and owner != wallet:
+        raise HTTPException(status_code=403, detail="Matchmaking player does not belong to this wallet")
 
     removed = await matchmaking_task.cancel(player_id)
     return {"ok": removed}
@@ -3946,42 +4198,46 @@ async def matchmaking_cancel_endpoint(data: dict[str, str]) -> dict[str, bool]:
 
 @get("/api/leaderboard")
 async def leaderboard(request: Request) -> dict[str, Any]:
-    """Get the leaderboard for a specific league.
+    """Get one isolated competitive league/input leaderboard.
 
     Query params:
+        league: 'skill' or 'boosted'
         category: 'voice' or 'keyboard' (required, no merged 'all' view)
         limit: max entries (default: 50)
-        user_id: optional — if provided, include viewer's own entry + rank
+        wallet: optional public wallet whose own entry/rank should be included
     """
     if elo_manager is None:
         raise HTTPException(status_code=503, detail="ELO manager not available")
 
-    category = request.query_params.get("category", "voice")
-    if category not in ("voice", "keyboard"):
+    league = request.query_params.get("league", SKILL_LEAGUE)
+    category = request.query_params.get("category", "keyboard")
+    if league not in RANKED_LEAGUES:
+        raise HTTPException(status_code=400, detail="league must be 'skill' or 'boosted'")
+    if category not in INPUT_CATEGORIES:
         raise HTTPException(
             status_code=400,
             detail="category must be 'voice' or 'keyboard'",
         )
     limit_str = request.query_params.get("limit", "50")
-    viewer_id = request.query_params.get("user_id", "")
+    viewer_wallet = _normalize_wallet_address(request.query_params.get("wallet", ""))
+    if viewer_wallet and not _is_valid_wallet_address(viewer_wallet):
+        raise HTTPException(status_code=400, detail="wallet must be a valid Solana address")
     try:
-        limit = min(int(limit_str), 100)
+        limit = max(1, min(int(limit_str), 100))
     except ValueError:
         limit = 50
 
-    entries = await elo_manager.get_leaderboard(category, limit=limit)
-    # Add input_mode badge
+    entries = await elo_manager.get_competitive_leaderboard(league, category, limit=limit)
     for entry in entries:
         entry["input_mode"] = category
 
-    result: dict[str, Any] = {"category": category, "entries": entries}
+    result: dict[str, Any] = {"league": league, "category": category, "entries": entries}
 
-    # If viewer_id provided, include their rank/stats even if not in top entries
-    if viewer_id:
-        viewer_in_entries = any(str(e["user_id"]) == viewer_id for e in entries)
-        stats = await elo_manager.get_rating(viewer_id, category)
-        rank = await elo_manager.get_player_rank(viewer_id, category)
-        name = await elo_manager.get_player_name(viewer_id)
+    if viewer_wallet:
+        viewer_in_entries = any(str(e["wallet"]) == viewer_wallet for e in entries)
+        stats = await elo_manager.get_competitive_rating(viewer_wallet, league, category)
+        rank = await elo_manager.get_competitive_player_rank(viewer_wallet, league, category)
+        name = await elo_manager.get_player_name(viewer_wallet)
         if rank is not None:
             result["viewer"] = {**stats, "rank": rank, "input_mode": category, "name": name}
         else:

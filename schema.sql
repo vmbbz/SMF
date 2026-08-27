@@ -36,6 +36,75 @@ CREATE TABLE IF NOT EXISTS match_history (
 CREATE INDEX IF NOT EXISTS idx_match_history_played_at
     ON match_history (played_at DESC);
 
+-- Reward-candidate ratings are isolated by competitive league and input
+-- division. Legacy elo_ratings remain available for historical display only.
+CREATE TABLE IF NOT EXISTS competitive_ratings (
+    wallet_address  TEXT NOT NULL REFERENCES players(user_id) ON DELETE CASCADE,
+    league          TEXT NOT NULL CHECK (league IN ('skill', 'boosted')),
+    input_category  TEXT NOT NULL CHECK (input_category IN ('voice', 'keyboard')),
+    rating          REAL NOT NULL DEFAULT 1000,
+    wins            INTEGER NOT NULL DEFAULT 0,
+    losses          INTEGER NOT NULL DEFAULT 0,
+    draws           INTEGER NOT NULL DEFAULT 0,
+    matches         INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (wallet_address, league, input_category)
+);
+
+CREATE INDEX IF NOT EXISTS idx_competitive_leaderboard
+    ON competitive_ratings (league, input_category, rating DESC);
+
+CREATE TABLE IF NOT EXISTS ranked_match_settlements (
+    match_id          TEXT PRIMARY KEY,
+    room_code         TEXT NOT NULL UNIQUE,
+    league            TEXT NOT NULL CHECK (league IN ('skill', 'boosted')),
+    input_category    TEXT NOT NULL CHECK (input_category IN ('voice', 'keyboard')),
+    p1_wallet         TEXT NOT NULL REFERENCES players(user_id),
+    p2_wallet         TEXT NOT NULL REFERENCES players(user_id),
+    winner_player     SMALLINT CHECK (winner_player IN (1, 2)),
+    result            TEXT NOT NULL CHECK (result IN ('p1_win', 'p2_win', 'draw')),
+    reason            TEXT NOT NULL,
+    p1_health         REAL NOT NULL,
+    p2_health         REAL NOT NULL,
+    server_tick       BIGINT NOT NULL,
+    p1_boost_charges  INTEGER NOT NULL DEFAULT 0 CHECK (p1_boost_charges >= 0),
+    p2_boost_charges  INTEGER NOT NULL DEFAULT 0 CHECK (p2_boost_charges >= 0),
+    p1_rating_before  REAL NOT NULL,
+    p2_rating_before  REAL NOT NULL,
+    p1_rating_after   REAL NOT NULL,
+    p2_rating_after   REAL NOT NULL,
+    played_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (p1_wallet <> p2_wallet),
+    CONSTRAINT ranked_match_settlements_boost_policy CHECK (
+        (league = 'skill' AND p1_boost_charges = 0 AND p2_boost_charges = 0)
+        OR
+        (league = 'boosted' AND p1_boost_charges <= 3 AND p2_boost_charges <= 3)
+    )
+);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'ranked_match_settlements_boost_policy'
+    ) THEN
+        ALTER TABLE ranked_match_settlements
+            ADD CONSTRAINT ranked_match_settlements_boost_policy CHECK (
+                (league = 'skill' AND p1_boost_charges = 0 AND p2_boost_charges = 0)
+                OR
+                (league = 'boosted' AND p1_boost_charges <= 3 AND p2_boost_charges <= 3)
+            );
+    END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_ranked_settlements_epoch
+    ON ranked_match_settlements (league, input_category, played_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ranked_settlements_p1
+    ON ranked_match_settlements (p1_wallet, played_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ranked_settlements_p2
+    ON ranked_match_settlements (p2_wallet, played_at DESC);
+
 -- ─────────────────────────────────────────────
 -- Boost purchase ledger
 -- ─────────────────────────────────────────────
