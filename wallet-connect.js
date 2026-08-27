@@ -24,11 +24,16 @@ export function getProfile() {
       walletReadOnly: false,
       walletAuthenticated: false,
       walletAddress: '',
-      smfBalance: 0 // Fetch real balance on-chain
+      paymentTokenBalance: 0,
+      smfBalance: 0 // Legacy cache key retained for released clients
     };
     saveProfile(profile);
   } else {
     let changed = false;
+    if (typeof profile.paymentTokenBalance !== 'number') {
+      profile.paymentTokenBalance = typeof profile.smfBalance === 'number' ? profile.smfBalance : 0;
+      changed = true;
+    }
     if (typeof profile.walletReadOnly !== 'boolean') {
       profile.walletReadOnly = false;
       changed = true;
@@ -110,7 +115,9 @@ export async function updateOnChainBalance(profile) {
     const { Connection, PublicKey } = window.solanaWeb3;
     const connection = new Connection(config.solanaRpc, 'confirmed');
     const walletPub = new PublicKey(profile.walletAddress);
-    const mintPub = new PublicKey(config.smfMint);
+    const paymentMint = String(config.boostPaymentMint || config.smfMint || '');
+    if (!paymentMint) throw new Error('Boost payment token is not configured.');
+    const mintPub = new PublicKey(paymentMint);
     
     // Derive Associated Token Account (ATA)
     const tokenProgramId = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
@@ -127,10 +134,12 @@ export async function updateOnChainBalance(profile) {
     
     try {
       const balRes = await connection.getTokenAccountBalance(associatedTokenAddress);
-      profile.smfBalance = balRes.value.uiAmount || 0;
+      profile.paymentTokenBalance = balRes.value.uiAmount || 0;
+      profile.smfBalance = profile.paymentTokenBalance;
     } catch (e) {
       console.warn('[Wallet] Failed to fetch token balance, account might not exist. Setting balance to 0.', e);
-      profile.smfBalance = 0; // Account not created or has 0 tokens
+      profile.paymentTokenBalance = 0;
+      profile.smfBalance = 0; // Legacy cache key
     }
   } catch (err) {
     console.error('[Wallet] Error checking on-chain balance:', err);
@@ -141,6 +150,20 @@ let isFetchingPrice = false;
 let fetchedSMFPrice = null;
 let activeMint = null;
 let activeRpc = null;
+let economyConfigLoaded = false;
+let activePaymentTokenSymbol = 'TOKEN';
+let activeBoostSettlementMode = 'burn';
+let activeBoostPurchasesEnabled = false;
+let activeBoostPurchasesDisabledReason = 'Boost purchases are not configured.';
+
+function escapeWalletText(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
 
 async function syncServerBoostBalance(profile) {
   if (!profile.walletConnected || !profile.walletAddress) return profile.boosts || 0;
@@ -661,30 +684,39 @@ export async function showWalletConnect(options = {}) {
     document.body.appendChild(txOverlay);
   }
 
-  // Fetch config and token price asynchronously once
-  if (!fetchedSMFPrice && !isFetchingPrice) {
+  // Fetch the public boost-economy policy and optional market price once.
+  if (!economyConfigLoaded && !isFetchingPrice) {
     isFetchingPrice = true;
     try {
       const configRes = await fetch('/api/smf-config');
+      if (!configRes.ok) throw new Error(`Economy config failed (${configRes.status})`);
       const config = await configRes.json();
-      activeMint = config.smfMint;
+      activeMint = String(config.boostPaymentMint || config.smfMint || '');
       activeRpc = config.solanaRpc;
-      
-      const tokenRes = await fetch(tokenDetailsPath(config.smfMint));
-      if (tokenRes.ok) {
-        const tokenInfo = await tokenRes.json();
-        if (tokenInfo && tokenInfo.price) {
-          fetchedSMFPrice = tokenInfo.price;
+      activePaymentTokenSymbol = String(config.boostPaymentTokenSymbol || 'TOKEN');
+      activeBoostSettlementMode = String(config.boostSettlementMode || 'burn');
+      activeBoostPurchasesEnabled = config.boostPurchasesEnabled === true;
+      activeBoostPurchasesDisabledReason = String(
+        config.boostPurchasesDisabledReason || 'Boost purchases are not configured.'
+      );
+
+      if (activeMint) {
+        const tokenRes = await fetch(tokenDetailsPath(activeMint));
+        if (tokenRes.ok) {
+          const tokenInfo = await tokenRes.json();
+          if (tokenInfo && Number(tokenInfo.price) > 0) {
+            fetchedSMFPrice = Number(tokenInfo.price);
+          }
         }
       }
     } catch (e) {
       console.warn('[Wallet] Config/price fetch failed:', e);
     } finally {
       isFetchingPrice = false;
-      fetchedSMFPrice = fetchedSMFPrice || 0.00762; // fallback
+      economyConfigLoaded = true;
       
       const profile = getProfile();
-      if (profile.walletConnected && profile.walletAddress) {
+      if (activeMint && profile.walletConnected && profile.walletAddress) {
         await updateOnChainBalance(profile);
         await syncServerBoostBalance(profile);
         saveProfile(profile);
@@ -705,11 +737,20 @@ export async function showWalletConnect(options = {}) {
     ? (profile.walletReadOnly ? '#ffcc00' : (walletAuthReady ? 'var(--neon-green)' : 'var(--neon-blue)'))
     : '#ff3b30';
   
-  // Custom HSL/fluctuating price for SMF
-  const smfPrice = fetchedSMFPrice || 0.00762; 
-  const pack1SMF = Math.round(1.00 / smfPrice);
-  const pack2SMF = Math.round(3.00 / smfPrice);
-  const pack3SMF = Math.round(5.00 / smfPrice);
+  const paymentTokenSymbol = escapeWalletText(activePaymentTokenSymbol || 'TOKEN');
+  const paymentTokenBalance = Number(
+    typeof profile.paymentTokenBalance === 'number' ? profile.paymentTokenBalance : profile.smfBalance || 0
+  );
+  const storeAccessBlocked = !profile.walletConnected || profile.walletReadOnly || !walletAuthReady;
+  const boostStoreLocked = storeAccessBlocked || !activeBoostPurchasesEnabled;
+  const purchasePolicyCopy = activeBoostPurchasesEnabled
+    ? (activeBoostSettlementMode === 'burn'
+      ? `${paymentTokenSymbol} is burned on-chain. Burned tokens do not fund leaderboard rewards.`
+      : `${paymentTokenSymbol} settles through ${escapeWalletText(activeBoostSettlementMode)}.`)
+    : escapeWalletText(activeBoostPurchasesDisabledReason);
+  const packTokenEstimate = (usd) => fetchedSMFPrice && fetchedSMFPrice > 0
+    ? `(~${(usd / fetchedSMFPrice).toLocaleString(undefined, { maximumFractionDigits: 4 })} ${paymentTokenSymbol})`
+    : `(exact ${paymentTokenSymbol} amount quoted before approval)`;
 
   // Set up local style injection
   if (!document.getElementById('profile-widget-styles')) {
@@ -939,8 +980,8 @@ export async function showWalletConnect(options = {}) {
               <span style="color:#fff;" title="${profile.walletAddress}">${profile.walletAddress.substring(0, 6)}...${profile.walletAddress.substring(profile.walletAddress.length - 4)}</span>
             </div>
             <div style="display:flex; justify-content:space-between; margin-bottom: 6px;">
-              <span style="color:#aaa;">Token Balance:</span>
-              <span style="color:var(--neon-green); font-weight:bold;">${Number(profile.smfBalance).toLocaleString(undefined, {maximumFractionDigits: 4})} $SMF</span>
+              <span style="color:#aaa;">${paymentTokenSymbol} Balance:</span>
+              <span style="color:var(--neon-green); font-weight:bold;">${paymentTokenBalance.toLocaleString(undefined, {maximumFractionDigits: 4})} ${paymentTokenSymbol}</span>
             </div>
             ${!profile.walletReadOnly ? `
               <div style="background:rgba(0,0,0,0.22); border:1px solid rgba(255,255,255,0.08); border-radius:8px; padding:8px; margin:8px 0;">
@@ -1008,7 +1049,7 @@ export async function showWalletConnect(options = {}) {
             </button>
           </div>
         ` : `
-          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. Holds your $SMF tokens to buy premium boost packs.</p>
+          <p style="font-size: 8px; color: #bbb; margin-bottom: 8px; line-height: 1.4;">Connecting your wallet is optional. It can read the configured boost-payment balance and request explicit approval for purchases.</p>
           <button onclick="window.connectSolanaWallet()" class="premium-btn" style="padding: 8px 12px; font-size: 9px; width: 100%; letter-spacing: 0.5px;">
             ${nativeMwaBridge ? 'CONNECT VIA ANDROID WALLET (MWA)' : 'CONNECT SOLANA WALLET'}
           </button>
@@ -1030,45 +1071,45 @@ export async function showWalletConnect(options = {}) {
         ` : ''}
         
         <p style="font-size: 8px; color: #888; margin-bottom: 8px; line-height: 1.4;">
-          Staking is unsafe. Instead, use connected wallet $SMF tokens to **buy boost packs**! All $SMF spent is **burned forever** 🔥 (Solana Burn Program).
+          ${purchasePolicyCopy}
         </p>
 
         <!-- PACKAGES -->
         <div style="display:flex; flex-direction:column; gap:6px; margin-bottom: 8px;">
           <!-- Pack 1 -->
-          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
+          <div class="store-package-card ${boostStoreLocked ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">🔵 Micro Pack (5 Premium Boosts)</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">(~${pack1SMF} $SMF)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $1.00 <span style="color:#aaa;">${packTokenEstimate(1)}</span></div>
             </div>
-            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
+            <button class="buy-smf-btn" ${boostStoreLocked ? 'disabled' : ''} onclick="window.purchaseBoostPack('micro')">
               BUY & BURN
             </button>
           </div>
           <!-- Pack 2 -->
-          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
+          <div class="store-package-card ${boostStoreLocked ? 'locked' : ''}" style="border-color: rgba(20,241,149,0.3); background: rgba(20,241,149,0.02);">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:var(--neon-green);">🔥 Degen Pack (20 Boosts) - BEST VALUE</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">(~${pack2SMF} $SMF)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $3.00 <span style="color:#aaa;">${packTokenEstimate(3)}</span></div>
             </div>
-            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
+            <button class="buy-smf-btn" ${boostStoreLocked ? 'disabled' : ''} style="background: var(--neon-green);" onclick="window.purchaseBoostPack('degen')">
               BUY & BURN
             </button>
           </div>
           <!-- Pack 3 -->
-          <div class="store-package-card ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'locked' : ''}">
+          <div class="store-package-card ${boostStoreLocked ? 'locked' : ''}">
             <div style="font-size: 9px; line-height:1.3;">
               <div style="font-weight:bold; color:#fff;">⚡ Chaos Pack (45 Premium Boosts)</div>
-              <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">(~${pack3SMF} $SMF)</span></div>
+              <div style="color:var(--neon-green); font-size: 8px;">Only $5.00 <span style="color:#aaa;">${packTokenEstimate(5)}</span></div>
             </div>
-            <button class="buy-smf-btn" ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
+            <button class="buy-smf-btn" ${boostStoreLocked ? 'disabled' : ''} onclick="window.purchaseBoostPack('chaos')">
               BUY & BURN
             </button>
           </div>
         </div>
         
-        ${(!profile.walletConnected || profile.walletReadOnly || !walletAuthReady) ? `
-          <div style="font-size: 7px; color:${profile.walletReadOnly ? '#ffcc00' : (!walletAuthReady && profile.walletConnected ? 'var(--neon-blue)' : '#ff3b30')}; text-align:center; font-weight:bold; letter-spacing:0.3px;">${profile.walletReadOnly ? '⚠️ READ-ONLY MODE CANNOT PURCHASE. OPEN IN WALLET BROWSER.' : (!walletAuthReady && profile.walletConnected ? '⚠️ SIGN FREE SECURITY MESSAGE TO UNLOCK PURCHASES' : '⚠️ CONNECT SOLANA WALLET TO UNLOCK PURCHASES')}</div>
+        ${boostStoreLocked ? `
+          <div style="font-size: 7px; color:${!activeBoostPurchasesEnabled ? '#ffcc00' : (profile.walletReadOnly ? '#ffcc00' : (!walletAuthReady && profile.walletConnected ? 'var(--neon-blue)' : '#ff3b30'))}; text-align:center; font-weight:bold; letter-spacing:0.3px;">${!activeBoostPurchasesEnabled ? `⚠️ ${escapeWalletText(activeBoostPurchasesDisabledReason).toUpperCase()}` : (profile.walletReadOnly ? '⚠️ READ-ONLY MODE CANNOT PURCHASE. OPEN IN WALLET BROWSER.' : (!walletAuthReady && profile.walletConnected ? '⚠️ SIGN FREE SECURITY MESSAGE TO UNLOCK PURCHASES' : '⚠️ CONNECT SOLANA WALLET TO UNLOCK PURCHASES'))}</div>
         ` : ''}
       </div>
 
@@ -1503,6 +1544,7 @@ window.disconnectSolanaWallet = function() {
   profile.walletReadOnly = false;
   profile.walletAuthenticated = false;
   profile.walletAddress = '';
+  profile.paymentTokenBalance = 0;
   profile.smfBalance = 0;
   clearWalletFlow();
   saveProfile(profile);
@@ -1514,6 +1556,9 @@ window.disconnectSolanaWallet = function() {
 // Global hook: purchase boost pack with server-authoritative crediting
 window.purchaseBoostPack = async function(packId) {
   let profile = getProfile();
+  if (!activeBoostPurchasesEnabled) {
+    return alert(`⚠️ ${activeBoostPurchasesDisabledReason}`);
+  }
   if (!profile.walletConnected) return alert('⚠️ Wallet is not connected.');
   if (profile.walletReadOnly) return alert('⚠️ Read-only wallet mode cannot purchase. Open game in your wallet browser.');
   const nativeMwa = getNativeMwaPlugin();
@@ -1565,8 +1610,9 @@ window.purchaseBoostPack = async function(packId) {
       throw new Error(`Intent creation failed (${intentResp.status}): ${err}`);
     }
     const intent = await intentResp.json();
-    const requiredSmfUi = Number(intent.requiredSmfUiAmount || 0);
-    const requiredSmfRaw = BigInt(String(intent.requiredSmfRawAmount || '0'));
+    const requiredTokenUi = Number(intent.requiredTokenUiAmount || intent.requiredSmfUiAmount || 0);
+    const requiredTokenRaw = BigInt(String(intent.requiredTokenRawAmount || intent.requiredSmfRawAmount || '0'));
+    const paymentTokenSymbol = escapeWalletText(intent.paymentTokenSymbol || activePaymentTokenSymbol || 'TOKEN');
     const boostsToCredit = Number(intent.boostsToCredit || 0);
     const mintAddress = String(intent.mint || activeMint || '');
     const rpcUrl = String(intent.solanaRpc || activeRpc || 'https://api.mainnet-beta.solana.com');
@@ -1574,11 +1620,14 @@ window.purchaseBoostPack = async function(packId) {
     if (!mintAddress) {
       throw new Error('Backend did not return token mint address.');
     }
-    if (requiredSmfRaw <= 0n || requiredSmfUi <= 0 || boostsToCredit <= 0) {
+    if (requiredTokenRaw <= 0n || requiredTokenUi <= 0 || boostsToCredit <= 0) {
       throw new Error('Backend returned invalid quote values.');
     }
-    if (profile.smfBalance < requiredSmfUi) {
-      throw new Error(`Insufficient $SMF balance. Need ${requiredSmfUi}, have ${profile.smfBalance}.`);
+    const paymentTokenBalance = Number(
+      typeof profile.paymentTokenBalance === 'number' ? profile.paymentTokenBalance : profile.smfBalance || 0
+    );
+    if (paymentTokenBalance < requiredTokenUi) {
+      throw new Error(`Insufficient ${paymentTokenSymbol} balance. Need ${requiredTokenUi}, have ${paymentTokenBalance}.`);
     }
 
     const connection = new Connection(rpcUrl, 'confirmed');
@@ -1598,7 +1647,7 @@ window.purchaseBoostPack = async function(packId) {
       associatedTokenProgramId
     );
     
-    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${requiredSmfUi} $SMF</span>`;
+    txStatusStep.innerHTML = `<span style="color:#00c2ff;">1. Constructing Burn Transaction...</span><br><span style="color:#888;">Preparing to burn ${requiredTokenUi} ${paymentTokenSymbol}</span>`;
     
     // Compile SPL Token Burn Instruction
     // Keys needed:
@@ -1615,7 +1664,7 @@ window.purchaseBoostPack = async function(packId) {
     // Index 8 is Burn. Data structure: u8 index (8), u64 amount
     const data = new Uint8Array(9);
     data[0] = 8; // Burn index
-    let temp = requiredSmfRaw;
+    let temp = requiredTokenRaw;
     for (let i = 0; i < 8; i++) {
       data[1 + i] = Number(temp & 0xffn);
       temp >>= 8n;
@@ -1627,7 +1676,7 @@ window.purchaseBoostPack = async function(packId) {
       data
     });
     
-    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${requiredSmfUi} $SMF tokens in wallet...</span>`;
+    txStatusStep.innerHTML = `<span style="color:var(--neon-green);">✓ Transaction Compiled</span><br><span style="color:#00c2ff;">2. Awaiting Wallet Approval...</span><br><span style="color:#aaa;">Confirming burn of ${requiredTokenUi} ${paymentTokenSymbol} in wallet...</span>`;
     
     // Fetch recent blockhash
     const { blockhash } = await connection.getLatestBlockhash('confirmed');
@@ -1681,7 +1730,8 @@ window.purchaseBoostPack = async function(packId) {
     `;
     
     // Update local cache from authoritative backend response
-    profile.smfBalance = Math.max(0, profile.smfBalance - requiredSmfUi);
+    profile.paymentTokenBalance = Math.max(0, paymentTokenBalance - requiredTokenUi);
+    profile.smfBalance = profile.paymentTokenBalance;
     profile.boosts = typeof confirmationData.boosts === 'number'
       ? confirmationData.boosts
       : profile.boosts;

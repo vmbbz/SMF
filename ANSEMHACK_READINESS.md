@@ -120,7 +120,11 @@ Persist append-only agent decisions and match outcomes with provider timestamps 
 
 ### Token utility boundary
 
-Do not implement staking, pooled rewards, treasury distributions, or dual-token burns until the game token, exact $ANSEM mint, custody model, economics, jurisdictions, and ClawPump rules are confirmed. The first credible utility can remain non-custodial: verified holdings unlock a bounded daily arena action or discount, while all value-moving actions require an explicit wallet approval and server-side transaction verification.
+The game token and `$ANSEM` have separate jobs. The launched StickLash token will pay for casual boost packs; `$ANSEM` holdings will unlock a bounded daily Arena Director action without changing ranked combat power. Ranked ELO rewards use equal fighter rules and a separate validated eligibility ledger.
+
+The target boost transaction sends 50% of verified game-token receipts directly to the weekly reward vault and 50% to the operating treasury. Creator rewards received from the launch platform are an additional reward-vault source. The current pre-launch burn adapter generates no revenue and must not be described as prize funding. See [Economy, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md) for the full decision and delivery gates.
+
+Do not implement staking, dual-token boost payments, or automatic token distributions. Do not configure an `$ANSEM` mint until it is verified from an official source. Every value-moving action must require explicit wallet approval and independent server-side transaction verification.
 
 ## Delivery sequence
 
@@ -129,8 +133,9 @@ Do not implement staking, pooled rewards, treasury distributions, or dual-token 
 3. Register the project and apply for Alchemy and Helius credits through the official flows; these are human account actions.
 4. Add the Alchemy provider behind the existing normalized market interface and prove it with replay/failover evidence.
 5. Add the public arena status view and a stream-ready 15-minute demo flow.
-6. Finalize token identity and one safe, visible utility before tokenization.
-7. Freeze the submission build early enough to collect real usage, shares, and onchain evidence before 19 September.
+6. Finalize the game-token identity, reward-vault and operating-treasury addresses, then replace boost burns with the documented atomic split transfer.
+7. Add one safe, visible `$ANSEM` Arena Director privilege after verifying the official mint.
+8. Freeze the submission build early enough to collect real usage, shares, and onchain evidence before 19 September.
 
 ## Demo story
 

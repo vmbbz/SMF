@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock
 
@@ -160,6 +161,54 @@ def test_extract_signers_from_parsed_tx() -> None:
     }
     signers = server._extract_signers(tx)
     assert signers == {"wallet1"}
+
+
+def test_boost_payment_mint_prefers_role_specific_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_MINT", "new-game-token-mint")
+    monkeypatch.setenv("SMF_MINT", "legacy-mint")
+    assert server._get_boost_payment_token_mint() == "new-game-token-mint"
+
+
+def test_stablecoin_burn_is_blocked_even_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BOOST_PURCHASES_ENABLED", "1")
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_MINT", server.SOLANA_MAINNET_USDC_MINT)
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_SYMBOL", "USDC")
+    monkeypatch.setenv("BOOST_SETTLEMENT_MODE", "burn")
+
+    enabled, reason = server._get_boost_purchase_status()
+
+    assert enabled is False
+    assert "Stablecoin burns are disabled" in reason
+
+
+def test_game_token_burn_requires_explicit_enable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_MINT", "game-token-mint")
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_SYMBOL", "STICK")
+    monkeypatch.setenv("BOOST_SETTLEMENT_MODE", "burn")
+    monkeypatch.delenv("BOOST_PURCHASES_ENABLED", raising=False)
+
+    disabled, reason = server._get_boost_purchase_status()
+    monkeypatch.setenv("BOOST_PURCHASES_ENABLED", "true")
+    enabled, enabled_reason = server._get_boost_purchase_status()
+
+    assert disabled is False
+    assert "paused" in reason
+    assert enabled is True
+    assert enabled_reason == ""
+
+
+def test_boost_catalog_exposes_payment_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BOOST_PURCHASES_ENABLED", "1")
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_MINT", server.SOLANA_MAINNET_USDC_MINT)
+    monkeypatch.setenv("BOOST_PAYMENT_TOKEN_SYMBOL", "USDC")
+    monkeypatch.setenv("BOOST_SETTLEMENT_MODE", "burn")
+
+    payload = asyncio.run(server.api_boost_packs.fn())
+    assert payload["economy"]["paymentTokenMint"] == server.SOLANA_MAINNET_USDC_MINT
+    assert payload["economy"]["paymentTokenSymbol"] == "USDC"
+    assert payload["economy"]["settlementMode"] == "burn"
+    assert payload["economy"]["purchasesEnabled"] is False
+    assert [pack["packId"] for pack in payload["packs"]] == ["micro", "degen", "chaos"]
 
 
 def test_boost_balance_without_db_returns_503() -> None:

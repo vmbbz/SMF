@@ -96,6 +96,7 @@ matchmaking_task: MatchmakingTask | None = None
 DEFAULT_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_PUBLIC_SOLANA_RPC = "https://api.mainnet-beta.solana.com"
 DEFAULT_PAYMENT_TOKEN_PRICE_FALLBACK = Decimal("0")
+SOLANA_MAINNET_USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 DEFAULT_ANDROID_PACKAGE_NAME = "com.solanamemefighter.app"
 DEFAULT_ANDROID_CERT_SHA256 = "84:86:97:57:2F:90:2C:DC:01:7B:30:C3:87:D3:D2:A8:8D:47:E4:11:CA:B9:54:BA:B1:05:95:98:9D:DE:1D:76"
 BOOST_INTENT_TTL_SECONDS = int(os.environ.get("BOOST_INTENT_TTL_SECONDS", "600"))
@@ -126,6 +127,13 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
         return max(int(os.environ.get(name, str(default))), minimum)
     except (TypeError, ValueError):
         return default
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    configured = os.environ.get(name)
+    if configured is None:
+        return default
+    return configured.strip().lower() in {"1", "true", "yes", "on"}
 
 
 BOOST_PACKS: dict[str, dict[str, int | str]] = {
@@ -355,13 +363,16 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
             print("[postgres] Skipped - running without database")
             boost_pg_pool = None
 
-        # Only create background tasks if we have a working RoomManager
+        # Authentication and ELO depend on their own configuration/Postgres,
+        # not on Redis room availability.
+        oidc_config = OIDCConfig.from_env()
+        elo_manager = EloManager(pg_pool) if pg_pool else None
+
+        # Only create room-dependent background tasks if Redis is available.
         if redis_pool:
             room_manager = RoomManager(redis_pool)
             game_loop_manager = GameLoopManager()
             signaling_manager = SignalingManager()
-            oidc_config = OIDCConfig.from_env()
-            elo_manager = EloManager(pg_pool) if pg_pool else None
 
             cleanup_task = RoomCleanupTask(room_manager, game_loop_manager, signaling_manager)
             cleanup_task.start()
@@ -372,8 +383,6 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
             room_manager = None
             game_loop_manager = None
             signaling_manager = None
-            oidc_config = OIDCConfig.from_env()
-            elo_manager = None
             cleanup_task = None
             matchmaking_task = None
             print("[mode] Running in-memory mode - no multiplayer features")
@@ -554,18 +563,73 @@ async def _require_wallet_session(conn: asyncpg.Connection, request: Request, wa
         raise HTTPException(status_code=401, detail="Wallet auth token expired")
 
 
-def _get_smf_mint() -> str:
-    mint = os.environ.get("SMF_MINT", "").strip()
+def _get_boost_payment_token_mint(*, required: bool = True) -> str:
+    """Return the configured boost-payment mint.
+
+    ``SMF_MINT`` remains a compatibility fallback for existing deployments. New
+    environments should use the role-specific ``BOOST_PAYMENT_TOKEN_MINT``.
+    """
+    mint = os.environ.get("BOOST_PAYMENT_TOKEN_MINT", "").strip()
     if not mint:
-        raise ValueError("SMF_MINT must be configured")
+        mint = os.environ.get("SMF_MINT", "").strip()
+    if not mint:
+        if not required:
+            return ""
+        raise ValueError("BOOST_PAYMENT_TOKEN_MINT must be configured")
     return mint
+
+
+def _get_smf_mint() -> str:
+    """Backward-compatible alias for older callers and API fields."""
+    return _get_boost_payment_token_mint()
 
 
 def _get_boost_payment_token_symbol(mint: str | None = None) -> str:
     configured = os.environ.get("BOOST_PAYMENT_TOKEN_SYMBOL", "").strip()
     if configured:
         return configured
-    return "$SMF"
+    return "TOKEN"
+
+
+def _get_boost_settlement_mode() -> str:
+    return os.environ.get("BOOST_SETTLEMENT_MODE", "burn").strip().lower() or "burn"
+
+
+def _get_boost_purchase_status() -> tuple[bool, str]:
+    """Return whether new boost purchases are safe to create.
+
+    The current transaction verifier supports burns only. Production purchases
+    stay opt-in while the planned treasury split is built, and known stablecoin
+    burns are blocked even if an environment is accidentally enabled.
+    """
+    if not _env_bool("BOOST_PURCHASES_ENABLED", False):
+        return False, "Boost purchases are paused until the game-token settlement is configured."
+
+    mint = _get_boost_payment_token_mint(required=False)
+    if not mint:
+        return False, "Boost payment token mint is not configured."
+
+    settlement_mode = _get_boost_settlement_mode()
+    if settlement_mode != "burn":
+        return False, f"Unsupported boost settlement mode: {settlement_mode}."
+
+    symbol = _get_boost_payment_token_symbol(mint).upper().lstrip("$")
+    if mint == SOLANA_MAINNET_USDC_MINT or symbol in {"USDC", "USDT"}:
+        return False, "Stablecoin burns are disabled. Configure the launched game token before selling boosts."
+
+    return True, ""
+
+
+def _get_public_boost_economy_config() -> dict[str, Any]:
+    enabled, disabled_reason = _get_boost_purchase_status()
+    mint = _get_boost_payment_token_mint(required=False)
+    return {
+        "paymentTokenMint": mint,
+        "paymentTokenSymbol": _get_boost_payment_token_symbol(mint),
+        "settlementMode": _get_boost_settlement_mode(),
+        "purchasesEnabled": enabled,
+        "purchasesDisabledReason": disabled_reason,
+    }
 
 
 def _get_solana_rpc() -> str:
@@ -624,7 +688,7 @@ async def _compute_pack_quote(pack_id: str) -> dict[str, Any]:
     if not pack:
         raise ValueError("Unknown pack id")
 
-    mint = _get_smf_mint()
+    mint = _get_boost_payment_token_mint()
     rpc = _get_solana_rpc()
 
     fixed_payment_price = _get_fixed_boost_payment_price(mint)
@@ -1854,10 +1918,20 @@ async def share_card_page(share_id: str, request: Request) -> Response:
 # ─────────────────────────────────────────────
 
 @get("/api/smf-config")
-async def api_smf_config() -> dict[str, str]:
-    """Retrieve SMF mint address and client-safe Solana RPC URL."""
+async def api_smf_config() -> dict[str, Any]:
+    """Retrieve public wallet/economy configuration.
+
+    ``smfMint`` is retained for backward compatibility with released clients.
+    New clients should use ``boostPaymentMint`` and the explicit policy fields.
+    """
+    economy = _get_public_boost_economy_config()
     return {
-        "smfMint": _get_smf_mint(),
+        "smfMint": economy["paymentTokenMint"],
+        "boostPaymentMint": economy["paymentTokenMint"],
+        "boostPaymentTokenSymbol": economy["paymentTokenSymbol"],
+        "boostSettlementMode": economy["settlementMode"],
+        "boostPurchasesEnabled": economy["purchasesEnabled"],
+        "boostPurchasesDisabledReason": economy["purchasesDisabledReason"],
         "solanaRpc": _get_public_solana_rpc(),
     }
 
@@ -2132,11 +2206,15 @@ async def api_boost_packs() -> dict[str, Any]:
     """Return canonical boost pack catalog."""
     return {
         "packs": [
-            {"packId": "micro", "boosts": 5, "usdCents": 100},
-            {"packId": "degen", "boosts": 20, "usdCents": 300},
-            {"packId": "chaos", "boosts": 45, "usdCents": 500},
+            {
+                "packId": pack_id,
+                "boosts": int(pack["boosts"]),
+                "usdCents": int(pack["usd_cents"]),
+            }
+            for pack_id, pack in BOOST_PACKS.items()
         ],
         "starterBoosts": STARTER_BOOSTS,
+        "economy": _get_public_boost_economy_config(),
     }
 
 
@@ -2176,6 +2254,10 @@ async def api_boost_create_intent(request: Request, data: dict[str, Any]) -> dic
     """Create a purchase intent for a boost pack."""
     if boost_pg_pool is None:
         raise HTTPException(status_code=503, detail="Boost ledger database not available")
+
+    purchases_enabled, disabled_reason = _get_boost_purchase_status()
+    if not purchases_enabled:
+        raise HTTPException(status_code=409, detail=disabled_reason)
 
     wallet = _normalize_wallet_address(data.get("wallet"))
     pack_id = str(data.get("packId") or data.get("pack_id") or "").strip().lower()
@@ -2223,6 +2305,10 @@ async def api_boost_create_intent(request: Request, data: dict[str, Any]) -> dic
         "boostsToCredit": quote["boosts_count"],
         "requiredSmfUiAmount": quote["required_smf_ui"],
         "requiredSmfRawAmount": str(quote["required_smf_raw"]),
+        "requiredTokenUiAmount": quote["required_token_ui"],
+        "requiredTokenRawAmount": str(quote["required_token_raw"]),
+        "paymentTokenSymbol": quote["payment_token_symbol"],
+        "settlementMode": _get_boost_settlement_mode(),
         "tokenDecimals": quote["token_decimals"],
         "mint": quote["mint"],
         "solanaRpc": _get_public_solana_rpc(),

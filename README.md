@@ -41,7 +41,7 @@ Built with vanilla Canvas2D, a custom combat engine, and a Litestar/Python backe
 
 The server-side **StickLash Arena Director** merges live trending and graduated-token candidates, scores them using volume, volatility, liquidity, and discovery signals, and selects the next opponent for Trending and Endless modes. Each decision includes a deterministic decision ID, policy version, ranked candidates, reason codes, and provider errors so the autonomous choice can be explained and audited. If the director is unavailable, gameplay falls back to the existing local market queue.
 
-See [AnsemHack Readiness](ANSEMHACK_READINESS.md) for the verified competition scope, architecture, acceptance criteria, and rollout boundaries.
+See [AnsemHack Readiness](ANSEMHACK_READINESS.md) for the verified competition scope and [Economy, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md) for the agreed token roles, boost-revenue split, ranked-integrity rules, and rollout gates.
 
 ---
 
@@ -64,7 +64,7 @@ The STICKLASH backend and infrastructure are powered by standard-setting Web3 an
 |---|---|---|---|
 | **Upstash** | Serverless Redis | Multi-region WebRTC signaling, matchmaking queue, & active room lobby storage | `![Upstash](https://img.shields.io/badge/Upstash-Serverless--Redis-FF4F00?style=flat-square&logo=redis&logoColor=white)` |
 | **Deepgram** | Aura 2 Zeus & Flux v2 | Dynamic 24kHz Zeus voice lines, WebSocket speech capture, & AI-fighter command pipeline | `![Deepgram](https://img.shields.io/badge/Deepgram-Aura--Zeus-13EF95?style=flat-square&logo=deepgram&logoColor=black)` |
-| **Solana Web3** | On-Chain SPL Program | Phantom/Backpack/Solflare wallet pairing, decimal lookups, & SPL token burn transactions | `![Solana](https://img.shields.io/badge/Solana-SPL--Token-9945FF?style=flat-square&logo=solana&logoColor=white)` |
+| **Solana Web3** | On-Chain SPL Program | Phantom/Backpack/Solflare wallet pairing, token balance reads, and verified boost settlement; stablecoin burns are blocked while the game-token split-transfer flow is built | `![Solana](https://img.shields.io/badge/Solana-SPL--Token-9945FF?style=flat-square&logo=solana&logoColor=white)` |
 | **Alchemy** | Solana Node API | Optional private mainnet RPC for server-side wallet balance reads and boost-burn transaction verification; a bounded Yellowstone stream adapter is planned but is not a runtime dependency yet | `![Alchemy](https://img.shields.io/badge/Alchemy-Solana--RPC-1FC7D4?style=flat-square&logo=alchemy&logoColor=white)` |
 | **Twitter / X** | Web Intent API | Zero-auth viral gameplay sharing, automated screenshot capture matching, & ELO brag links | `![Twitter](https://img.shields.io/badge/Twitter/X-Viral--Share-000000?style=flat-square&logo=x&logoColor=white)` |
 | **Birdeye** | DeFi Market API | Live on-chain price data, market cap scaling, & pump.fun graduated feeds | `![Birdeye](https://img.shields.io/badge/Birdeye-DeFi--Data-00C2FF?style=flat-square&logo=coinmarketcap&logoColor=white)` |
