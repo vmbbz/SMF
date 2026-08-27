@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, List, Dict, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
 from arena_director import arena_director
+from arena_telemetry import ArenaTelemetryStore, ensure_telemetry_schema
 from birdeye_service import birdeye_service
 from dexscreener_service import dexscreener_service
 from economy import build_public_economy_policy
@@ -97,6 +98,7 @@ elo_manager: EloManager | None = None
 boost_pg_pool: asyncpg.Pool | None = None
 cleanup_task: RoomCleanupTask | None = None
 matchmaking_task: MatchmakingTask | None = None
+arena_telemetry = ArenaTelemetryStore()
 
 # ─────────────────────────────────────────────
 # Solana Boost Purchase / Ledger
@@ -156,6 +158,7 @@ MARKET_TRENDING_ROUTE = f"{MARKET_API_PREFIX}/trending-scan"
 MARKET_GRADUATES_ROUTE = f"{MARKET_API_PREFIX}/graduate-scan"
 MARKET_TOKEN_ROUTE = f"{MARKET_API_PREFIX}/token-scan/{{mint:str}}"
 ARENA_DIRECTOR_ROUTE = "/api/arena/director/next"
+ARENA_STATUS_ROUTE = "/api/arena/status"
 ALLOW_LEGACY_MARKET_ENDPOINTS = os.environ.get("SMF_ALLOW_LEGACY_MARKET_ENDPOINTS", "0").strip().lower() in {
     "1",
     "true",
@@ -481,11 +484,13 @@ async def _settle_authoritative_round(payload: dict[str, Any]) -> dict[str, Any]
     if not ranked:
         if room["status"] == "fighting":
             await room_manager.transition_status(code, "finished")
+        telemetry = await _record_match_telemetry(payload, ranked=False)
         return {
             "settled": False,
             "ranked": False,
             "matchType": match_type,
             "status": "not_applicable",
+            "telemetry": telemetry,
         }
 
     identity_fields = ("match_id", "league", "input_category", "p1_wallet", "p2_wallet")
@@ -503,7 +508,37 @@ async def _settle_authoritative_round(payload: dict[str, Any]) -> dict[str, Any]
         p1_boost_charges=int(payload.get("p1_boost_charges") or 0),
         p2_boost_charges=int(payload.get("p2_boost_charges") or 0),
     )
-    return await _settle_recorded_ranked_outcome(code, room)
+    trusted_payload = {
+        "match_id": room["match_id"],
+        "telemetry_round_id": str(payload.get("telemetry_round_id") or ""),
+        "room_code": code,
+        "match_type": room["match_type"],
+        "league": room["league"],
+        "input_category": room["input_category"],
+        "winner": None if room.get("authoritative_winner", "") == "" else int(room["authoritative_winner"]),
+        "reason": room.get("authoritative_reason", "unknown"),
+        "p1_health": float(room.get("authoritative_p1_health") or 0),
+        "p2_health": float(room.get("authoritative_p2_health") or 0),
+        "server_tick": int(room.get("authoritative_server_tick") or 0),
+        "p1_boost_charges": int(room.get("authoritative_p1_boost_charges") or 0),
+        "p2_boost_charges": int(room.get("authoritative_p2_boost_charges") or 0),
+    }
+    telemetry = await _record_match_telemetry(trusted_payload, ranked=True)
+    settlement = await _settle_recorded_ranked_outcome(code, room)
+    return {**settlement, "telemetry": telemetry}
+
+
+async def _record_match_telemetry(payload: dict[str, Any], *, ranked: bool) -> dict[str, Any]:
+    """Record a sanitized authoritative result without blocking settlement."""
+    try:
+        return await arena_telemetry.record_match_outcome(payload, ranked=ranked)
+    except Exception as exc:
+        safe_print(f"[arena-telemetry] Match event skipped: {type(exc).__name__}")
+        return {
+            "recorded": False,
+            "durable": False,
+            "persistence": "unavailable",
+        }
 
 
 @asynccontextmanager
@@ -511,11 +546,12 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
     """Safe lifespan for $SMF Stick Lash - no required Redis or Postgres"""
     print("[lifespan] Starting safe mode for $SMF Stick Lash")
 
-    global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, boost_pg_pool, cleanup_task, matchmaking_task
+    global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, boost_pg_pool, cleanup_task, matchmaking_task, arena_telemetry
 
     # Declare variables BEFORE try so finally block never fails
     redis_pool = None
     pg_pool = None
+    arena_telemetry = ArenaTelemetryStore()
 
     try:
         # Redis (optional - initialized from REDIS_URL if set)
@@ -557,6 +593,15 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                 await ensure_schema(pg_pool)
                 await ensure_boost_schema(pg_pool)
                 boost_pg_pool = pg_pool
+                try:
+                    await ensure_telemetry_schema(pg_pool)
+                    arena_telemetry = ArenaTelemetryStore(pg_pool)
+                    print("[arena-telemetry] Durable PostgreSQL persistence enabled")
+                except Exception as telemetry_exc:
+                    arena_telemetry = ArenaTelemetryStore()
+                    safe_print(
+                        f"[arena-telemetry] Schema unavailable; using process memory: {type(telemetry_exc).__name__}"
+                    )
                 print("[postgres] Connected")
             except Exception:
                 print("[postgres] Skipped - running without database")
@@ -610,6 +655,7 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         if pg_pool is not None:
             await pg_pool.close()
             boost_pg_pool = None
+            arena_telemetry = ArenaTelemetryStore()
             print("[postgres] Connection closed")
         if redis_pool is not None:
             await redis_pool.aclose()
@@ -2051,6 +2097,16 @@ async def create_share_card(data: dict[str, Any], request: Request) -> dict[str,
         ),
         encoding="utf-8",
     )
+    try:
+        await arena_telemetry.record_share_card(
+            share_id,
+            mode=mode,
+            result=result,
+            symbol=symbol,
+        )
+    except Exception as exc:
+        # A share card is still valid if optional analytics persistence fails.
+        safe_print(f"[arena-telemetry] Share event skipped: {type(exc).__name__}")
 
     base = _public_base_url(request)
     return {
@@ -2820,6 +2876,55 @@ async def _fetch_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
     return await dexscreener_service.get_cached_token(mint)
 
 
+def _arena_provider_snapshots(
+    lists: list[List[Dict[str, Any]]],
+    provider_errors: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    """Attach public-safe provider freshness without claiming request time as snapshot time."""
+    snapshots: list[dict[str, Any]] = []
+    error_by_provider = {item["provider"]: item["error"] for item in provider_errors}
+    for index, channel in enumerate(("trending", "graduated")):
+        snapshot = birdeye_service.get_list_provenance(channel)
+        snapshot["tokenCount"] = len(lists[index])
+        provider_key = f"birdeye_{channel}"
+        if provider_key in error_by_provider:
+            snapshot.update(
+                {
+                    "state": "request_error",
+                    "freshness": "unavailable",
+                    "snapshotAt": None,
+                    "ageSeconds": None,
+                    "errorType": error_by_provider[provider_key],
+                }
+            )
+        snapshots.append(snapshot)
+    return snapshots
+
+
+def _arena_market_data_state(
+    decision: dict[str, Any],
+    snapshots: list[dict[str, Any]],
+) -> str:
+    """Classify provenance conservatively for public status counters."""
+    if decision.get("status") != "selected":
+        return "unavailable"
+
+    states = {str(item.get("state") or "unavailable") for item in snapshots}
+    freshness = {str(item.get("freshness") or "unavailable") for item in snapshots}
+    degraded_states = {"graduated_fallback", "stale_cache", "request_error", "unavailable"}
+    if states & degraded_states:
+        if "fresh" in freshness:
+            return "degraded"
+        if "stale" in freshness:
+            return "stale"
+        return "unverified"
+    if "stale" in freshness:
+        return "stale"
+    if "fresh" in freshness and states & {"birdeye_fetch", "cached_snapshot"}:
+        return "fresh"
+    return "unverified"
+
+
 @get(ARENA_DIRECTOR_ROUTE)
 async def api_arena_director_next(
     current_mint: str | None = None,
@@ -2848,7 +2953,25 @@ async def api_arena_director_next(
         current_mint=current_mint,
     )
     decision["providerErrors"] = provider_errors
+    provider_snapshots = _arena_provider_snapshots(lists, provider_errors)
+    decision["providerSnapshots"] = provider_snapshots
+    decision["marketDataState"] = _arena_market_data_state(decision, provider_snapshots)
+    try:
+        decision["telemetry"] = await arena_telemetry.record_director_decision(decision)
+    except Exception as exc:
+        safe_print(f"[arena-telemetry] Director event skipped: {type(exc).__name__}")
+        decision["telemetry"] = {
+            "recorded": False,
+            "durable": False,
+            "persistence": "unavailable",
+        }
     return decision
+
+
+@get(ARENA_STATUS_ROUTE)
+async def api_arena_status(recent: int = 8) -> Dict[str, Any]:
+    """Return privacy-safe public metrics with explicit evidence boundaries."""
+    return await arena_telemetry.public_status(recent_limit=recent)
 
 
 @get(MARKET_TRENDING_ROUTE)
@@ -3001,6 +3124,13 @@ async def leaderboard_page() -> Response:
 @get("/economy")
 async def economy_page() -> Response:
     """Serve the public Economy & Rewards page through the game shell."""
+    html = (ROOT / "index.html").read_text(encoding="utf-8")
+    return Response(content=html, media_type="text/html")
+
+
+@get("/arena")
+async def arena_status_page() -> Response:
+    """Serve the public Arena Status page through the game shell."""
     html = (ROOT / "index.html").read_text(encoding="utf-8")
     return Response(content=html, media_type="text/html")
 
@@ -4356,6 +4486,7 @@ app = Litestar(
         api_boost_confirm,
         api_boost_consume,
         api_arena_director_next,
+        api_arena_status,
         api_market_trending,
         api_market_graduates,
         api_market_token_details,
@@ -4364,6 +4495,7 @@ app = Litestar(
         api_token_details,
         proxy_image,
         economy_page,
+        arena_status_page,
         create_static_files_router(path="/src", directories=[ROOT / "src"]),
         create_static_files_router(path="/assets", directories=[ROOT / "assets"]),
         create_static_files_router(path="/", directories=[ROOT / ""]),

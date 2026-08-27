@@ -2,6 +2,7 @@ import asyncio
 import time
 import httpx
 import os
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from dexscreener_service import dexscreener_service
 
@@ -25,6 +26,9 @@ class BirdeyeService:
 
         # List caches: "trending"|"graduated" -> (data_list, timestamp)
         self.list_cache: dict = {}
+        # Acquisition provenance for judge-facing freshness telemetry. This is
+        # metadata only; no API keys or provider response bodies are exposed.
+        self.list_provenance: dict[str, dict] = {}
 
         # Tracks all mints we've ever seen (for churn detection)
         self._known_mints: set = set()
@@ -49,6 +53,54 @@ class BirdeyeService:
     LIST_TTL    = 180   # 3 min: trending/graduated list snapshots (plenty fresh for landing)
     HOT_STALE   = 25    # warmer re-fetches hot tokens before HOT_TTL expires
     COLD_STALE  = 800   # (unused since we disable cold background pre-warming)
+
+    def _set_list_provenance(
+        self,
+        list_name: str,
+        state: str,
+        *,
+        snapshot_timestamp: float | None = None,
+        source_channel: str | None = None,
+    ) -> None:
+        self.list_provenance[list_name] = {
+            "state": state,
+            "snapshotTimestamp": snapshot_timestamp,
+            "sourceChannel": source_channel or list_name,
+        }
+
+    def get_list_provenance(self, list_name: str) -> dict:
+        """Return public-safe snapshot age and fallback state for one list."""
+        now = time.time()
+        cached = self.list_cache.get(list_name)
+        recorded = dict(self.list_provenance.get(list_name) or {})
+        snapshot_timestamp = recorded.get("snapshotTimestamp")
+        if snapshot_timestamp is None and cached:
+            snapshot_timestamp = cached[1]
+
+        age_seconds = max(0.0, now - float(snapshot_timestamp)) if snapshot_timestamp else None
+        if age_seconds is None:
+            freshness = "unavailable"
+        elif age_seconds <= self.LIST_TTL:
+            freshness = "fresh"
+        else:
+            freshness = "stale"
+
+        snapshot_at = None
+        if snapshot_timestamp:
+            snapshot_at = datetime.fromtimestamp(float(snapshot_timestamp), tz=timezone.utc).isoformat()
+
+        return {
+            "provider": "birdeye",
+            "channel": list_name,
+            "state": recorded.get("state") or ("cached_snapshot" if cached else "unavailable"),
+            "freshness": freshness,
+            "snapshotAt": snapshot_at,
+            "observedAt": datetime.now(timezone.utc).isoformat(),
+            "ageSeconds": round(age_seconds, 3) if age_seconds is not None else None,
+            "cacheTtlSeconds": self.LIST_TTL,
+            "sourceChannel": recorded.get("sourceChannel") or list_name,
+            "tokenCount": len(cached[0]) if cached else 0,
+        }
 
     # ─────────────────────────────────────────
     # Individual token — two-tier TTL + coalescing
@@ -110,12 +162,12 @@ class BirdeyeService:
         cached = self.list_cache.get("trending")
         if cached and time.time() - cached[1] < self.LIST_TTL:
             return cached[0][:limit]
-            
+
         if "trending" in self._inflight_lists:
             await self._inflight_lists["trending"].wait()
             cached = self.list_cache.get("trending")
             return cached[0][:limit] if cached else []
-            
+
         event = asyncio.Event()
         self._inflight_lists["trending"] = event
         try:
@@ -129,12 +181,26 @@ class BirdeyeService:
             resp = await self.client.get("/defi/token_trending", params={"limit": limit})
             if resp.status_code == 400 and "limit exceeded" in resp.text.lower():
                 print("[Birdeye] Trending API compute limit exceeded. Falling back to graduated listings...")
-                return await self.fetch_graduated_tokens(limit)
+                fallback = await self.fetch_graduated_tokens(limit)
+                graduated = self.list_cache.get("graduated")
+                self._set_list_provenance(
+                    "trending",
+                    "graduated_fallback",
+                    snapshot_timestamp=graduated[1] if graduated else None,
+                    source_channel="graduated",
+                )
+                return fallback
             resp.raise_for_status()
             data = resp.json().get("data") or {}
             tokens = data.get("tokens") or []
             res = [self._normalize(item) for item in tokens[:limit]]
-            self.list_cache["trending"] = (res, time.time())
+            snapshot_timestamp = time.time()
+            self.list_cache["trending"] = (res, snapshot_timestamp)
+            self._set_list_provenance(
+                "trending",
+                "birdeye_fetch",
+                snapshot_timestamp=snapshot_timestamp,
+            )
             await self._handle_list_churn(res, "trending")
             return res
         except Exception as e:
@@ -142,10 +208,22 @@ class BirdeyeService:
             try:
                 fallback_tokens = await self.fetch_graduated_tokens(limit)
                 if fallback_tokens:
+                    graduated = self.list_cache.get("graduated")
+                    self._set_list_provenance(
+                        "trending",
+                        "graduated_fallback",
+                        snapshot_timestamp=graduated[1] if graduated else None,
+                        source_channel="graduated",
+                    )
                     return fallback_tokens
             except Exception as fe:
                 print(f"[Birdeye] Trending fallback also failed: {fe}")
             cached = self.list_cache.get("trending")
+            self._set_list_provenance(
+                "trending",
+                "stale_cache" if cached else "unavailable",
+                snapshot_timestamp=cached[1] if cached else None,
+            )
             return cached[0][:limit] if cached else []
 
     # ─────────────────────────────────────────
@@ -155,12 +233,12 @@ class BirdeyeService:
         cached = self.list_cache.get("graduated")
         if cached and time.time() - cached[1] < self.LIST_TTL:
             return cached[0][:limit]
-            
+
         if "graduated" in self._inflight_lists:
             await self._inflight_lists["graduated"].wait()
             cached = self.list_cache.get("graduated")
             return cached[0][:limit] if cached else []
-            
+
         event = asyncio.Event()
         self._inflight_lists["graduated"] = event
         try:
@@ -179,12 +257,23 @@ class BirdeyeService:
             items = data.get("items") or []
             res = [self._normalize(item) for item in items
                    if item.get("liquidity", 0) > 10000][:limit]
-            self.list_cache["graduated"] = (res, time.time())
+            snapshot_timestamp = time.time()
+            self.list_cache["graduated"] = (res, snapshot_timestamp)
+            self._set_list_provenance(
+                "graduated",
+                "birdeye_fetch",
+                snapshot_timestamp=snapshot_timestamp,
+            )
             await self._handle_list_churn(res, "graduated")
             return res
         except Exception as e:
             print(f"[Birdeye] Graduated fetch error: {e}")
             cached = self.list_cache.get("graduated")
+            self._set_list_provenance(
+                "graduated",
+                "stale_cache" if cached else "unavailable",
+                snapshot_timestamp=cached[1] if cached else None,
+            )
             return cached[0][:limit] if cached else []
 
     # ─────────────────────────────────────────

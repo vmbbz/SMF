@@ -228,6 +228,7 @@ class TestGameLoopManagerCrud:
         assert room.engine is not None
         assert room.stopped is False
         assert room.tick_count == 0
+        assert room.telemetry_round_id
 
     def test_create_room_loop_idempotent(self) -> None:
         mgr = GameLoopManager()
@@ -464,6 +465,7 @@ class TestCompetitivePolicy:
         payload = on_round_over.await_args.args[0]
         assert payload["winner"] == 1
         assert payload["match_id"] == "match-1"
+        assert payload["telemetry_round_id"] == room.telemetry_round_id
         assert payload["p1_wallet"] == "wallet-1"
         final_messages = [
             json.loads(call.args[0])

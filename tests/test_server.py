@@ -90,6 +90,10 @@ def test_share_card_endpoint_serves_public_x_card(monkeypatch, tmp_path) -> None
         assert 'name="twitter:card" content="summary_large_image"' in page_resp.text
         assert 'name="twitter:image"' in page_resp.text
 
+        status_resp = client.get("/api/arena/status")
+        assert status_resp.status_code == 200
+        assert status_resp.json()["engagement"]["shareCardsGenerated"] == 1
+
 
 def test_market_token_details_uses_dexscreener_not_birdeye(monkeypatch) -> None:
     dex_fetch = AsyncMock(return_value={"mint": "mint1", "symbol": "SMF", "source": "dexscreener"})
@@ -362,6 +366,13 @@ def test_economy_route_returns_public_page() -> None:
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
         assert "ECONOMY &amp; REWARDS" in resp.text
+
+
+def test_arena_route_returns_public_status_shell() -> None:
+    with TestClient(app=app) as client:
+        resp = client.get("/arena")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
 
 
 # ─── Room creation endpoint ───────────────────────
@@ -1153,9 +1164,16 @@ class TestAuthoritativeRankedBridge:
         })
         mock_matchmaking = MagicMock()
         mock_matchmaking.release_match = AsyncMock(return_value=True)
+        mock_telemetry = MagicMock()
+        mock_telemetry.record_match_outcome = AsyncMock(return_value={
+            "recorded": True,
+            "durable": True,
+            "persistence": "postgres",
+        })
         monkeypatch.setattr(server, "room_manager", manager)
         monkeypatch.setattr(server, "elo_manager", mock_elo)
         monkeypatch.setattr(server, "matchmaking_task", mock_matchmaking)
+        monkeypatch.setattr(server, "arena_telemetry", mock_telemetry)
 
         result = await server._settle_authoritative_round({
             "room_code": room["code"],
@@ -1174,6 +1192,7 @@ class TestAuthoritativeRankedBridge:
         })
 
         assert result["settled"] is True
+        assert result["telemetry"]["durable"] is True
         stored = await manager.get_room(room["code"])
         assert stored is not None
         assert stored["status"] == "finished"
@@ -1190,6 +1209,12 @@ class TestAuthoritativeRankedBridge:
                 ("So11111111111111111111111111111111111111112", "p2-uuid"),
             ),
         )
+        telemetry_payload = mock_telemetry.record_match_outcome.await_args.args[0]
+        assert telemetry_payload["match_id"] == "match-uuid"
+        assert telemetry_payload["winner"] == 1
+        assert "p1_wallet" not in telemetry_payload
+        assert "p2_wallet" not in telemetry_payload
+        assert mock_telemetry.record_match_outcome.await_args.kwargs == {"ranked": True}
         await redis.aclose()
 
     @pytest.mark.asyncio

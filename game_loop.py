@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import uuid
 from dataclasses import dataclass, field
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -69,6 +70,7 @@ class RoomLoop:
     league: str = ""
     input_category: str = ""
     match_id: str = ""
+    telemetry_round_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     p1_wallet: str = ""
     p2_wallet: str = ""
     max_paid_boost_charges: int = 0
@@ -350,6 +352,7 @@ class GameLoopManager:
                         try:
                             settlement = await self._on_round_over({
                                 "match_id": room.match_id,
+                                "telemetry_round_id": room.telemetry_round_id,
                                 "room_code": room.code,
                                 "match_type": room.match_type,
                                 "league": room.league,

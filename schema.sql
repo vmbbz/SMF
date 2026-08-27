@@ -199,3 +199,108 @@ CREATE TABLE IF NOT EXISTS wallet_auth_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_wallet_auth_sessions_wallet_created
     ON wallet_auth_sessions (wallet_address, created_at DESC);
+
+-- ─────────────────────────────────────────────
+-- Public arena telemetry (privacy-safe, insert-only)
+-- ─────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS arena_director_events (
+    event_id              TEXT PRIMARY KEY,
+    decision_id           TEXT NOT NULL,
+    status                TEXT NOT NULL CHECK (status IN ('selected', 'no_candidate')),
+    policy_version        TEXT NOT NULL,
+    generated_at          TIMESTAMPTZ NOT NULL,
+    recorded_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    selected_mint         TEXT NOT NULL DEFAULT '',
+    selected_symbol       TEXT NOT NULL DEFAULT '',
+    selected_score        DOUBLE PRECISION,
+    candidate_count       INTEGER NOT NULL CHECK (candidate_count >= 0),
+    market_data_state     TEXT NOT NULL CHECK (
+        market_data_state IN ('fresh', 'degraded', 'stale', 'unavailable', 'unverified')
+    ),
+    provider_snapshots    JSONB NOT NULL DEFAULT '[]'::jsonb,
+    selected_metrics      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    explanation           TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_arena_director_events_recorded
+    ON arena_director_events (recorded_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_arena_director_events_token
+    ON arena_director_events (selected_mint, recorded_at DESC)
+    WHERE selected_mint <> '';
+
+CREATE TABLE IF NOT EXISTS arena_match_events (
+    event_id              TEXT PRIMARY KEY,
+    match_id              TEXT NOT NULL DEFAULT '',
+    room_code             TEXT NOT NULL,
+    match_type            TEXT NOT NULL,
+    ranked                BOOLEAN NOT NULL,
+    league                TEXT NOT NULL DEFAULT '',
+    input_category        TEXT NOT NULL DEFAULT '',
+    winner_player         SMALLINT CHECK (winner_player IN (1, 2)),
+    result                TEXT NOT NULL CHECK (result IN ('p1_win', 'p2_win', 'draw')),
+    reason                TEXT NOT NULL,
+    p1_health             DOUBLE PRECISION NOT NULL,
+    p2_health             DOUBLE PRECISION NOT NULL,
+    server_tick           BIGINT NOT NULL CHECK (server_tick >= 0),
+    p1_boost_charges      INTEGER NOT NULL DEFAULT 0 CHECK (p1_boost_charges >= 0),
+    p2_boost_charges      INTEGER NOT NULL DEFAULT 0 CHECK (p2_boost_charges >= 0),
+    recorded_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_arena_match_events_recorded
+    ON arena_match_events (recorded_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_arena_match_events_competition
+    ON arena_match_events (ranked, league, input_category, recorded_at DESC);
+
+CREATE TABLE IF NOT EXISTS arena_share_events (
+    event_id              TEXT PRIMARY KEY,
+    share_id              TEXT NOT NULL UNIQUE,
+    mode                  TEXT NOT NULL CHECK (mode IN ('solo', 'pvp')),
+    result                TEXT NOT NULL CHECK (result IN ('win', 'loss')),
+    token_symbol          TEXT NOT NULL DEFAULT '',
+    recorded_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_arena_share_events_recorded
+    ON arena_share_events (recorded_at DESC);
+
+CREATE OR REPLACE FUNCTION sticklash_reject_telemetry_mutation()
+RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'StickLash telemetry tables are insert-only';
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'arena_director_events_insert_only'
+          AND tgrelid = 'arena_director_events'::regclass
+    ) THEN
+        CREATE TRIGGER arena_director_events_insert_only
+        BEFORE UPDATE OR DELETE ON arena_director_events
+        FOR EACH ROW EXECUTE FUNCTION sticklash_reject_telemetry_mutation();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'arena_match_events_insert_only'
+          AND tgrelid = 'arena_match_events'::regclass
+    ) THEN
+        CREATE TRIGGER arena_match_events_insert_only
+        BEFORE UPDATE OR DELETE ON arena_match_events
+        FOR EACH ROW EXECUTE FUNCTION sticklash_reject_telemetry_mutation();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'arena_share_events_insert_only'
+          AND tgrelid = 'arena_share_events'::regclass
+    ) THEN
+        CREATE TRIGGER arena_share_events_insert_only
+        BEFORE UPDATE OR DELETE ON arena_share_events
+        FOR EACH ROW EXECUTE FUNCTION sticklash_reject_telemetry_mutation();
+    END IF;
+END $$;
