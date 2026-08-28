@@ -2,6 +2,14 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Dense-Mint Page Allocation
+
+### Changed
+
+- Raised the per-candidate pagination cap from two to five pages after production proved that one current trending mint exceeded 2,000 signatures inside the bounded 512-slot window.
+- Kept the shared extra-page budget at eight, so the maximum request and CU ceilings are unchanged while one dense candidate can consume up to four of those extra pages.
+- Advanced the public arena evidence schema to `2026-08-28.v8`.
+
 ## 2026-08-28 - Bounded Alchemy Retry Evidence
 
 ### Added

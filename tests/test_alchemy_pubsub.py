@@ -59,6 +59,7 @@ def test_free_tier_http_polling_is_the_safe_default_and_factory_selection(
     assert config.configured is True
     assert config.endpoint_host == "solana-mainnet.g.alchemy.com"
     assert config.http_retry_budget == 4
+    assert config.backfill_max_pages_per_candidate == 5
     assert isinstance(stream, AlchemySolanaHttpPollingStream)
     assert "never-print-this-key" not in repr(config)
     assert "never-print-this-key" not in str(stream.__dict__)
@@ -153,10 +154,10 @@ async def test_http_poll_cycle_is_bounded_fresh_and_cost_disclosed() -> None:
     assert enriched[1]["alchemyActivity"]["observedConfirmedTransactions"] == 0
     cost = health["reliability"]["costGuard"]
     assert cost["baselineRequestsPerCycle"] == 3
-    assert cost["requestsPerCycle"] == 9
+    assert cost["requestsPerCycle"] == 15
     assert cost["baselineComputeUnitsPerCycle"] == 100
-    assert cost["estimatedComputeUnitsPerCycle"] == 340
-    assert cost["estimatedComputeUnitsPer30Days"] == 4_896_000
+    assert cost["estimatedComputeUnitsPerCycle"] == 580
+    assert cost["estimatedComputeUnitsPer30Days"] == 8_352_000
     assert cost["maximumEstimatedComputeUnitsPer30Days"] == 25_632_000
     assert cost["retry"]["budgetPerCycle"] == 4
     assert cost["assumptions"]["includesBoundedRetryBudget"] is True

@@ -19,7 +19,7 @@ from typing import Any
 import asyncpg  # type: ignore[import-untyped]
 
 
-TELEMETRY_SCHEMA_VERSION = "2026-08-28.v7"
+TELEMETRY_SCHEMA_VERSION = "2026-08-28.v8"
 DEFAULT_MEMORY_EVENT_LIMIT = 500
 DEFAULT_PUBLIC_RECENT_LIMIT = 8
 

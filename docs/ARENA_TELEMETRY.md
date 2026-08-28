@@ -131,7 +131,7 @@ The endpoint returns these top-level evidence classes:
 
 ```json
 {
-  "schemaVersion": "2026-08-28.v7",
+  "schemaVersion": "2026-08-28.v8",
   "generatedAt": "2026-08-28T00:00:00+00:00",
   "persistence": {
     "mode": "postgres",

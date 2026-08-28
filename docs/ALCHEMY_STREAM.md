@@ -230,7 +230,7 @@ text alone.
 | `ALCHEMY_STREAM_REWIND_SLOTS` | `32` | Cursor overlap |
 | `ALCHEMY_STREAM_BACKFILL_MAX_SLOTS` | `512` | Bounded slot window |
 | `ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE` | `1000` | Signature page size; max 1000 |
-| `ALCHEMY_STREAM_BACKFILL_MAX_PAGES_PER_CANDIDATE` | `2` | Per-candidate page cap |
+| `ALCHEMY_STREAM_BACKFILL_MAX_PAGES_PER_CANDIDATE` | `5` | Per-candidate page cap; still constrained by shared budget |
 | `ALCHEMY_STREAM_BACKFILL_EXTRA_PAGE_BUDGET` | `8` | Shared extra-page cap per cycle |
 | `ALCHEMY_STREAM_HTTP_RETRY_BUDGET` | `4` | Shared transient retry cap per cycle |
 | `ALCHEMY_STREAM_BACKFILL_MIN_INTERVAL_SECONDS` | `60` | Repeat-work guard |
