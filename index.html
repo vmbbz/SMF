@@ -3524,23 +3524,23 @@
       </section>
 
       <section class="economy-section" aria-labelledby="arena-stream-title">
-        <h2 id="arena-stream-title">ALCHEMY SOLANA STREAM</h2>
+        <h2 id="arena-stream-title">ALCHEMY SOLANA EVIDENCE</h2>
         <div class="arena-stream-box">
           <div>
-            <div id="arena-stream-status" class="arena-evidence-tag">CHECKING STREAM</div>
-            <div id="arena-stream-last-update" class="arena-onchain-detail">No stream freshness is inferred until the backend reports it.</div>
+            <div id="arena-stream-status" class="arena-evidence-tag">CHECKING ALCHEMY</div>
+            <div id="arena-stream-last-update" class="arena-onchain-detail">No polling or stream freshness is inferred until the backend reports it.</div>
           </div>
           <div class="arena-stream-detail">
             <span><strong id="arena-stream-freshness">NOT AVAILABLE</strong> transport freshness</span>
             <span><strong id="arena-stream-slot">NOT AVAILABLE</strong> latest observed Solana slot</span>
-            <span><strong id="arena-stream-candidates">NOT AVAILABLE</strong> subscribed candidate mints</span>
+            <span><strong id="arena-stream-candidates">NOT AVAILABLE</strong> monitored candidate mints</span>
             <span><strong id="arena-stream-observations">NOT AVAILABLE</strong> candidate transaction observations in the active window</span>
             <span id="arena-stream-cursor">Recovery cursor evidence is loading.</span>
-            <span id="arena-stream-reliability">Reconnect and queue evidence is loading.</span>
+            <span id="arena-stream-reliability">Polling or connection reliability evidence is loading.</span>
           </div>
         </div>
         <div class="economy-note">
-          Birdeye discovers candidates and remains the base market-scoring source. The production default uses Alchemy's free-tier Solana PubSub API with narrow per-mint filters; paid Yellowstone remains an optional later transport. When fresh, Alchemy adds only a bounded signal for confirmed transactions that mention those candidate mints. These observations are not labeled trades, USD volume, revenue, or unique users; stale or unavailable streaming contributes no Director score bonus.
+          Birdeye discovers candidates and remains the base market-scoring source. The free production default uses bounded Alchemy Solana HTTP polling every three minutes; it is not a live WebSocket subscription. Optional PubSub and paid Yellowstone transports remain gated until account support and production proof exist. When fresh and complete, Alchemy adds only a capped signal for confirmed transactions that mention the monitored mints. These observations are not labeled trades, USD volume, revenue, or unique users; stale, partial, or unavailable evidence contributes no Director score bonus.
         </div>
       </section>
 

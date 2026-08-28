@@ -182,8 +182,8 @@ function setStreamStatus(text, fresh = false) {
 
 function renderMarketStream(stream) {
   if (!stream) {
-    setStreamStatus('STREAM EVIDENCE UNAVAILABLE');
-    setText('arena-stream-last-update', 'The backend did not return a stream-health record.');
+    setStreamStatus('ALCHEMY EVIDENCE UNAVAILABLE');
+    setText('arena-stream-last-update', 'The backend did not return an Alchemy health record.');
     for (const id of [
       'arena-stream-freshness',
       'arena-stream-slot',
@@ -191,15 +191,16 @@ function renderMarketStream(stream) {
       'arena-stream-observations',
     ]) setText(id, 'NOT AVAILABLE');
     setText('arena-stream-cursor', 'Recovery cursor evidence is not available.');
-    setText('arena-stream-reliability', 'Reconnect and queue evidence is not available.');
+    setText('arena-stream-reliability', 'Polling or connection reliability evidence is not available.');
     return;
   }
 
   const transportLabels = {
+    solana_http_polling: 'ALCHEMY SOLANA HTTP POLLING',
     solana_pubsub: 'ALCHEMY SOLANA PUBSUB',
     yellowstone_grpc: 'ALCHEMY YELLOWSTONE GRPC',
   };
-  setText('arena-stream-title', transportLabels[stream.transport] || 'ALCHEMY SOLANA STREAM');
+  setText('arena-stream-title', transportLabels[stream.transport] || 'ALCHEMY SOLANA EVIDENCE');
   const status = String(stream.status || 'unavailable').replaceAll('_', ' ').toUpperCase();
   const isFresh = stream.freshness === 'fresh' && ['live', 'degraded'].includes(stream.status);
   setStreamStatus(status, isFresh);
@@ -210,19 +211,21 @@ function renderMarketStream(stream) {
   setText(
     'arena-stream-last-update',
     stream.lastUpdateAt
-      ? `Latest transport update: ${formatArenaTime(stream.lastUpdateAt)} · ${stream.ageSeconds ?? 'N/A'}s old.`
-      : 'No Alchemy transport update has been recorded.'
+      ? `${stream.transport === 'solana_http_polling' ? 'Latest completed poll' : 'Latest transport update'}: ${formatArenaTime(stream.lastUpdateAt)} · ${stream.ageSeconds ?? 'N/A'}s old.`
+      : 'No completed Alchemy observation has been recorded.'
   );
 
   const replay = stream.replay || {};
   const cursorLabel = replay.cursorDurable === true ? 'durable PostgreSQL cursor' : 'process-memory cursor';
-  const recoveryMode = replay.mode === 'http_signature_backfill'
-    ? 'bounded HTTP signature backfill; not native replay'
+  const recoveryMode = replay.mode === 'http_signature_polling'
+    ? 'bounded HTTP signature polling; not a live subscription or native replay'
+    : replay.mode === 'http_signature_backfill'
+      ? 'bounded HTTP signature backfill; not native replay'
     : replay.mode === 'yellowstone_native_replay'
       ? 'native Yellowstone replay'
       : 'recovery mode unavailable';
-  const requestedSlotLabel = replay.mode === 'http_signature_backfill'
-    ? 'backfill floor slot'
+  const requestedSlotLabel = ['http_signature_polling', 'http_signature_backfill'].includes(replay.mode)
+    ? 'bounded floor slot'
     : 'requested replay slot';
   const coverageBasis = String(replay.coverageBasis || 'incomplete').replaceAll('_', ' ');
   const coverageLabel = replay.coverageComplete === true
@@ -237,13 +240,17 @@ function renderMarketStream(stream) {
   const activeCandidates = stream.subscription?.activeCandidateCount;
   const candidateCoverage = activeCandidates === null || activeCandidates === undefined
     ? ''
-    : ` · active candidate filters ${formatArenaCount(activeCandidates)}/${formatArenaCount(stream.subscription?.candidateCount)}`;
-  const backfillEvidence = replay.mode === 'http_signature_backfill'
-    ? ` · backfill failures ${formatArenaCount(replay.failures)} · truncated candidates ${formatArenaCount(replay.truncatedCandidates)}`
+    : ` · active candidate coverage ${formatArenaCount(activeCandidates)}/${formatArenaCount(stream.subscription?.candidateCount)}`;
+  const backfillEvidence = ['http_signature_polling', 'http_signature_backfill'].includes(replay.mode)
+    ? ` · HTTP failures ${formatArenaCount(replay.failures)} · truncated candidates ${formatArenaCount(replay.truncatedCandidates)}`
     : '';
+  const costGuard = reliability.costGuard || {};
+  const pollingEvidence = stream.transport === 'solana_http_polling'
+    ? `Poll cycles ${formatArenaCount(reliability.pollCyclesCompleted)}/${formatArenaCount(reliability.pollCyclesAttempted)} · estimated ${formatArenaCount(costGuard.estimatedComputeUnitsPer30Days)} CU/30 days at the current candidate count${candidateCoverage}${backfillEvidence}`
+    : `Reconnects ${formatArenaCount(reliability.reconnects)} · dropped updates ${formatArenaCount(reliability.droppedUpdates)}${candidateCoverage}${backfillEvidence}`;
   setText(
     'arena-stream-reliability',
-    `Reconnects ${formatArenaCount(reliability.reconnects)} · dropped updates ${formatArenaCount(reliability.droppedUpdates)}${candidateCoverage}${backfillEvidence} · last sanitized error ${reliability.lastErrorCode || 'NONE'}.`
+    `${pollingEvidence} · last sanitized error ${reliability.lastErrorCode || 'NONE'}.`
   );
 }
 

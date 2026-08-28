@@ -70,7 +70,7 @@ def test_arena_director_endpoint_selects_and_explains(monkeypatch) -> None:
     assert [snapshot["channel"] for snapshot in payload["providerSnapshots"]] == [
         "trending",
         "graduated",
-        "solana_pubsub_candidate_activity",
+        "solana_http_candidate_activity",
     ]
     assert payload["providerSnapshots"][2]["state"] == "disabled"
 
@@ -134,7 +134,7 @@ def test_arena_status_counts_director_responses_without_calling_them_fights(monk
     assert decision_response.status_code == 200
     assert status_response.status_code == 200
     status = status_response.json()
-    assert status["schemaVersion"] == "2026-08-28.v3"
+    assert status["schemaVersion"] == "2026-08-28.v4"
     assert status["arenaDirector"]["decisionsReturned"] == 1
     assert status["arenaDirector"]["selectedDecisions"] == 1
     assert status["matches"]["authoritativeMultiplayerRounds"] == 0
@@ -156,7 +156,7 @@ def test_arena_director_endpoint_uses_fresh_alchemy_enrichment_without_replacing
         **base,
         "alchemyActivity": {
             "provider": "alchemy",
-            "transport": "solana_pubsub",
+            "transport": "solana_http_polling",
             "scoreEligible": True,
             "observedConfirmedTransactions": 7,
         },
@@ -176,7 +176,7 @@ def test_arena_director_endpoint_uses_fresh_alchemy_enrichment_without_replacing
             AsyncMock(
                 return_value={
                     "provider": "alchemy",
-                    "channel": "solana_pubsub_candidate_activity",
+                    "channel": "solana_http_candidate_activity",
                     "state": "live",
                     "freshness": "fresh",
                     "snapshotAt": "2026-08-28T12:00:00+00:00",
@@ -194,7 +194,7 @@ def test_arena_director_endpoint_uses_fresh_alchemy_enrichment_without_replacing
 
     assert response.status_code == 200
     payload = response.json()
-    assert "alchemy_solana_pubsub_candidate_activity" in payload["inputSources"]
+    assert "alchemy_solana_http_candidate_activity" in payload["inputSources"]
     assert payload["candidates"][0]["metrics"]["alchemyConfirmedTransactions"] == 7
     assert payload["providerSnapshots"][2]["state"] == "live"
     assert payload["providerSnapshots"][2]["requiredForSelection"] is False

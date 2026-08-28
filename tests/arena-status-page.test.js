@@ -14,10 +14,13 @@ describe('Public Arena Status evidence page', () => {
     expect(html).toContain('LIVE ARENA STATUS →');
     expect(html).toContain('id="arena-status-page"');
     expect(html).toContain('ARENA STATUS');
-    expect(html).toContain('ALCHEMY SOLANA STREAM');
+    expect(html).toContain('ALCHEMY SOLANA EVIDENCE');
     expect(html).toContain('id="arena-stream-status"');
     expect(readFileSync(resolve(__dirname, '../src/arena-status-page.js'), 'utf-8'))
       .toContain('coverage complete via');
+    expect(readFileSync(resolve(__dirname, '../src/arena-status-page.js'), 'utf-8'))
+      .toContain('ALCHEMY SOLANA HTTP POLLING');
+    expect(html).toContain('it is not a live WebSocket subscription');
   });
 
   test('separates responses, server rounds, shares, wallets, and onchain evidence', () => {

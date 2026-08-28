@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from alchemy_pubsub import AlchemySolanaPubSubStream, create_alchemy_stream
+from alchemy_pubsub import (
+    AlchemySolanaHttpPollingStream,
+    AlchemySolanaPubSubStream,
+    create_alchemy_stream,
+)
 from alchemy_stream import AlchemyStreamConfig, AlchemyStreamStore, AlchemyYellowstoneStream
 
 
@@ -25,17 +29,32 @@ def pubsub_stream(**overrides) -> AlchemySolanaPubSubStream:
     return AlchemySolanaPubSubStream(AlchemyStreamConfig(**values))
 
 
-def test_free_tier_pubsub_is_the_safe_default_and_factory_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+def polling_stream(**overrides) -> AlchemySolanaHttpPollingStream:
+    values = {
+        "enabled": True,
+        "api_key": "test-only-secret",
+        "transport": "solana_http_polling",
+        "backfill_min_interval_seconds": 30,
+    }
+    values.update(overrides)
+    stream = AlchemySolanaHttpPollingStream(AlchemyStreamConfig(**values))
+    stream._http_request_spacing_seconds = lambda: 0
+    return stream
+
+
+def test_free_tier_http_polling_is_the_safe_default_and_factory_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setenv("ALCHEMY_STREAM_ENABLED", "1")
     monkeypatch.setenv("ALCHEMY_API_KEY", "never-print-this-key")
 
     config = AlchemyStreamConfig.from_env()
     stream = create_alchemy_stream(config)
 
-    assert config.transport == "solana_pubsub"
+    assert config.transport == "solana_http_polling"
     assert config.configured is True
     assert config.endpoint_host == "solana-mainnet.g.alchemy.com"
-    assert isinstance(stream, AlchemySolanaPubSubStream)
+    assert isinstance(stream, AlchemySolanaHttpPollingStream)
     assert "never-print-this-key" not in repr(config)
     assert "never-print-this-key" not in str(stream.__dict__)
 
@@ -48,6 +67,15 @@ def test_free_tier_pubsub_is_the_safe_default_and_factory_selection(monkeypatch:
     )
     assert type(paid) is AlchemyYellowstoneStream
 
+    pubsub = create_alchemy_stream(
+        AlchemyStreamConfig(
+            enabled=True,
+            api_key="test-only-secret",
+            transport="solana_pubsub",
+        )
+    )
+    assert type(pubsub) is AlchemySolanaPubSubStream
+
 
 @pytest.mark.asyncio
 async def test_pubsub_configuration_rejects_credentials_in_endpoint_paths(
@@ -55,6 +83,7 @@ async def test_pubsub_configuration_rejects_credentials_in_endpoint_paths(
 ) -> None:
     monkeypatch.setenv("ALCHEMY_STREAM_ENABLED", "1")
     monkeypatch.setenv("ALCHEMY_API_KEY", "never-print-this-key")
+    monkeypatch.setenv("ALCHEMY_STREAM_TRANSPORT", "solana_pubsub")
     monkeypatch.setenv(
         "ALCHEMY_SOLANA_WS_ENDPOINT",
         "wss://solana-mainnet.g.alchemy.com/v2/never-print-this-key",
@@ -67,6 +96,121 @@ async def test_pubsub_configuration_rejects_credentials_in_endpoint_paths(
     assert config.endpoint_host is None
     assert "never-print-this-key" not in repr(config)
     assert "never-print-this-key" not in str(await stream.public_health())
+
+
+@pytest.mark.asyncio
+async def test_http_poll_cycle_is_bounded_fresh_and_cost_disclosed() -> None:
+    now = datetime.now(timezone.utc)
+    stream = polling_stream(
+        backfill_max_slots=64,
+        backfill_limit_per_candidate=100,
+        poll_interval_seconds=180,
+        max_candidates=32,
+    )
+    await stream.set_candidates([MINT_A, MINT_B])
+    stream._rpc_call = AsyncMock(
+        side_effect=[
+            120,
+            [
+                {
+                    "signature": SIGNATURE_A,
+                    "slot": 110,
+                    "err": None,
+                    "blockTime": int(now.timestamp()),
+                }
+            ],
+            [],
+        ]
+    )
+
+    assert await stream._poll_once() is True
+    health = await stream.public_health()
+    (enriched,) = await stream.enrich_candidate_lists(
+        [{"mint": MINT_A}, {"mint": MINT_B}]
+    )
+
+    assert health["transport"] == "solana_http_polling"
+    assert health["protocolVersion"] == "solana_json_rpc_http_poll_v1"
+    assert health["freshness"] == "fresh"
+    assert health["subscription"]["candidateCount"] == 2
+    assert health["subscription"]["activeCandidateCount"] == 2
+    assert health["subscription"]["connectionCount"] == 0
+    assert health["subscription"]["activeSubscriptionCount"] == 0
+    assert health["subscription"]["transactionMethod"] == "getSignaturesForAddress"
+    assert health["subscription"]["heartbeatMethod"] == "getSlot"
+    assert health["subscription"]["heartbeatActive"] is True
+    assert health["replay"]["mode"] == "http_signature_polling"
+    assert health["replay"]["nativeProviderReplay"] is False
+    assert health["replay"]["coverageComplete"] is True
+    assert health["activity"]["scoreEligible"] is True
+    assert health["lastSlot"] == 120
+    assert enriched[0]["alchemyActivity"]["observedConfirmedTransactions"] == 1
+    assert enriched[1]["alchemyActivity"]["observedConfirmedTransactions"] == 0
+    cost = health["reliability"]["costGuard"]
+    assert cost["requestsPerCycle"] == 3
+    assert cost["estimatedComputeUnitsPerCycle"] == 100
+    assert cost["estimatedComputeUnitsPer30Days"] == 1_440_000
+    assert cost["maximumEstimatedComputeUnitsPer30Days"] == 18_720_000
+
+
+@pytest.mark.asyncio
+async def test_http_polling_fails_closed_on_truncated_candidate_window() -> None:
+    stream = polling_stream(
+        backfill_max_slots=64,
+        backfill_limit_per_candidate=1,
+    )
+    await stream.set_candidates([MINT_A])
+    stream._rpc_call = AsyncMock(
+        side_effect=[
+            120,
+            [{"signature": SIGNATURE_A, "slot": 120, "err": None}],
+        ]
+    )
+
+    assert await stream._poll_once() is False
+    health = await stream.public_health()
+
+    assert health["subscription"]["activeCandidateCount"] == 0
+    assert health["replay"]["truncatedCandidates"] == 1
+    assert health["replay"]["coverageComplete"] is False
+    assert health["activity"]["scoreEligible"] is False
+    assert health["activity"]["observedConfirmedTransactions"] is None
+    assert health["reliability"]["lastErrorCode"] == "http_poll_incomplete"
+
+
+@pytest.mark.asyncio
+async def test_http_polling_enrichment_is_read_only() -> None:
+    stream = polling_stream(backfill_max_slots=64)
+    await stream.set_candidates([MINT_A])
+    stream._rpc_call = AsyncMock(side_effect=[120, []])
+    assert await stream._poll_once() is True
+
+    (enriched,) = await stream.enrich_candidate_lists([{"mint": MINT_B}])
+
+    assert stream._candidate_mints == (MINT_A,)
+    assert "alchemyActivity" not in enriched[0]
+    assert stream._rpc_call.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_http_polling_lifecycle_wakes_when_candidates_arrive() -> None:
+    stream = polling_stream(poll_interval_seconds=180)
+    polled = asyncio.Event()
+
+    async def observe_poll() -> bool:
+        polled.set()
+        return True
+
+    stream._poll_once = observe_poll
+    assert await stream.start() is True
+    try:
+        assert stream.running is True
+        await stream.set_candidates([MINT_A])
+        await asyncio.wait_for(polled.wait(), timeout=1)
+    finally:
+        await stream.stop()
+
+    assert stream.running is False
 
 
 @pytest.mark.asyncio

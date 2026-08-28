@@ -3052,7 +3052,7 @@ async def api_arena_status(recent: int = 8) -> Dict[str, Any]:
     status = await arena_telemetry.public_status(recent_limit=recent)
     status["marketStream"] = await alchemy_stream.public_health()
     status["boundaries"].append(
-        "Alchemy stream activity counts confirmed candidate-mint transaction observations, not trades, USD volume, revenue, or unique users."
+        "Alchemy activity evidence counts bounded confirmed candidate-mint transaction observations, not trades, USD volume, revenue, or unique users."
     )
     return status
 

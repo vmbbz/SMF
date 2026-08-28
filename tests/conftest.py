@@ -24,5 +24,6 @@ def isolate_deployed_lifespan_services(monkeypatch: pytest.MonkeyPatch) -> None:
         "ALCHEMY_STREAM_BACKFILL_MAX_SLOTS",
         "ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE",
         "ALCHEMY_STREAM_BACKFILL_MIN_INTERVAL_SECONDS",
+        "ALCHEMY_STREAM_POLL_INTERVAL_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)

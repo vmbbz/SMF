@@ -1,10 +1,9 @@
-"""Free-tier Alchemy Solana PubSub transport for candidate activity evidence.
+"""Alchemy Solana transports for bounded candidate activity evidence.
 
-The transport opens one server-side WebSocket, subscribes to a finalized root
-heartbeat, and creates one confirmed ``logsSubscribe`` filter per candidate
-mint. Solana permits exactly one pubkey in each ``mentions`` filter. A bounded
-HTTP ``getSignaturesForAddress`` pass covers short reconnect gaps from the
-durable cursor; it is intentionally not described as native stream replay.
+The free default performs bounded confirmed HTTP polling. An optional PubSub
+transport opens one server-side WebSocket and creates one ``logsSubscribe``
+filter per candidate mint. Both use ``getSignaturesForAddress`` for bounded
+recovery and neither is described as native stream replay.
 """
 
 from __future__ import annotations
@@ -34,7 +33,11 @@ from alchemy_stream import (
 
 
 PUBSUB_PROTOCOL_VERSION = "solana_json_rpc_pubsub_v1"
+HTTP_POLL_PROTOCOL_VERSION = "solana_json_rpc_http_poll_v1"
 SOLANA_SIGNATURE_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{80,90}$")
+HTTP_POLL_GET_SLOT_COMPUTE_UNITS = 20
+HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS = 40
+HTTP_POLL_SECONDS_PER_30_DAYS = 30 * 24 * 60 * 60
 
 
 class _PubSubProtocolError(RuntimeError):
@@ -534,13 +537,15 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
         *,
         cursor_slot: int | None = None,
         full_window: bool = False,
-    ) -> None:
+    ) -> bool:
         now = _utc_now()
+        self._backfill_current_slot = None
+        self._backfill_coverage_complete = False
         try:
             if not candidates:
                 self._replay_from_slot = None
                 self._replay_reason = "no_candidates"
-                return
+                return False
             if self._last_backfill_at is not None:
                 elapsed = (now - self._last_backfill_at).total_seconds()
                 remaining = self.config.backfill_min_interval_seconds - elapsed
@@ -585,9 +590,12 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                 self._replay_from_slot = replay_from
                 self._replay_reason = reason
                 if replay_from is None:
-                    return
+                    return False
 
                 for index, mint in enumerate(candidates, start=2):
+                    spacing = self._http_request_spacing_seconds()
+                    if spacing > 0:
+                        await asyncio.sleep(spacing)
                     self._backfill_candidates_attempted += 1
                     try:
                         result = await self._rpc_call(
@@ -657,6 +665,7 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                 else:
                     self._replay_reason = "backfill_complete"
                     self._backfill_coverage_complete = True
+                return self._backfill_coverage_complete
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -664,6 +673,10 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             self._replay_reason = "backfill_failed"
             self._backfill_coverage_complete = False
             self._last_error_code = self._sanitize_transport_error(exc)
+            return False
+
+    def _http_request_spacing_seconds(self) -> float:
+        return 0.0
 
     def _subscription_health(self) -> dict[str, Any]:
         active_count = len(self._mint_subscriptions)
@@ -788,6 +801,248 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
         self._live_coverage_started_at = None
 
 
+class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
+    """Bounded free-tier HTTP observation loop with durable recovery state."""
+
+    transport_name = "solana_http_polling"
+    protocol_version = HTTP_POLL_PROTOCOL_VERSION
+    provider_channel = "solana_http_candidate_activity"
+    task_name = "alchemy-solana-http-polling"
+
+    def __init__(self, config: AlchemyStreamConfig, store: AlchemyStreamStore | None = None) -> None:
+        super().__init__(config, store)
+        self._poll_wake_event = asyncio.Event()
+        self._polled_candidate_mints: tuple[str, ...] = ()
+        self._poll_cycles_attempted = 0
+        self._poll_cycles_completed = 0
+        self._poll_cycles_failed = 0
+        self._last_poll_completed_at: datetime | None = None
+
+    async def _on_candidates_changed(
+        self,
+        previous: tuple[str, ...],
+        current: tuple[str, ...],
+    ) -> None:
+        del previous
+        self._backfill_coverage_complete = False
+        self._polled_candidate_mints = ()
+        self._connected = False
+        self._state = "waiting_for_poll" if current else "waiting_for_candidates"
+        self._poll_wake_event.set()
+
+    def _active_candidate_mints(self) -> tuple[str, ...]:
+        if not self._observation_coverage_complete():
+            return ()
+        return self._polled_candidate_mints
+
+    def _freshness_threshold_seconds(self) -> int:
+        jitter_allowance = max(30, self.config.poll_interval_seconds // 2)
+        return max(
+            self.config.freshness_seconds,
+            self.config.poll_interval_seconds + jitter_allowance,
+        )
+
+    def _http_request_spacing_seconds(self) -> float:
+        # Five 40-CU signature requests per second remain below the documented
+        # free-tier 300 CU/s throughput before accounting for the single getSlot.
+        return 0.2
+
+    async def _wait_for_next_poll(self, timeout: float | None) -> None:
+        try:
+            if timeout is None:
+                await self._poll_wake_event.wait()
+            else:
+                await asyncio.wait_for(self._poll_wake_event.wait(), timeout=timeout)
+        except TimeoutError:
+            pass
+        finally:
+            self._poll_wake_event.clear()
+
+    async def _poll_once(self) -> bool:
+        candidates = self._candidate_mints
+        if not candidates:
+            self._connected = False
+            self._state = "waiting_for_candidates"
+            return False
+
+        cursor_slot, _ = await self.store.load_cursor()
+        self._poll_cycles_attempted += 1
+        self._backfill_pending = True
+        self._connected = False
+        self._state = "polling"
+        try:
+            complete = await self._backfill_candidates(
+                candidates,
+                cursor_slot=cursor_slot,
+                full_window=cursor_slot is None,
+            )
+            polled_slot = self._backfill_current_slot
+            complete = bool(
+                complete
+                and polled_slot is not None
+                and candidates == self._candidate_mints
+            )
+            if not complete or polled_slot is None:
+                self._poll_cycles_failed += 1
+                self._polled_candidate_mints = ()
+                self._state = "degraded"
+                if self._last_error_code is None:
+                    self._last_error_code = "http_poll_incomplete"
+                return False
+
+            completed_at = _utc_now()
+            current_slot = int(polled_slot)
+            await self.store.save_cursor(current_slot, completed_at)
+            self._last_slot = max(current_slot, self._last_slot or 0)
+            self._last_received_at = completed_at
+            self._last_connected_at = completed_at
+            self._last_poll_completed_at = completed_at
+            self._polled_candidate_mints = candidates
+            self._received_updates += 1
+            self._processed_updates += 1
+            self._poll_cycles_completed += 1
+            self._last_error_code = None
+            self._connected = True
+            self._state = "connected"
+            return True
+        finally:
+            self._backfill_pending = False
+
+    async def _run(self) -> None:
+        self._state = "waiting_for_candidates"
+        while not self._stop_event.is_set():
+            if not self._candidate_mints:
+                self._poll_wake_event.clear()
+                await self._wait_for_next_poll(None)
+                continue
+
+            self._poll_wake_event.clear()
+            await self._poll_once()
+            if self._stop_event.is_set():
+                break
+            await self._wait_for_next_poll(float(self.config.poll_interval_seconds))
+
+    def _observation_coverage_complete(self, now: datetime | None = None) -> bool:
+        del now
+        return bool(
+            self._candidate_mints
+            and not self._backfill_pending
+            and self._backfill_coverage_complete
+            and self._polled_candidate_mints == self._candidate_mints
+        )
+
+    def _transport_degraded(self) -> bool:
+        return bool(
+            self._backfill_pending
+            or not self._observation_coverage_complete()
+            or not self._connected
+        )
+
+    def _subscription_health(self) -> dict[str, Any]:
+        active_count = len(self._active_candidate_mints())
+        freshness, _ = self._transport_freshness()
+        return {
+            "candidateCount": len(self._candidate_mints),
+            "activeCandidateCount": active_count,
+            "pendingCandidateCount": max(0, len(self._candidate_mints) - active_count),
+            "failedCandidateCount": self._backfill_failures + self._backfill_truncated_candidates,
+            "maxCandidates": self.config.max_candidates,
+            "connectionCount": 0,
+            "activeSubscriptionCount": 0,
+            "transactionMethod": "getSignaturesForAddress",
+            "transactionFilter": "one_address_per_confirmed_http_request",
+            "transactionCommitment": "confirmed",
+            "heartbeatMethod": "getSlot",
+            "heartbeatSource": "confirmed_http_json_rpc",
+            "heartbeatFallback": False,
+            "heartbeatCommitment": "confirmed",
+            "heartbeatActive": self._connected and freshness == "fresh",
+            "rootSubscriptionActive": False,
+            "voteTransactions": False,
+            "failedTransactions": False,
+            "activityWindowSeconds": self.config.activity_window_seconds,
+            "refreshSeconds": self.config.candidate_refresh_seconds,
+            "pollIntervalSeconds": self.config.poll_interval_seconds,
+            "lastPollCompletedAt": _public_time(self._last_poll_completed_at),
+        }
+
+    def _cost_guard_health(self) -> dict[str, Any]:
+        candidate_count = len(self._candidate_mints)
+        cycles_per_30_days = HTTP_POLL_SECONDS_PER_30_DAYS / self.config.poll_interval_seconds
+
+        def estimate(count: int) -> tuple[int, int, int]:
+            requests = 1 + count
+            per_cycle = (
+                HTTP_POLL_GET_SLOT_COMPUTE_UNITS
+                + count * HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS
+            )
+            per_month = round(per_cycle * cycles_per_30_days)
+            return requests, per_cycle, per_month
+
+        requests, per_cycle, per_month = estimate(candidate_count)
+        maximum_requests, maximum_per_cycle, maximum_per_month = estimate(
+            self.config.max_candidates
+        )
+        return {
+            "pollIntervalSeconds": self.config.poll_interval_seconds,
+            "candidateCount": candidate_count,
+            "requestsPerCycle": requests,
+            "estimatedComputeUnitsPerCycle": per_cycle,
+            "estimatedComputeUnitsPer30Days": per_month,
+            "maximumRequestsPerCycle": maximum_requests,
+            "maximumEstimatedComputeUnitsPerCycle": maximum_per_cycle,
+            "maximumEstimatedComputeUnitsPer30Days": maximum_per_month,
+            "assumptions": {
+                "getSlotComputeUnits": HTTP_POLL_GET_SLOT_COMPUTE_UNITS,
+                "getSignaturesForAddressComputeUnits": HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS,
+                "days": 30,
+                "excludesRetriesAndOtherApplicationTraffic": True,
+            },
+        }
+
+    def _recovery_health(self, cursor: dict[str, Any]) -> dict[str, Any]:
+        coverage_complete = self._observation_coverage_complete()
+        return {
+            "mode": "http_signature_polling",
+            "nativeProviderReplay": False,
+            "cursorSlot": cursor["slot"],
+            "cursorUpdatedAt": cursor["updatedAt"],
+            "cursorPersistence": cursor["persistence"],
+            "cursorDurable": cursor["durable"],
+            "rewindSlots": self.config.replay_rewind_slots,
+            "maxReplaySlots": self.config.backfill_max_slots,
+            "requestedFromSlot": self._replay_from_slot,
+            "providerFirstAvailableSlot": None,
+            "currentSlotAtPoll": self._backfill_current_slot,
+            "limitPerCandidate": self.config.backfill_limit_per_candidate,
+            "candidatesAttempted": self._backfill_candidates_attempted,
+            "candidatesCompleted": self._backfill_candidates_completed,
+            "signaturesScanned": self._backfill_signatures_scanned,
+            "truncatedCandidates": self._backfill_truncated_candidates,
+            "failures": self._backfill_failures,
+            "lastPollAt": _public_time(self._last_backfill_at),
+            "pending": self._backfill_pending,
+            "coverageComplete": coverage_complete,
+            "coverageBasis": "bounded_http_poll_cycle" if coverage_complete else "incomplete",
+            "basis": self._backfill_basis,
+            "reason": self._replay_reason,
+        }
+
+    def _reliability_health(self) -> dict[str, Any]:
+        health = AlchemyYellowstoneStream._reliability_health(self)
+        health.update(
+            {
+                "httpFailures": self._backfill_failures,
+                "truncatedCandidates": self._backfill_truncated_candidates,
+                "pollCyclesAttempted": self._poll_cycles_attempted,
+                "pollCyclesCompleted": self._poll_cycles_completed,
+                "pollCyclesFailed": self._poll_cycles_failed,
+                "costGuard": self._cost_guard_health(),
+            }
+        )
+        return health
+
+
 def create_alchemy_stream(
     config: AlchemyStreamConfig | None = None,
     store: AlchemyStreamStore | None = None,
@@ -795,4 +1050,6 @@ def create_alchemy_stream(
     selected = config or AlchemyStreamConfig.from_env()
     if selected.transport == "yellowstone_grpc":
         return AlchemyYellowstoneStream(selected, store)
-    return AlchemySolanaPubSubStream(selected, store)
+    if selected.transport == "solana_pubsub":
+        return AlchemySolanaPubSubStream(selected, store)
+    return AlchemySolanaHttpPollingStream(selected, store)

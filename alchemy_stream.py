@@ -38,8 +38,12 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_ALCHEMY_YELLOWSTONE_ENDPOINT = "https://solana-mainnet.g.alchemy.com"
 DEFAULT_ALCHEMY_SOLANA_WS_ENDPOINT = "wss://solana-mainnet.g.alchemy.com"
 DEFAULT_ALCHEMY_SOLANA_HTTP_ENDPOINT = "https://solana-mainnet.g.alchemy.com"
-DEFAULT_ALCHEMY_STREAM_TRANSPORT = "solana_pubsub"
-SUPPORTED_ALCHEMY_STREAM_TRANSPORTS = {"solana_pubsub", "yellowstone_grpc"}
+DEFAULT_ALCHEMY_STREAM_TRANSPORT = "solana_http_polling"
+SUPPORTED_ALCHEMY_STREAM_TRANSPORTS = {
+    "solana_http_polling",
+    "solana_pubsub",
+    "yellowstone_grpc",
+}
 YELLOWSTONE_PROTOCOL_VERSION = "v15.1.2+solana.4.2.0"
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 SOLANA_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
@@ -150,8 +154,9 @@ class AlchemyStreamConfig:
     dedupe_retention_seconds: int = 21_600
     rpc_timeout_seconds: int = 12
     backfill_max_slots: int = 512
-    backfill_limit_per_candidate: int = 25
+    backfill_limit_per_candidate: int = 100
     backfill_min_interval_seconds: int = 60
+    poll_interval_seconds: int = 180
 
     @classmethod
     def from_env(cls) -> "AlchemyStreamConfig":
@@ -257,14 +262,20 @@ class AlchemyStreamConfig:
             ),
             backfill_limit_per_candidate=_env_int(
                 "ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE",
-                25,
+                100,
                 minimum=1,
-                maximum=100,
+                maximum=1_000,
             ),
             backfill_min_interval_seconds=_env_int(
                 "ALCHEMY_STREAM_BACKFILL_MIN_INTERVAL_SECONDS",
                 60,
                 minimum=30,
+                maximum=1_800,
+            ),
+            poll_interval_seconds=_env_int(
+                "ALCHEMY_STREAM_POLL_INTERVAL_SECONDS",
+                180,
+                minimum=60,
                 maximum=1_800,
             ),
         )
@@ -311,6 +322,9 @@ class AlchemyStreamConfig:
 
     @property
     def endpoint_host(self) -> str | None:
+        if self.transport == "solana_http_polling":
+            parsed = urlparse(self.http_endpoint)
+            return parsed.hostname if self.http_endpoint_valid else None
         if self.transport == "solana_pubsub":
             parsed = urlparse(self.websocket_endpoint)
             return parsed.hostname if self.websocket_endpoint_valid and self.http_endpoint_valid else None
@@ -336,6 +350,8 @@ class AlchemyStreamConfig:
             return False
         if self.transport == "yellowstone_grpc":
             return self.endpoint_valid
+        if self.transport == "solana_http_polling":
+            return self.http_endpoint_valid
         return self.websocket_endpoint_valid and self.http_endpoint_valid
 
 
@@ -1010,8 +1026,11 @@ class AlchemyYellowstoneStream:
             return "unavailable", None
         observed_now = now or _utc_now()
         age = max(0.0, (observed_now - self._last_received_at).total_seconds())
-        freshness = "fresh" if age <= self.config.freshness_seconds else "stale"
+        freshness = "fresh" if age <= self._freshness_threshold_seconds() else "stale"
         return freshness, round(age, 3)
+
+    def _freshness_threshold_seconds(self) -> int:
+        return self.config.freshness_seconds
 
     async def enrich_candidate_lists(
         self,
@@ -1149,7 +1168,7 @@ class AlchemyYellowstoneStream:
             "configured": self.config.configured,
             "status": status,
             "freshness": freshness,
-            "freshnessThresholdSeconds": self.config.freshness_seconds,
+            "freshnessThresholdSeconds": self._freshness_threshold_seconds(),
             "endpointHost": self._public_endpoint_host(),
             "commitment": "confirmed",
             "lastConnectedAt": _public_time(self._last_connected_at),

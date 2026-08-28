@@ -13,7 +13,7 @@ The design answers six questions without inflating the answer:
 3. How many share cards and aggregate wallet sessions were recorded?
 4. Which Solana transactions passed the existing server verification path?
 5. Is the evidence durable, or will it disappear when the current process restarts?
-6. Is the optional Alchemy Solana stream configured, fresh, fully covered, recoverable, and durably cursor-backed?
+6. Is the optional Alchemy Solana evidence path configured, fresh, fully covered, cost-bounded, and durably cursor-backed?
 
 The public page is available through **Help -> Live Arena Status** and the `/arena` route. Its read-only JSON source is `/api/arena/status`.
 
@@ -23,8 +23,8 @@ The public page is available through **Help -> Live Arena Status** and the `/are
 Birdeye discovery snapshot -----> candidate mint filter
           |                              |
           |                              v
-          |                    Alchemy Solana PubSub
-          |                   | cursor + bounded backfill
+          |                 Alchemy Solana HTTP polling
+          |                 | complete cycle + cursor
           v                       v
 Arena Director response -----> arena_director_events
           |
@@ -54,17 +54,17 @@ The public telemetry layer observes these paths. It does not control combat, mat
 
 Provider observation time and provider snapshot time are separate. StickLash never substitutes request time for an unknown market snapshot timestamp.
 
-### Alchemy market stream
+### Alchemy candidate activity evidence
 
-- **Transport freshness**: age of the most recent accepted Alchemy PubSub root or log notification. It is not the age of Birdeye's market snapshot.
-- **Subscribed candidates**: requested, active, pending, and failed counts for the bounded Birdeye-discovered mint filters. Mint values themselves are not exposed in the health object.
+- **Evidence freshness**: age of the most recently completed Alchemy HTTP poll. It is not the age of Birdeye's market snapshot and does not imply a live subscription.
+- **Monitored candidates**: requested, covered, pending, and failed counts for the bounded Birdeye-discovered mint set. Mint values themselves are not exposed in the health object. `activeCandidateCount` is retained for API compatibility and means complete-cycle coverage in HTTP mode.
 - **Confirmed candidate transaction observations**: distinct signature hashes inside the configured window whose transactions mention at least one subscribed mint. This is not a trade, buy, sell, USD-volume, revenue, or unique-user count.
-- **Recovery cursor**: latest processed slot. Free-tier PubSub reconnects use bounded `getSignaturesForAddress` HTTP backfill from a rewound cursor; this is not native replay. Public health exposes limits, failures, truncation, whether coverage is complete, and whether that completeness came from bounded backfill or a full continuously observed live window after the historical gap aged out of scoring. The optional paid Yellowstone path retains native replay evidence.
-- **Reliability counters**: process-lifetime reconnect, ingress, processing, drop, and sanitized-error evidence. A zero drop count does not prove a provider delivered every possible Solana event.
+- **Recovery cursor**: latest fully covered confirmed slot. The free path rewinds and clamps a bounded `getSignaturesForAddress` cycle; this is not native replay. Public health exposes limits, failures, truncation, and complete-cycle coverage.
+- **Reliability and cost**: attempted, completed, and failed poll cycles, sanitized errors, and current/maximum 30-day compute-unit estimates. Estimates exclude retries and other Alchemy traffic.
 
-Only a fresh stream with complete, acknowledged candidate coverage can add the bounded Alchemy activity bonus to Director v0.2. `disabled`, `misconfigured`, `connecting`, `stale`, `reconnecting`, `stopped`, and incomplete-coverage states add no score. Birdeye remains the required discovery/base-scoring provider, so Alchemy availability does not determine whether a selection can be returned.
+Only a fresh complete cycle can add the bounded Alchemy activity bonus to Director v0.2. `disabled`, `misconfigured`, `waiting_for_candidates`, `polling`, `stale`, `stopped`, and incomplete-coverage states add no score. Birdeye remains the required discovery/base-scoring provider, so Alchemy availability does not determine whether a selection can be returned.
 
-See [Alchemy Solana Candidate Activity Stream](ALCHEMY_STREAM.md) for the exact PubSub subscription, scoring, recovery, failure, and optional Yellowstone contracts.
+See [Alchemy Solana Candidate Activity Evidence](ALCHEMY_STREAM.md) for the exact polling, scoring, recovery, cost, failure, and optional transport contracts.
 
 ### Matches
 
@@ -123,7 +123,7 @@ Alchemy ingestion state uses two separate operational tables:
 - `alchemy_stream_cursor`
 - `alchemy_stream_transactions`
 
-The cursor is updated as PubSub roots/logs or optional Yellowstone updates are processed. Recent signature-hash rows are deleted after the bounded dedupe-retention window. Duplicate signatures observed through more than one mint filter merge their mint attribution. These rows are therefore neither insert-only public telemetry nor a permanent transaction ledger, and they must never feed rewards or leaderboard eligibility.
+The free default updates its cursor only after every candidate request in a bounded HTTP cycle completes without failure or truncation. Optional PubSub/Yellowstone transports update it from accepted transport observations. Recent signature-hash rows are deleted after the bounded dedupe-retention window. Duplicate signatures returned for more than one mint merge their attribution. These rows are neither insert-only public telemetry nor a permanent transaction ledger, and they must never feed rewards or leaderboard eligibility.
 
 ## Public API contract
 
@@ -131,7 +131,7 @@ The endpoint returns these top-level evidence classes:
 
 ```json
 {
-  "schemaVersion": "2026-08-28.v3",
+  "schemaVersion": "2026-08-28.v4",
   "generatedAt": "2026-08-28T00:00:00+00:00",
   "persistence": {
     "mode": "postgres",
@@ -141,8 +141,8 @@ The endpoint returns these top-level evidence classes:
   "arenaDirector": {},
   "marketStream": {
     "provider": "alchemy",
-    "transport": "solana_pubsub|yellowstone_grpc",
-    "status": "disabled|misconfigured|connecting|live|degraded|stale|reconnecting|stopped",
+    "transport": "solana_http_polling|solana_pubsub|yellowstone_grpc",
+    "status": "disabled|misconfigured|waiting_for_candidates|waiting_for_poll|polling|live|degraded|stale|connecting|reconnecting|stopped",
     "freshness": "fresh|stale|unavailable",
     "subscription": {},
     "replay": {},
@@ -158,7 +158,7 @@ The endpoint returns these top-level evidence classes:
 
 The page treats a missing or `null` durable metric as **NOT AVAILABLE**. It does not coerce missing evidence to zero. Every metric group includes a plain-language definition so labels cannot quietly drift into stronger claims.
 
-For stream activity specifically, zero is evidence-backed only when the transport is fresh, every current candidate filter is acknowledged, and reconnect recovery covers the observation window. All other states return a `null` observation count.
+For Alchemy activity specifically, zero is evidence-backed only when the latest cycle is fresh, every current candidate is covered, and no request failed or truncated. All other states return a `null` observation count.
 
 ## Security and privacy properties
 
@@ -169,7 +169,7 @@ For stream activity specifically, zero is evidence-backed only when the transpor
 - Recent onchain entries link only public Solana transaction signatures already accepted by the verification ledger.
 - Provider errors are reduced to error types; credentials and provider response bodies are not stored.
 - Alchemy endpoint validation accepts only credential-free Alchemy hosts with the expected HTTPS/WSS scheme; authenticated `/v2/<key>` URLs exist only inside backend memory, and the public API returns only a sanitized hostname.
-- Stream transaction bodies, wallet addresses, instructions, and raw signatures are not stored. Dedupe uses a SHA-256 signature hash.
+- Alchemy transaction bodies, wallet addresses, instructions, and raw signatures are not stored. Dedupe uses a SHA-256 signature hash.
 - Test configuration globally removes deployed `REDIS_URL`, `DATABASE_URL`, and Alchemy stream values before each test, preventing unit tests from connecting to deployed services.
 
 ## Deployment verification
@@ -185,15 +185,15 @@ Before calling the page durable:
 7. Confirm the JSON contains no wallet address, room code, player name, auth token, or challenge.
 8. Confirm the `/arena` page renders zero only for connected durable ledgers and renders unavailable metrics as **NOT AVAILABLE**.
 9. If Alchemy is intentionally disabled, confirm `marketStream.status` is `disabled` and its observation count is `null`.
-10. If Alchemy is enabled, require `transport: "solana_pubsub"`, `status: "live"`, `freshness: "fresh"`, complete active-candidate coverage, `replay.cursorDurable: true`, `replay.coverageComplete: true`, an advancing slot, no backfill failure/truncation, and no credential in the response or logs.
-11. Restart the service and confirm it requests a rewound bounded backfill floor without duplicate signatures inflating the current observation window. Do not describe PubSub recovery as native replay.
+10. If Alchemy is enabled on the free default, require `transport: "solana_http_polling"`, `status: "live"`, `freshness: "fresh"`, complete active-candidate coverage, zero active subscriptions, `replay.cursorDurable: true`, `replay.coverageComplete: true`, an advancing slot, no poll failure/truncation, and no credential in the response or logs.
+11. Restart the service and confirm it requests a rewound bounded floor without duplicate signatures inflating the current observation window. Do not describe HTTP polling as a live subscription or native replay.
 
 Do not seed, backfill, or simulate public counters for a demo. A small real number is stronger evidence than an inflated number with ambiguous provenance.
 
 ## Known limitations and next work
 
 - Browser-local AI and Endless outcomes are not server-attested, so the page does not claim a completed "fights directed" count.
-- The free-tier Alchemy PubSub adapter and optional paid Yellowstone adapter share one public health contract. Any deployed claim remains gated on the production proof checks in `ALCHEMY_STREAM.md`.
+- The free-tier Alchemy HTTP adapter, optional PubSub adapter, and optional paid Yellowstone adapter share one public health contract. Any deployed claim remains gated on the transport-specific production checks in `ALCHEMY_STREAM.md`.
 - Social impression/click telemetry is not implemented; only generated cards are counted.
 - Reward epochs, anti-collusion eligibility, reserve accounting, and token claims are not derived from these counters.
 - Multi-region aggregation depends on every instance sharing the same PostgreSQL database.

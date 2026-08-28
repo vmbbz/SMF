@@ -2,6 +2,27 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Bounded Free-Tier Alchemy HTTP Evidence
+
+### Added
+
+- Added `solana_http_polling`, a server-only default that runs one confirmed `getSlot` plus one rate-spaced `getSignaturesForAddress` request per current Birdeye candidate every 180 seconds.
+- Added all-or-nothing poll coverage, durable completed-cycle cursoring, 32-slot rewind, 512-slot clamping, a 100-signature per-candidate cap, signature-hash dedupe, and fail-closed truncation handling.
+- Added public poll-cycle counters and compute-unit estimates for the current and maximum candidate sets. At the 32-candidate cap and 180-second interval, the documented method assumptions estimate 18.72 million CUs per 30 days before retries or other app traffic.
+
+### Changed
+
+- Made `solana_http_polling` the free production default after the configured production Alchemy WebSocket returned JSON-RPC method-not-found for both `rootSubscribe` and its `slotSubscribe` fallback.
+- Kept `solana_pubsub` as an explicit account-capability evaluation path and `yellowstone_grpc` as an explicit paid/credit path; neither is a release dependency.
+- Updated Director provenance, Help copy, `/arena`, operator docs, and the public evidence contract to distinguish bounded polling from a live subscription or native replay.
+- Advanced the public arena evidence schema to `2026-08-28.v4`.
+
+### Safety and Cost Gates
+
+- A cycle supplies a zero or positive activity observation only after every candidate request completes inside the bounded window; any failure, truncation, stale cycle, or candidate-set change returns `null` and contributes no score.
+- The lifecycle refresh owns the candidate set. Public Director requests remain read-only and cannot trigger Alchemy calls.
+- Default maximum usage is estimated below the documented 30-million-CU free allowance, but the estimate excludes retries and all other Alchemy traffic; operators must keep dashboard alerts enabled.
+
 ## 2026-08-28 - Free-Tier Alchemy Solana Stream
 
 ### Added

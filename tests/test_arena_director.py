@@ -113,7 +113,7 @@ def test_fresh_alchemy_activity_adds_only_the_bounded_optional_bonus() -> None:
         **base,
         "alchemyActivity": {
             "provider": "alchemy",
-            "transport": "solana_pubsub",
+            "transport": "solana_http_polling",
             "scoreEligible": True,
             "observedConfirmedTransactions": 31,
         },
@@ -124,7 +124,7 @@ def test_fresh_alchemy_activity_adds_only_the_bounded_optional_bonus() -> None:
     delta = with_activity["candidates"][0]["score"] - baseline["candidates"][0]["score"]
 
     assert 0 < delta <= with_activity["policy"]["confirmedActivityBonus"]
-    assert "alchemy_solana_pubsub_candidate_activity" in with_activity["inputSources"]
+    assert "alchemy_solana_http_candidate_activity" in with_activity["inputSources"]
     assert "recent_confirmed_onchain_activity" in with_activity["candidates"][0]["reasons"]
     assert with_activity["candidates"][0]["metrics"]["alchemyConfirmedTransactions"] == 31
 

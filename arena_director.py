@@ -49,6 +49,7 @@ def _token_mint(token: dict[str, Any]) -> str:
 
 
 ALCHEMY_ACTIVITY_INPUT_SOURCES = {
+    "solana_http_polling": "alchemy_solana_http_candidate_activity",
     "solana_pubsub": "alchemy_solana_pubsub_candidate_activity",
     "yellowstone_grpc": "alchemy_yellowstone_candidate_activity",
 }
