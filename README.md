@@ -37,6 +37,18 @@ STICKLASH is a 2D stickman fighting game where **Pump.fun / Solana meme tokens a
 
 Built with vanilla Canvas2D, a custom combat engine, and a Litestar/Python backend for live market data.
 
+### Production Deployment
+
+Production runs as the Render web service `SMF` using this repository's `Dockerfile`. Render tracks the `main` branch and automatically builds and deploys each pushed commit directly; GitHub Actions runners and the retired Fly.io configuration are not part of the production path.
+
+- Canonical site: <https://www.sticklash.fun>
+- Render service origin: <https://smf-lzf3.onrender.com>
+- Health check: <https://www.sticklash.fun/health>
+- Public arena evidence: <https://www.sticklash.fun/arena>
+- Arena status API: <https://www.sticklash.fun/api/arena/status>
+
+After every production push, confirm the Render deploy is live for the intended commit before treating the release as complete. The health route must return HTTP `200`, the arena page must render, and the status API must report `persistence.mode: "postgres"` with `durable: true` in production.
+
 ### Autonomous Arena Director
 
 The server-side **StickLash Arena Director** merges live trending and graduated-token candidates, scores them using volume, volatility, liquidity, and discovery signals, and selects the next opponent for Trending and Endless modes. Each decision includes a deterministic decision ID, policy version, ranked candidates, reason codes, and provider errors so the autonomous choice can be explained and audited. If the director is unavailable, gameplay falls back to the existing local market queue.

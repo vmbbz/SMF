@@ -31,7 +31,7 @@ Primary sources:
 
 StickLash already has a credible foundation:
 
-- The public service and `/health` endpoint are live at `sticklash.fun`.
+- The public service is deployed directly from `main` to Render, and the `/health` endpoint is live at `sticklash.fun`; the repository's retired Fly.io workflow is not part of production.
 - The production market endpoint returns current Solana trending-token metrics.
 - Birdeye supplies cached trending and newly listed token discovery; DexScreener supplies active-fight token details.
 - Market volume, momentum, and liquidity already alter opponent health, damage, and speed.
