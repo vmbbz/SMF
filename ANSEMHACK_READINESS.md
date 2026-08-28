@@ -13,7 +13,7 @@ This keeps the existing StickLash identity and makes the agent load-bearing. The
 - The event runs from 19 August to 1 October 2026 on Solana.
 - Eligibility requires all three actions by 19 September: register the project, publish the generated X announcement and follow `@clawpumptech`, and tokenize on ClawPump or EasyA Kickstart.
 - A ClawPump entry is automatically eligible for Overall Winner and can stack the ClawPump x pump.fun and Inference Markets tracks. EasyA Kickstart is an alternative launch surface and cannot be stacked with the ClawPump tracks.
-- The current headline pool is $345,000: $250,000 in $ANSEM, $60,000 sponsor cash, and $10,000 compute. Alchemy evaluation credits are an additional eligibility-based benefit rather than guaranteed prize cash.
+- The official page's $345,000 headline combines $250,000 in `$ANSEM`, $60,000 in sponsor cash, $10,000 in UsePod compute, and up to $25,000 in Alchemy credits. The Alchemy component is application- and approval-based infrastructure credit, not guaranteed prize cash.
 - Alchemy offers eligible teams an application for up to $25,000 in credits for a 90-day evaluation; approval and terms remain Alchemy's decision.
 - Alchemy does **not** have a separate judged prize track or an Alchemy-specific winner in the published award list. Its credits are a sponsor benefit, and Alchemy is represented on the shared judging panel.
 - Registered teams receive Helius RPC credits for the hackathon period.
@@ -25,6 +25,7 @@ Primary sources:
 - [Official AnsemHack page](https://clawpump.tech/ansemhack)
 - [ClawPump developer documentation](https://clawpump.tech/docs)
 - [Alchemy Solana Fund](https://www.alchemy.com/blog/introducing-alchemy-solana-fund)
+- [Alchemy Solana Fund application](https://www.alchemy.com/solana-20m-fund)
 - [Alchemy Yellowstone gRPC overview](https://www.alchemy.com/docs/reference/yellowstone-grpc-overview)
 - [Alchemy Solana DAS APIs](https://www.alchemy.com/docs/reference/alchemy-das-apis-for-solana)
 
@@ -36,7 +37,7 @@ Primary sources:
 | ClawPump x pump.fun | Yes | Select as the primary judged track and tokenize on ClawPump |
 | Inference Markets | Not with the current architecture | Select only if UsePod inference markets become load-bearing |
 | EasyA Kickstart | Only as an alternative | Cannot be combined with the ClawPump tracks |
-| Alchemy Solana credits | Application benefit, not an award | Apply separately; approval may provide up to $25,000 in 90-day credits |
+| Alchemy Solana credits | **No; there is no Alchemy award** | Apply separately; approval may provide up to $25,000 in credits valid for 90 days |
 | Helius RPC credits | Registration benefit, not an award | Unlock through the registered-team flow |
 
 Alchemy should still be prominent in the submission because it supplies real,
@@ -49,7 +50,7 @@ credit approval must not be described as a hackathon win.
 StickLash already has a credible foundation:
 
 - The public service is deployed directly from `main` to Render, and the `/health` endpoint is live at `sticklash.fun`; the repository's retired Fly.io workflow is not part of production.
-- The production market endpoint returns current Solana trending-token metrics.
+- The production `/api/marketfeed/v2/trending-scan` endpoint returned HTTP 200 with 16 current Solana trending-token records during the 28 August audit.
 - Birdeye supplies cached trending and newly listed token discovery; DexScreener supplies active-fight token details.
 - Market volume, momentum, and liquidity already alter opponent health, damage, and speed.
 - Arena Director v0.2.1 is implemented server-side and drives the first and subsequent Endless opponents with deterministic scoring, reason codes, a visible announcement, and a client-side market-queue fallback. A fresh Alchemy candidate-activity signal can add at most eight logarithmically weighted points and reaches that cap at 31 distinct confirmed observations.
@@ -75,13 +76,16 @@ separate from eligibility and production blockers.
 
 ### Production-proof gap
 
-- At the 28 August audit, production `/health` returned HTTP 200 and `/api/arena/status` reported durable PostgreSQL persistence, schema `2026-08-28.v8`, and a durable Alchemy cursor. The active v8 poll was nevertheless degraded after one final HTTP 429: 15 of 16 candidates completed, activity was `null`, and the Alchemy bonus correctly failed closed.
-- The local `2026-08-28.v9` revision adds distinct-signature score saturation and exact/lower-bound labels and passes the repository test suite, but it is not production evidence until the exact commit is deployed. It still needs a fresh score-complete cycle, advancing slot, restart/rewind proof, duplicate-stability check, one controlled Birdeye-failover check, and one Director counter-delta check.
+- Commit `bfec907` is deployed from `main`. Production `/health` returned HTTP 200, `/api/arena/status` reported schema `2026-08-28.v9` with durable PostgreSQL persistence, and the restarted process restored its durable Alchemy cursor at slot `442434693`.
+- The first two recovered v9 cycles used 16 active candidates, advanced the cursor from the restored slot through `442436791` to `442437355`, and both completed with exact-window semantics and zero candidate failures or truncations. Their rolling-window counts changed naturally from 96 to 63 distinct confirmed observations as old signatures aged out; those observations are not trades, users, or USD volume.
+- One controlled Director request moved only `decisionsReturned` and `selectedDecisions` from 23 to 24. Authoritative matches, shares, and wallet sessions remained zero; the fresh durable decision identified `alchemy_solana_http_candidate_activity` as an input source.
+- Cold-start candidate acquisition is still memory-dependent. A Birdeye HTTP 429 left the restarted worker at `waiting_for_candidates` until the market cache recovered and the next 180-second refresh ran. Persisting the last valid candidate set, or adding a bounded startup retry independent of the normal cadence, remains a production-resilience gap.
+- A controlled restart/rewind exercise, explicit duplicate-stability evidence, and a controlled Birdeye-failover exercise still need to be captured. Unit and integration tests cover these policies, but the readiness file must distinguish test proof from production proof.
 - The deployed Alchemy app did not support the tested WebSocket heartbeat methods. Production may claim bounded Alchemy HTTP candidate-activity evidence only—not PubSub, a live WebSocket stream, Yellowstone, or native replay.
 
 ### Traction and judge-facing evidence gap
 
-- At the same audit, the durable public counters showed 23 selected Director responses but zero authoritative multiplayer rounds, ranked rounds, generated share cards, wallet sessions, unique authenticated wallets, and verified transactions. These zeros must not be seeded. Real playtests, shares, wallet sessions, and later verified product transactions are needed to demonstrate usage and attention.
+- After the controlled proof request, the durable public counters showed 24 selected Director responses but zero authoritative multiplayer rounds, ranked rounds, generated share cards, wallet sessions, unique authenticated wallets, and verified transactions. These zeros must not be seeded. Real playtests, shares, wallet sessions, and later verified product transactions are needed to demonstrate usage and attention.
 - Browser-local AI, Trending, Endless, and Token Exhibition outcomes are not server-attested. The public page therefore reports Director responses rather than claiming completed "fights directed." Social impressions and clicks are also not instrumented; only generated share cards can currently be counted.
 
 ### Token and reward-system gap
@@ -255,11 +259,12 @@ Completed foundations:
 4. Privacy-safe insert-only Arena Director, authoritative-match, and share telemetry is implemented with durable/fallback disclosure.
 5. The Help-linked `/arena` status page exposes honest judge-facing counters and verified-transaction links without leaking wallet or room identities.
 6. The free-tier Alchemy HTTP adapter, optional PubSub/Yellowstone transports, durable cursor schema, bounded recovery/dedupe logic, freshness and coverage gates, public cost/health contract, and Birdeye failover tests are implemented.
+7. Commit `bfec907` is deployed with production schema v9; two consecutive fresh exact-window Alchemy cycles, durable cursor advancement, and one isolated Director telemetry delta are publicly evidenced.
 
 Next work, in order:
 
 1. Submit the in-progress Alchemy credit application, then register StickLash on the official AnsemHack page under ClawPump x pump.fun; do not claim Inference Markets unless UsePod becomes load-bearing. Apply for Helius credits through the official team flow after registration.
-2. Deploy the free-tier HTTP default and prove fresh score-complete cycles, bounded restart recovery, dedupe, Birdeye fallback, durable cursoring, exact/lower-bound semantics, and public cost/health evidence on production.
+2. Harden cold-start candidate recovery, then capture controlled restart/rewind, explicit duplicate stability, and controlled Birdeye-failover evidence. The v9 deployment, durable cursor restoration, two fresh score-complete cycles, exact semantics, and Director counter delta are already proven.
 3. Rehearse the `/arena` evidence page in a stream-ready 15-minute demo without seeding counters.
 4. Finalize both token identities and reserve accounts, then replace the retired burn path with the documented 100% game-token reward-vault transfer.
 5. Add the creator-fee SOL allocation ledger and execute one operator-approved `$ANSEM` market purchase before considering automation.
