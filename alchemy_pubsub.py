@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -38,6 +39,12 @@ SOLANA_SIGNATURE_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{80,90}$")
 HTTP_POLL_GET_SLOT_COMPUTE_UNITS = 20
 HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS = 40
 HTTP_POLL_SECONDS_PER_30_DAYS = 30 * 24 * 60 * 60
+
+# httpx logs complete request URLs at INFO. Alchemy authenticates standard
+# Solana HTTP RPC through the URL path, so provider request logging must stay
+# below WARNING in every runtime. Public health exposes sanitized hosts instead.
+for _provider_http_logger_name in ("httpx", "httpcore"):
+    logging.getLogger(_provider_http_logger_name).setLevel(logging.WARNING)
 
 
 class _PubSubProtocolError(RuntimeError):
@@ -96,6 +103,8 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
         self._backfill_candidates_attempted = 0
         self._backfill_candidates_completed = 0
         self._backfill_signatures_scanned = 0
+        self._backfill_pages_requested = 0
+        self._backfill_extra_pages_used = 0
         self._backfill_truncated_candidates = 0
         self._backfill_failures = 0
         self._backfill_coverage_complete = False
@@ -558,6 +567,8 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             self._backfill_candidates_attempted = 0
             self._backfill_candidates_completed = 0
             self._backfill_signatures_scanned = 0
+            self._backfill_pages_requested = 0
+            self._backfill_extra_pages_used = 0
             self._backfill_truncated_candidates = 0
             self._backfill_failures = 0
 
@@ -592,72 +603,108 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                 if replay_from is None:
                     return False
 
-                for index, mint in enumerate(candidates, start=2):
-                    spacing = self._http_request_spacing_seconds()
-                    if spacing > 0:
-                        await asyncio.sleep(spacing)
+                request_id = 1
+                for mint in candidates:
                     self._backfill_candidates_attempted += 1
-                    try:
-                        result = await self._rpc_call(
-                            client,
-                            "getSignaturesForAddress",
-                            [
-                                mint,
-                                {
-                                    "commitment": "confirmed",
-                                    "limit": self.config.backfill_limit_per_candidate,
-                                },
-                            ],
-                            index,
-                        )
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        self._backfill_failures += 1
-                        continue
-                    if not isinstance(result, list):
-                        self._backfill_failures += 1
-                        continue
+                    candidate_complete = False
+                    candidate_failed = False
+                    before_signature: str | None = None
+                    pages_for_candidate = 0
 
-                    self._backfill_candidates_completed += 1
-                    self._backfill_signatures_scanned += len(result)
-                    result_slots = [
-                        item["slot"]
-                        for item in result
-                        if isinstance(item, dict) and isinstance(item.get("slot"), int)
-                    ]
-                    if (
-                        len(result) >= self.config.backfill_limit_per_candidate
-                        and result_slots
-                        and min(result_slots) >= replay_from
-                    ):
+                    while pages_for_candidate < self.config.backfill_max_pages_per_candidate:
+                        if pages_for_candidate > 0:
+                            if (
+                                self._backfill_extra_pages_used
+                                >= self.config.backfill_extra_page_budget
+                            ):
+                                break
+                            self._backfill_extra_pages_used += 1
+
+                        spacing = self._http_request_spacing_seconds()
+                        if spacing > 0:
+                            await asyncio.sleep(spacing)
+                        request_id += 1
+                        options: dict[str, Any] = {
+                            "commitment": "confirmed",
+                            "limit": self.config.backfill_limit_per_candidate,
+                        }
+                        if before_signature is not None:
+                            options["before"] = before_signature
+
+                        try:
+                            result = await self._rpc_call(
+                                client,
+                                "getSignaturesForAddress",
+                                [mint, options],
+                                request_id,
+                            )
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception:
+                            self._backfill_failures += 1
+                            candidate_failed = True
+                            break
+                        pages_for_candidate += 1
+                        self._backfill_pages_requested += 1
+                        if not isinstance(result, list):
+                            self._backfill_failures += 1
+                            candidate_failed = True
+                            break
+
+                        self._backfill_signatures_scanned += len(result)
+                        result_slots = [
+                            item["slot"]
+                            for item in result
+                            if isinstance(item, dict) and isinstance(item.get("slot"), int)
+                        ]
+
+                        for item in result:
+                            if not isinstance(item, dict) or item.get("err") is not None:
+                                continue
+                            slot = _parse_int(item.get("slot"))
+                            if slot is None:
+                                continue
+                            if slot < replay_from or slot > current_slot:
+                                continue
+                            signature = str(item.get("signature") or "")
+                            if not SOLANA_SIGNATURE_RE.fullmatch(signature):
+                                continue
+                            block_time = item.get("blockTime")
+                            if isinstance(block_time, (int, float)) and block_time > 0:
+                                observed_at = datetime.fromtimestamp(block_time, tz=timezone.utc)
+                            else:
+                                observed_at = now
+                            signature_hash = hashlib.sha256(signature.encode("ascii")).hexdigest()
+                            inserted = await self.store.record_activity(
+                                signature_hash,
+                                slot,
+                                observed_at,
+                                [mint],
+                            )
+                            if inserted:
+                                self._candidate_transactions += 1
+
+                        if len(result) < self.config.backfill_limit_per_candidate:
+                            candidate_complete = True
+                            break
+                        if result_slots and min(result_slots) < replay_from:
+                            candidate_complete = True
+                            break
+
+                        last_item = result[-1] if result else None
+                        next_before = (
+                            str(last_item.get("signature") or "")
+                            if isinstance(last_item, dict)
+                            else ""
+                        )
+                        if not SOLANA_SIGNATURE_RE.fullmatch(next_before):
+                            break
+                        before_signature = next_before
+
+                    if candidate_complete:
+                        self._backfill_candidates_completed += 1
+                    elif not candidate_failed:
                         self._backfill_truncated_candidates += 1
-
-                    for item in result:
-                        if not isinstance(item, dict) or item.get("err") is not None:
-                            continue
-                        slot = _parse_int(item.get("slot"))
-                        if slot is None:
-                            continue
-                        if slot < replay_from or slot > current_slot:
-                            continue
-                        signature = str(item.get("signature") or "")
-                        if not SOLANA_SIGNATURE_RE.fullmatch(signature):
-                            continue
-                        block_time = item.get("blockTime")
-                        if isinstance(block_time, (int, float)) and block_time > 0:
-                            observed_at = datetime.fromtimestamp(block_time, tz=timezone.utc)
-                        else:
-                            observed_at = now
-                        signature_hash = hashlib.sha256(signature.encode("ascii")).hexdigest()
-                        inserted = await self.store.record_activity(
-                            signature_hash,
-                            slot,
-                            observed_at,
-                            [mint],
-                        )
-                        if inserted:
-                            self._candidate_transactions += 1
 
                 if self._backfill_failures or self._backfill_truncated_candidates:
                     self._replay_reason = "partial_backfill"
@@ -733,6 +780,10 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             "candidatesAttempted": self._backfill_candidates_attempted,
             "candidatesCompleted": self._backfill_candidates_completed,
             "signaturesScanned": self._backfill_signatures_scanned,
+            "pagesRequested": self._backfill_pages_requested,
+            "extraPagesUsed": self._backfill_extra_pages_used,
+            "maxPagesPerCandidate": self.config.backfill_max_pages_per_candidate,
+            "extraPageBudget": self.config.backfill_extra_page_budget,
             "truncatedCandidates": self._backfill_truncated_candidates,
             "failures": self._backfill_failures,
             "lastBackfillAt": _public_time(self._last_backfill_at),
@@ -970,28 +1021,68 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
         candidate_count = len(self._candidate_mints)
         cycles_per_30_days = HTTP_POLL_SECONDS_PER_30_DAYS / self.config.poll_interval_seconds
 
-        def estimate(count: int) -> tuple[int, int, int]:
-            requests = 1 + count
-            per_cycle = (
+        def estimate(count: int) -> tuple[int, int, int, int, int, int]:
+            baseline_requests = 1 + count
+            available_extra_pages = min(
+                self.config.backfill_extra_page_budget,
+                count * max(0, self.config.backfill_max_pages_per_candidate - 1),
+            )
+            bounded_requests = baseline_requests + available_extra_pages
+            baseline_per_cycle = (
                 HTTP_POLL_GET_SLOT_COMPUTE_UNITS
                 + count * HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS
             )
-            per_month = round(per_cycle * cycles_per_30_days)
-            return requests, per_cycle, per_month
+            bounded_per_cycle = (
+                baseline_per_cycle
+                + available_extra_pages * HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS
+            )
+            baseline_per_month = round(baseline_per_cycle * cycles_per_30_days)
+            bounded_per_month = round(bounded_per_cycle * cycles_per_30_days)
+            return (
+                baseline_requests,
+                bounded_requests,
+                baseline_per_cycle,
+                bounded_per_cycle,
+                baseline_per_month,
+                bounded_per_month,
+            )
 
-        requests, per_cycle, per_month = estimate(candidate_count)
-        maximum_requests, maximum_per_cycle, maximum_per_month = estimate(
-            self.config.max_candidates
-        )
+        (
+            baseline_requests,
+            bounded_requests,
+            baseline_per_cycle,
+            bounded_per_cycle,
+            baseline_per_month,
+            bounded_per_month,
+        ) = estimate(candidate_count)
+        (
+            maximum_baseline_requests,
+            maximum_bounded_requests,
+            maximum_baseline_per_cycle,
+            maximum_bounded_per_cycle,
+            maximum_baseline_per_month,
+            maximum_bounded_per_month,
+        ) = estimate(self.config.max_candidates)
         return {
             "pollIntervalSeconds": self.config.poll_interval_seconds,
             "candidateCount": candidate_count,
-            "requestsPerCycle": requests,
-            "estimatedComputeUnitsPerCycle": per_cycle,
-            "estimatedComputeUnitsPer30Days": per_month,
-            "maximumRequestsPerCycle": maximum_requests,
-            "maximumEstimatedComputeUnitsPerCycle": maximum_per_cycle,
-            "maximumEstimatedComputeUnitsPer30Days": maximum_per_month,
+            "baselineRequestsPerCycle": baseline_requests,
+            "requestsPerCycle": bounded_requests,
+            "baselineComputeUnitsPerCycle": baseline_per_cycle,
+            "estimatedComputeUnitsPerCycle": bounded_per_cycle,
+            "baselineComputeUnitsPer30Days": baseline_per_month,
+            "estimatedComputeUnitsPer30Days": bounded_per_month,
+            "maximumBaselineRequestsPerCycle": maximum_baseline_requests,
+            "maximumRequestsPerCycle": maximum_bounded_requests,
+            "maximumBaselineComputeUnitsPerCycle": maximum_baseline_per_cycle,
+            "maximumEstimatedComputeUnitsPerCycle": maximum_bounded_per_cycle,
+            "maximumBaselineComputeUnitsPer30Days": maximum_baseline_per_month,
+            "maximumEstimatedComputeUnitsPer30Days": maximum_bounded_per_month,
+            "pagination": {
+                "limitPerPage": self.config.backfill_limit_per_candidate,
+                "maxPagesPerCandidate": self.config.backfill_max_pages_per_candidate,
+                "extraPageBudgetPerCycle": self.config.backfill_extra_page_budget,
+            },
             "assumptions": {
                 "getSlotComputeUnits": HTTP_POLL_GET_SLOT_COMPUTE_UNITS,
                 "getSignaturesForAddressComputeUnits": HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS,
@@ -1015,9 +1106,18 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
             "providerFirstAvailableSlot": None,
             "currentSlotAtPoll": self._backfill_current_slot,
             "limitPerCandidate": self.config.backfill_limit_per_candidate,
+            "limitPerPage": self.config.backfill_limit_per_candidate,
+            "maximumSignaturesPerCandidate": (
+                self.config.backfill_limit_per_candidate
+                * self.config.backfill_max_pages_per_candidate
+            ),
             "candidatesAttempted": self._backfill_candidates_attempted,
             "candidatesCompleted": self._backfill_candidates_completed,
             "signaturesScanned": self._backfill_signatures_scanned,
+            "pagesRequested": self._backfill_pages_requested,
+            "extraPagesUsed": self._backfill_extra_pages_used,
+            "maxPagesPerCandidate": self.config.backfill_max_pages_per_candidate,
+            "extraPageBudget": self.config.backfill_extra_page_budget,
             "truncatedCandidates": self._backfill_truncated_candidates,
             "failures": self._backfill_failures,
             "lastPollAt": _public_time(self._last_backfill_at),

@@ -74,21 +74,24 @@ Each cycle snapshots the current lifecycle-managed candidate set and then:
 2. requests the current confirmed slot with `getSlot`;
 3. rewinds the cursor by 32 slots;
 4. clamps work to at most 512 slots behind the current slot;
-5. calls `getSignaturesForAddress` once per candidate, sequentially, with a
-   default maximum of 100 signatures;
-6. retains only successful signatures inside the bounded slot range;
-7. hashes each signature with SHA-256 and merges duplicate mint attribution;
-8. accepts the cycle only if every candidate request completed without failure
+5. calls `getSignaturesForAddress` once per candidate, sequentially, with up to
+   1,000 signatures in the first page;
+6. for a candidate that still has not crossed the slot floor, requests at most
+   one additional page, with at most eight extra pages shared by the cycle;
+7. retains only successful signatures inside the bounded slot range;
+8. hashes each signature with SHA-256 and merges duplicate mint attribution;
+9. accepts the cycle only if every candidate request completed without failure
    or truncation and the candidate set did not change during the cycle; and
-9. saves the current slot as the new cursor only after that complete cycle.
+10. saves the current slot as the new cursor only after that complete cycle.
 
 Requests are spaced by 200 ms to remain conservative against free-tier
 throughput. A candidate change wakes the worker, but the existing minimum
 backfill interval still prevents rapid repeated work.
 
 If no cursor exists, the first cycle scans the full bounded 512-slot window. A
-result that reaches its signature limit before crossing the requested floor is
-reported as truncated. There is no silent pagination or unbounded catch-up.
+candidate that exhausts its second page or the shared extra-page budget before
+crossing the requested floor is reported as truncated. There is no unbounded
+catch-up.
 
 ## Freshness and zero-count rule
 
@@ -115,19 +118,21 @@ Using Alchemy's documented method costs as of 28 August 2026:
 
 - `getSlot`: 20 compute units;
 - `getSignaturesForAddress`: 40 compute units; and
-- one cycle: `20 + (40 x candidate_count)` compute units.
+- baseline cycle: `20 + (40 x candidate_count)` compute units; and
+- bounded cycle: baseline plus at most eight 40-CU pagination requests.
 
 At the maximum 32 candidates and one cycle every 180 seconds:
 
 ```text
-1,300 CU/cycle x 14,400 cycles/30 days = 18,720,000 CU/30 days
+baseline: 1,300 CU/cycle x 14,400 = 18,720,000 CU/30 days
+bounded:  1,620 CU/cycle x 14,400 = 23,328,000 CU/30 days
 ```
 
-Alchemy documents 30 million CUs per month on the Free plan. The 18.72 million
-figure is therefore a guardrail, not a bill prediction: it excludes retries,
+Alchemy documents 30 million CUs per month on the Free plan. The 23.328-million
+bounded figure is a guardrail, not a bill prediction: it excludes retries,
 `SOLANA_RPC` traffic, dashboard tests, and every other request using the same
 Alchemy account. Operators must keep usage alerts enabled and re-check current
-pricing before increasing the candidate cap or poll frequency.
+pricing before increasing any cap or poll frequency.
 
 ## Dedupe and persistence
 
@@ -220,7 +225,9 @@ text alone.
 | `ALCHEMY_STREAM_CANDIDATE_REFRESH_SECONDS` | `180` | Birdeye candidate refresh |
 | `ALCHEMY_STREAM_REWIND_SLOTS` | `32` | Cursor overlap |
 | `ALCHEMY_STREAM_BACKFILL_MAX_SLOTS` | `512` | Bounded slot window |
-| `ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE` | `100` | Signature cap; max 1000 |
+| `ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE` | `1000` | Signature page size; max 1000 |
+| `ALCHEMY_STREAM_BACKFILL_MAX_PAGES_PER_CANDIDATE` | `2` | Per-candidate page cap |
+| `ALCHEMY_STREAM_BACKFILL_EXTRA_PAGE_BUDGET` | `8` | Shared extra-page cap per cycle |
 | `ALCHEMY_STREAM_BACKFILL_MIN_INTERVAL_SECONDS` | `60` | Repeat-work guard |
 | `ALCHEMY_STREAM_DEDUPE_RETENTION_SECONDS` | `21600` | Signature-hash retention |
 | `ALCHEMY_STREAM_RPC_TIMEOUT_SECONDS` | `12` | HTTP/connection timeout |
@@ -253,6 +260,11 @@ candidate activity evidence.
    selects an opponent with no Alchemy bonus.
 
 Do not seed or simulate public counters.
+
+Because authenticated Alchemy HTTP URLs contain the key in their path,
+StickLash forces the `httpx` and `httpcore` loggers to WARNING. If a full
+provider URL ever appears in logs, deploy the logging fix first and rotate the
+affected key; do not copy the URL into an issue or public report.
 
 ## Optional transports
 

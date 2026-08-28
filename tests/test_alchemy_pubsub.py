@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock
 
 import pytest
+import httpx
 
 from alchemy_pubsub import (
     AlchemySolanaHttpPollingStream,
@@ -17,6 +19,8 @@ from alchemy_stream import AlchemyStreamConfig, AlchemyStreamStore, AlchemyYello
 MINT_A = "11111111111111111111111111111111"
 MINT_B = "So11111111111111111111111111111111111111112"
 SIGNATURE_A = "2" * 88
+SIGNATURE_B = "3" * 88
+SIGNATURE_C = "4" * 88
 
 
 def pubsub_stream(**overrides) -> AlchemySolanaPubSubStream:
@@ -147,10 +151,12 @@ async def test_http_poll_cycle_is_bounded_fresh_and_cost_disclosed() -> None:
     assert enriched[0]["alchemyActivity"]["observedConfirmedTransactions"] == 1
     assert enriched[1]["alchemyActivity"]["observedConfirmedTransactions"] == 0
     cost = health["reliability"]["costGuard"]
-    assert cost["requestsPerCycle"] == 3
-    assert cost["estimatedComputeUnitsPerCycle"] == 100
-    assert cost["estimatedComputeUnitsPer30Days"] == 1_440_000
-    assert cost["maximumEstimatedComputeUnitsPer30Days"] == 18_720_000
+    assert cost["baselineRequestsPerCycle"] == 3
+    assert cost["requestsPerCycle"] == 5
+    assert cost["baselineComputeUnitsPerCycle"] == 100
+    assert cost["estimatedComputeUnitsPerCycle"] == 180
+    assert cost["estimatedComputeUnitsPer30Days"] == 2_592_000
+    assert cost["maximumEstimatedComputeUnitsPer30Days"] == 23_328_000
 
 
 @pytest.mark.asyncio
@@ -158,6 +164,7 @@ async def test_http_polling_fails_closed_on_truncated_candidate_window() -> None
     stream = polling_stream(
         backfill_max_slots=64,
         backfill_limit_per_candidate=1,
+        backfill_max_pages_per_candidate=1,
     )
     await stream.set_candidates([MINT_A])
     stream._rpc_call = AsyncMock(
@@ -176,6 +183,89 @@ async def test_http_polling_fails_closed_on_truncated_candidate_window() -> None
     assert health["activity"]["scoreEligible"] is False
     assert health["activity"]["observedConfirmedTransactions"] is None
     assert health["reliability"]["lastErrorCode"] == "http_poll_incomplete"
+
+
+@pytest.mark.asyncio
+async def test_http_polling_paginates_busy_candidates_within_global_budget() -> None:
+    now = datetime.now(timezone.utc)
+    stream = polling_stream(
+        replay_rewind_slots=10,
+        backfill_max_slots=64,
+        backfill_limit_per_candidate=2,
+        backfill_max_pages_per_candidate=2,
+        backfill_extra_page_budget=1,
+    )
+    await stream.store.save_cursor(100, now)
+    await stream.set_candidates([MINT_A])
+    stream._rpc_call = AsyncMock(
+        side_effect=[
+            120,
+            [
+                {"signature": SIGNATURE_A, "slot": 115, "err": None},
+                {"signature": SIGNATURE_B, "slot": 110, "err": None},
+            ],
+            [{"signature": SIGNATURE_C, "slot": 85, "err": None}],
+        ]
+    )
+
+    assert await stream._poll_once() is True
+    health = await stream.public_health()
+    second_page_params = stream._rpc_call.await_args_list[2].args[2]
+
+    assert second_page_params[1]["before"] == SIGNATURE_B
+    assert health["replay"]["pagesRequested"] == 2
+    assert health["replay"]["extraPagesUsed"] == 1
+    assert health["replay"]["candidatesCompleted"] == 1
+    assert health["replay"]["truncatedCandidates"] == 0
+    assert health["replay"]["coverageComplete"] is True
+
+
+@pytest.mark.asyncio
+async def test_http_polling_global_page_budget_fails_closed() -> None:
+    stream = polling_stream(
+        backfill_max_slots=64,
+        backfill_limit_per_candidate=1,
+        backfill_max_pages_per_candidate=2,
+        backfill_extra_page_budget=1,
+    )
+    await stream.set_candidates([MINT_A, MINT_B])
+    stream._rpc_call = AsyncMock(
+        side_effect=[
+            120,
+            [{"signature": SIGNATURE_A, "slot": 120, "err": None}],
+            [],
+            [{"signature": SIGNATURE_B, "slot": 120, "err": None}],
+        ]
+    )
+
+    assert await stream._poll_once() is False
+    health = await stream.public_health()
+
+    assert health["replay"]["pagesRequested"] == 3
+    assert health["replay"]["extraPagesUsed"] == 1
+    assert health["replay"]["candidatesCompleted"] == 1
+    assert health["replay"]["truncatedCandidates"] == 1
+    assert health["replay"]["coverageComplete"] is False
+    assert health["activity"]["scoreEligible"] is False
+
+
+@pytest.mark.asyncio
+async def test_authenticated_alchemy_url_is_not_emitted_by_http_client_logger(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "never-log-this-provider-key"
+    stream = polling_stream(api_key=secret)
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": 120})
+
+    caplog.set_level(logging.INFO)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+        assert await stream._rpc_call(client, "getSlot", [], 1) == 120
+
+    assert secret not in caplog.text
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+    assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
 
 
 @pytest.mark.asyncio

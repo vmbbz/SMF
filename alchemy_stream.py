@@ -154,7 +154,9 @@ class AlchemyStreamConfig:
     dedupe_retention_seconds: int = 21_600
     rpc_timeout_seconds: int = 12
     backfill_max_slots: int = 512
-    backfill_limit_per_candidate: int = 100
+    backfill_limit_per_candidate: int = 1_000
+    backfill_max_pages_per_candidate: int = 2
+    backfill_extra_page_budget: int = 8
     backfill_min_interval_seconds: int = 60
     poll_interval_seconds: int = 180
 
@@ -262,9 +264,21 @@ class AlchemyStreamConfig:
             ),
             backfill_limit_per_candidate=_env_int(
                 "ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE",
-                100,
+                1_000,
                 minimum=1,
                 maximum=1_000,
+            ),
+            backfill_max_pages_per_candidate=_env_int(
+                "ALCHEMY_STREAM_BACKFILL_MAX_PAGES_PER_CANDIDATE",
+                2,
+                minimum=1,
+                maximum=5,
+            ),
+            backfill_extra_page_budget=_env_int(
+                "ALCHEMY_STREAM_BACKFILL_EXTRA_PAGE_BUDGET",
+                8,
+                minimum=0,
+                maximum=64,
             ),
             backfill_min_interval_seconds=_env_int(
                 "ALCHEMY_STREAM_BACKFILL_MIN_INTERVAL_SECONDS",

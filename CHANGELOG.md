@@ -2,6 +2,20 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Production Alchemy Polling Hardening
+
+### Fixed
+
+- Suppressed `httpx` and `httpcore` request logging below WARNING because an authenticated Alchemy Solana HTTP URL contains the server-only key in its path.
+- Replaced the one-page busy-candidate failure with bounded pagination: up to 1,000 signatures per page, at most two pages per candidate, and at most eight extra pages across one cycle.
+- Kept the all-or-nothing evidence gate: exhausting a candidate or global page budget remains visible as truncation and returns `null` rather than a misleading partial count.
+
+### Cost and Contract
+
+- The 32-candidate baseline remains 18.72 million CUs per 30 days at a 180-second interval. The bounded pagination ceiling is 23.328 million CUs, excluding retries and all other account traffic.
+- Public recovery health now reports pages requested, extra pages used, per-candidate and per-cycle page caps, and baseline versus bounded cost estimates.
+- Advanced the public arena evidence schema to `2026-08-28.v5`.
+
 ## 2026-08-28 - Bounded Free-Tier Alchemy HTTP Evidence
 
 ### Added

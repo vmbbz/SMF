@@ -134,7 +134,7 @@ def test_arena_status_counts_director_responses_without_calling_them_fights(monk
     assert decision_response.status_code == 200
     assert status_response.status_code == 200
     status = status_response.json()
-    assert status["schemaVersion"] == "2026-08-28.v4"
+    assert status["schemaVersion"] == "2026-08-28.v5"
     assert status["arenaDirector"]["decisionsReturned"] == 1
     assert status["arenaDirector"]["selectedDecisions"] == 1
     assert status["matches"]["authoritativeMultiplayerRounds"] == 0
