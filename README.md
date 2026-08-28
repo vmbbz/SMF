@@ -47,15 +47,15 @@ Production runs as the Render web service `SMF` using this repository's `Dockerf
 - Public arena evidence: <https://www.sticklash.fun/arena>
 - Arena status API: <https://www.sticklash.fun/api/arena/status>
 
-After every production push, confirm the Render deploy is live for the intended commit before treating the release as complete. The health route must return HTTP `200`, the arena page must render, and the status API must report `persistence.mode: "postgres"` with `durable: true` in production.
+After every production push, confirm the Render deploy is live for the intended commit before treating the release as complete. The health route must return HTTP `200`, the arena page must render, and the status API must report `persistence.mode: "postgres"` with `durable: true` in production. If the Alchemy worker is enabled, also require a fresh `marketStream.status: "live"`, a durable replay cursor, and an advancing confirmed slot before calling the stream live.
 
 ### Autonomous Arena Director
 
-The server-side **StickLash Arena Director** merges live trending and graduated-token candidates, scores them using volume, volatility, liquidity, and discovery signals, and selects the next opponent for Trending and Endless modes. Each decision includes a deterministic decision ID, policy version, ranked candidates, reason codes, and provider errors so the autonomous choice can be explained and audited. If the director is unavailable, gameplay falls back to the existing local market queue.
+The server-side **StickLash Arena Director v0.2** merges live trending and graduated-token candidates, scores them using volume, volatility, liquidity, and discovery signals, and selects the next opponent for Trending and Endless modes. When a fresh Alchemy Yellowstone stream is configured, confirmed transactions mentioning subscribed candidate mints add a logarithmic bonus capped at eight points. Stale or unavailable streaming adds nothing and never blocks Birdeye-based selection. Each decision includes a deterministic decision ID, policy version, ranked candidates, reason codes, provider snapshots, and sanitized errors so the autonomous choice can be explained and audited. If the Director endpoint is unavailable, gameplay falls back to the existing local market queue.
 
-See [AnsemHack Readiness](ANSEMHACK_READINESS.md), [Arena Telemetry and Public Evidence](docs/ARENA_TELEMETRY.md), and [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md). The app exposes the same boundaries through **Help → Live Arena Status** at <https://sticklash.fun/arena> and **Help → Economy & Rewards** at <https://sticklash.fun/economy>.
+See [AnsemHack Readiness](ANSEMHACK_READINESS.md), [Alchemy Yellowstone Candidate Activity Stream](docs/ALCHEMY_STREAM.md), [Arena Telemetry and Public Evidence](docs/ARENA_TELEMETRY.md), and [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md). The app exposes the same boundaries through **Help → Live Arena Status** at <https://sticklash.fun/arena> and **Help → Economy & Rewards** at <https://sticklash.fun/economy>.
 
-The Arena Status page reports separate evidence classes: Director API responses, server-authoritative multiplayer rounds, generated share cards, aggregate wallet sessions, and server-verified Solana ledger transactions. It never calls Director responses completed fights, share cards impressions, wallet sessions paying users, or gameplay events onchain volume. Without durable PostgreSQL evidence, unavailable wallet/onchain metrics remain unavailable rather than becoming a misleading zero.
+The Arena Status page reports separate evidence classes: Director API responses, Alchemy stream health and replay state, server-authoritative multiplayer rounds, generated share cards, aggregate wallet sessions, and server-verified Solana ledger transactions. It never calls Alchemy observations trades or volume, Director responses completed fights, share cards impressions, wallet sessions paying users, or gameplay events onchain volume. Without durable evidence, unavailable metrics remain unavailable rather than becoming a misleading zero.
 
 ### Ranked Competition and Reward Status
 
@@ -85,7 +85,7 @@ The STICKLASH backend and infrastructure are powered by standard-setting Web3 an
 | **Upstash** | Serverless Redis | Multi-region WebRTC signaling, matchmaking queue, & active room lobby storage | `![Upstash](https://img.shields.io/badge/Upstash-Serverless--Redis-FF4F00?style=flat-square&logo=redis&logoColor=white)` |
 | **Deepgram** | Aura 2 Zeus & Flux v2 | Dynamic 24kHz Zeus voice lines, WebSocket speech capture, & AI-fighter command pipeline | `![Deepgram](https://img.shields.io/badge/Deepgram-Aura--Zeus-13EF95?style=flat-square&logo=deepgram&logoColor=black)` |
 | **Solana Web3** | On-Chain SPL Program | Phantom/Backpack/Solflare wallet pairing, token balance reads, and server-verified boost balances; new purchases stay disabled until game-token transfers to the reward reserve are implemented | `![Solana](https://img.shields.io/badge/Solana-SPL--Token-9945FF?style=flat-square&logo=solana&logoColor=white)` |
-| **Alchemy** | Solana Node API | Optional private mainnet RPC for server-side wallet reads and transaction verification; a bounded Yellowstone stream adapter is planned but is not a runtime dependency yet | `![Alchemy](https://img.shields.io/badge/Alchemy-Solana--RPC-1FC7D4?style=flat-square&logo=alchemy&logoColor=white)` |
+| **Alchemy** | Solana RPC + Yellowstone gRPC | Optional private RPC plus a server-only, candidate-filtered confirmed-transaction stream with replay cursor, dedupe, freshness, reconnect, Birdeye failover, and public health evidence; production streaming remains disabled until credentials and account access are configured | `![Alchemy](https://img.shields.io/badge/Alchemy-Solana--gRPC-1FC7D4?style=flat-square&logo=alchemy&logoColor=white)` |
 | **Twitter / X** | Web Intent API | Zero-auth viral gameplay sharing, automated screenshot capture matching, & ELO brag links | `![Twitter](https://img.shields.io/badge/Twitter/X-Viral--Share-000000?style=flat-square&logo=x&logoColor=white)` |
 | **Birdeye** | DeFi Market API | Live on-chain price data, market cap scaling, & pump.fun graduated feeds | `![Birdeye](https://img.shields.io/badge/Birdeye-DeFi--Data-00C2FF?style=flat-square&logo=coinmarketcap&logoColor=white)` |
 | **Supabase** | PostgreSQL | Persistent multi-player ELO rating records, match stats, & active leaderboard graphs | `![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat-square&logo=supabase&logoColor=white)` |
@@ -102,19 +102,21 @@ STICKLASH uses a Litestar Python backend to balance real-time Web3 queries, mult
                                      /       |        \
                        WebRTC Signals  Voice STT  Token Data
                                  /           |          \
-                 (Upstash Redis)       (Deepgram)     [ Litestar Server ]
-                        |                    |           /           \
-                 [Signaling Mgr]      [Flux v2 STT] [Birdeye]     [PostgreSQL]
-                        |                    |      (Proportional) (Supabase ELO)
-                 [Matchmaking]         [Zeus Announcer]   \
-                                                           (DexScreener)
+                 (Upstash Redis)       (Deepgram)      [ Litestar Server ]
+                        |                    |          /        |         \
+                 [Signaling Mgr]      [Flux v2 STT] [Birdeye] [Alchemy] [PostgreSQL]
+                        |                    |          |      Yellowstone   |
+                 [Matchmaking]         [Zeus Announcer] |          |      telemetry
+                                                     [Arena Director]
+                                                           |
+                                                     (DexScreener detail)
 ```
 
-### 1. Proportional Token Data Cache & Request Coalescing
-To run on-chain stats at 60fps without triggering Birdeye rate limits or hitting heavy compute billing quotas, the `BirdeyeService` (`birdeye_service.py`) operates an advanced **Two-Tier TTL In-Memory Cache**:
-* **Hot Tokens (Actively Fought)**: A 30-second TTL allows timings, health multipliers, and price boosts to reflect market pumps in real-time. A background cache warmer checks and pre-warms active fight tokens every 30s.
-* **Cold Tokens (Main Menu / Lists)**: A 15-minute (900s) TTL holds static meta-data (description, logos, symbols) for non-active coins.
-* **Inflight Request Coalescing (`asyncio.Event`)**: If `N` users concurrent in lobby request a newly-appeared token overview, the server coalesces the fetch. The first request queries the Birdeye/DexScreener APIs, while the other `N-1` requests suspend on an `asyncio.Event` and load directly from memory once resolved, **slashing developer quota usage by ~92%**.
+### 1. Bounded Market Data and Stream Pipeline
+
+`BirdeyeService` is intentionally list-only: trending and graduated discovery snapshots use a shared 180-second cache and coalesce concurrent refreshes. `DexScreenerService` handles per-token fight details so active gameplay does not re-enable expensive Birdeye overview polling or background prewarming.
+
+When explicitly enabled, `AlchemyYellowstoneStream` subscribes only to confirmed slots and successful non-vote transactions matching at most 32 current candidate mints. A bounded queue separates ingress from processing; PostgreSQL stores the latest slot cursor and a pruned signature-hash dedupe cache. Reconnects rewind 32 slots, clamp to the provider/local replay window, and deduplicate overlap. The API key remains server-only.
 
 ### 2. Upstash WebRTC Signaling & Room State Machine
 Multiplayer rooms, WebRTC SDP exchange, and matchmaking queues are managed on the **Upstash Serverless Redis** cluster. 
@@ -264,7 +266,9 @@ stick-fighter/
 ├── server.py               # Litestar routes, wallet verification, multiplayer, voice, and static app
 ├── arena_director.py       # Explainable autonomous market-opponent policy
 ├── arena_telemetry.py      # Insert-only public evidence store and privacy-safe aggregates
+├── alchemy_stream.py       # Yellowstone lifecycle, replay, dedupe, freshness, and provenance
 ├── birdeye_service.py      # Birdeye discovery-list proxy and caching
+├── yellowstone_proto/      # Generated bindings for the pinned Apache-2.0 protocol
 ├── src/
 │   ├── main.js             # Orchestration layer — game lifecycle, loadOpponent, resetAndFight, nextFight
 │   ├── arena-director-client.js # Director API client, UI announcement, decision event
@@ -316,6 +320,10 @@ stick-fighter/
 
 ```env
 BIRDEYE_API_KEY=your_key_here
+# Explicitly gated; key is sent only as the server-side X-Token header
+ALCHEMY_STREAM_ENABLED=0
+ALCHEMY_API_KEY=your_server_only_key
+ALCHEMY_YELLOWSTONE_ENDPOINT=https://solana-mainnet.g.alchemy.com
 # Enables durable ranked, wallet, boost, and arena telemetry persistence
 DATABASE_URL=postgresql://user:password@host/database
 # Server-only/private endpoint used by backend workers

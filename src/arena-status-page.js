@@ -166,6 +166,56 @@ function renderBoundaries(boundaries) {
   }
 }
 
+function setStreamStatus(text, fresh = false) {
+  const badge = getElement('arena-stream-status');
+  if (!badge) return;
+  badge.textContent = text;
+  badge.classList.toggle('fresh', fresh);
+}
+
+function renderMarketStream(stream) {
+  if (!stream) {
+    setStreamStatus('STREAM EVIDENCE UNAVAILABLE');
+    setText('arena-stream-last-update', 'The backend did not return a stream-health record.');
+    for (const id of [
+      'arena-stream-freshness',
+      'arena-stream-slot',
+      'arena-stream-candidates',
+      'arena-stream-observations',
+    ]) setText(id, 'NOT AVAILABLE');
+    setText('arena-stream-cursor', 'Replay cursor evidence is not available.');
+    setText('arena-stream-reliability', 'Reconnect and queue evidence is not available.');
+    return;
+  }
+
+  const status = String(stream.status || 'unavailable').replaceAll('_', ' ').toUpperCase();
+  const isFresh = stream.freshness === 'fresh' && ['live', 'degraded'].includes(stream.status);
+  setStreamStatus(status, isFresh);
+  setText('arena-stream-freshness', String(stream.freshness || 'unavailable').toUpperCase());
+  setText('arena-stream-slot', formatArenaCount(stream.lastSlot));
+  setText('arena-stream-candidates', formatArenaCount(stream.subscription?.candidateCount));
+  setText('arena-stream-observations', formatArenaCount(stream.activity?.observedConfirmedTransactions));
+  setText(
+    'arena-stream-last-update',
+    stream.lastUpdateAt
+      ? `Latest transport update: ${formatArenaTime(stream.lastUpdateAt)} · ${stream.ageSeconds ?? 'N/A'}s old.`
+      : 'No Alchemy transport update has been recorded.'
+  );
+
+  const replay = stream.replay || {};
+  const cursorLabel = replay.cursorDurable === true ? 'durable PostgreSQL cursor' : 'process-memory cursor';
+  setText(
+    'arena-stream-cursor',
+    `${cursorLabel} · saved slot ${formatArenaCount(replay.cursorSlot)} · requested replay slot ${formatArenaCount(replay.requestedFromSlot)} · ${String(replay.reason || 'not available').replaceAll('_', ' ')}.`
+  );
+
+  const reliability = stream.reliability || {};
+  setText(
+    'arena-stream-reliability',
+    `Reconnects ${formatArenaCount(reliability.reconnects)} · dropped updates ${formatArenaCount(reliability.droppedUpdates)} · last sanitized error ${reliability.lastErrorCode || 'NONE'}.`
+  );
+}
+
 export function renderArenaStatus(status) {
   const persistence = status?.persistence || {};
   const director = status?.arenaDirector || {};
@@ -200,6 +250,7 @@ export function renderArenaStatus(status) {
   setText('arena-wallet-unique', formatArenaCount(engagement.uniqueAuthenticatedWallets));
 
   renderRecentSelections(director.recentSelections);
+  renderMarketStream(status?.marketStream);
   renderTransactions(status?.onchain);
   renderBoundaries(status?.boundaries);
   setText('arena-status-generated-at', formatArenaTime(status?.generatedAt));
@@ -225,6 +276,7 @@ function renderUnavailable(error) {
     'arena-wallet-unique',
   ]) setText(id, 'NOT AVAILABLE');
   renderRecentSelections([]);
+  renderMarketStream(null);
   renderTransactions(null);
   setText('arena-status-generated-at', 'LOAD FAILED');
 }

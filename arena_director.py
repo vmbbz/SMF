@@ -10,7 +10,7 @@ from typing import Any, Iterable
 
 
 DIRECTOR_NAME = "StickLash Arena Director"
-DIRECTOR_VERSION = "0.1.0"
+DIRECTOR_VERSION = "0.2.0"
 MAX_PUBLIC_CANDIDATES = 8
 
 POLICY = {
@@ -18,6 +18,7 @@ POLICY = {
     "absolutePriceChange24h": 23,
     "liquidity": 25,
     "graduatedDiscoveryBonus": 10,
+    "confirmedActivityBonus": 8,
     "thinLiquidityPenalty": 15,
     "missingVolumePenalty": 10,
 }
@@ -45,6 +46,14 @@ def _signed_number(value: Any) -> float:
 
 def _token_mint(token: dict[str, Any]) -> str:
     return str(token.get("mint") or token.get("address") or "").strip()
+
+
+def _alchemy_activity(token: dict[str, Any]) -> tuple[float, bool]:
+    """Return bounded activity and whether a fresh stream made it scoreable."""
+    activity = token.get("alchemyActivity")
+    if not isinstance(activity, dict) or activity.get("scoreEligible") is not True:
+        return 0.0, False
+    return _number(activity.get("observedConfirmedTransactions")), True
 
 
 def _merge_candidate(
@@ -81,11 +90,14 @@ def _reason_codes(token: dict[str, Any]) -> list[str]:
     volume = _number(token.get("volume24h"))
     movement = _signed_number(token.get("priceChange24h"))
     liquidity = _number(token.get("liquidity"))
+    confirmed_activity, activity_eligible = _alchemy_activity(token)
     sources = set(token.get("arenaSourceLists") or [])
     reasons: list[str] = []
 
     if "graduated" in sources:
         reasons.append("graduated_discovery")
+    if activity_eligible and confirmed_activity > 0:
+        reasons.append("recent_confirmed_onchain_activity")
     if volume >= 1_000_000:
         reasons.append("exceptional_24h_volume")
     elif volume >= 100_000:
@@ -114,16 +126,20 @@ def _score_candidate(token: dict[str, Any]) -> float:
     volume = _number(token.get("volume24h"))
     movement = abs(_signed_number(token.get("priceChange24h")))
     liquidity = _number(token.get("liquidity"))
+    confirmed_activity, activity_eligible = _alchemy_activity(token)
     sources = set(token.get("arenaSourceLists") or [])
 
     volume_score = min(math.log10(1 + volume) / 8, 1) * POLICY["volume24h"]
     movement_score = min(movement / 100, 1) * POLICY["absolutePriceChange24h"]
     liquidity_score = min(math.log10(1 + liquidity) / 6, 1) * POLICY["liquidity"]
     graduated_bonus = POLICY["graduatedDiscoveryBonus"] if "graduated" in sources else 0
+    activity_bonus = 0.0
+    if activity_eligible:
+        activity_bonus = min(math.log2(1 + confirmed_activity) / 5, 1) * POLICY["confirmedActivityBonus"]
     thin_penalty = POLICY["thinLiquidityPenalty"] if liquidity < 5_000 else 0
     missing_volume_penalty = POLICY["missingVolumePenalty"] if volume <= 0 else 0
 
-    score = volume_score + movement_score + liquidity_score + graduated_bonus
+    score = volume_score + movement_score + liquidity_score + graduated_bonus + activity_bonus
     score -= thin_penalty + missing_volume_penalty
     return round(max(0.0, min(100.0, score)), 2)
 
@@ -141,6 +157,7 @@ def _explanation(token: dict[str, Any], reasons: list[str]) -> str:
         "thin_liquidity_risk": "a thin-liquidity risk flag",
         "missing_volume_data": "missing volume data",
         "balanced_market_activity": "balanced market activity",
+        "recent_confirmed_onchain_activity": "recent confirmed onchain activity",
     }
     readable = [labels[reason] for reason in reasons[:3] if reason in labels]
     return f"Selected ${symbol} for " + ", ".join(readable) + "."
@@ -157,6 +174,8 @@ def _decision_id(current_mint: str, scored: Iterable[dict[str, Any]]) -> str:
                 "volume24h": item["metrics"]["volume24h"],
                 "priceChange24h": item["metrics"]["priceChange24h"],
                 "liquidity": item["metrics"]["liquidity"],
+                "alchemyConfirmedTransactions": item["metrics"]["alchemyConfirmedTransactions"],
+                "alchemyActivityScoreEligible": item["metrics"]["alchemyActivityScoreEligible"],
             }
             for item in scored
         ],
@@ -189,8 +208,11 @@ class ArenaDirector:
                 merged[mint] = _merge_candidate(merged.get(mint), raw_token, source_list)
 
         scored: list[dict[str, Any]] = []
+        alchemy_activity_used = False
         for mint, token in merged.items():
             reasons = _reason_codes(token)
+            confirmed_activity, activity_eligible = _alchemy_activity(token)
+            alchemy_activity_used = alchemy_activity_used or activity_eligible
             scored.append(
                 {
                     "mint": mint,
@@ -204,6 +226,8 @@ class ArenaDirector:
                         "priceChange24h": token["priceChange24h"],
                         "liquidity": token["liquidity"],
                         "marketCap": token["marketCap"],
+                        "alchemyConfirmedTransactions": confirmed_activity if activity_eligible else None,
+                        "alchemyActivityScoreEligible": activity_eligible,
                     },
                     "token": token,
                 }
@@ -253,7 +277,11 @@ class ArenaDirector:
             },
             "policy": dict(POLICY),
             "currentMintExcluded": current or None,
-            "inputSources": ["birdeye_trending", "birdeye_graduated"],
+            "inputSources": [
+                "birdeye_trending",
+                "birdeye_graduated",
+                *(["alchemy_yellowstone_candidate_activity"] if alchemy_activity_used else []),
+            ],
             "candidateCount": len(scored),
             "opponent": opponent,
             "explanation": explanation,

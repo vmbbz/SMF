@@ -13,6 +13,7 @@ RUN uv sync --frozen --no-dev
 COPY server.py .
 COPY arena_director.py .
 COPY arena_telemetry.py .
+COPY alchemy_stream.py .
 COPY auth.py .
 COPY birdeye_service.py .
 COPY dexscreener_service.py .
@@ -26,6 +27,8 @@ COPY room_cleanup.py .
 COPY room_manager.py .
 COPY signaling.py .
 COPY game_engine/ game_engine/
+COPY yellowstone_proto/ yellowstone_proto/
+COPY vendor/yellowstone/v15.1.2/ vendor/yellowstone/v15.1.2/
 COPY index.html wallet-connect.js manifest.json favicon.ico ./
 COPY .well-known/ .well-known/
 COPY src/ src/

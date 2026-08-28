@@ -6,22 +6,26 @@ Status: implemented in the StickLash backend and web client on 28 August 2026.
 
 Arena telemetry gives judges, players, and operators a public view of facts the StickLash backend can support. It is deliberately narrower than an analytics dashboard and separate from the reward system.
 
-The design answers five questions without inflating the answer:
+The design answers six questions without inflating the answer:
 
 1. How many Arena Director responses were recorded?
 2. How many multiplayer rounds were finalized by the authoritative server game loop?
 3. How many share cards and aggregate wallet sessions were recorded?
 4. Which Solana transactions passed the existing server verification path?
 5. Is the evidence durable, or will it disappear when the current process restarts?
+6. Is the optional Alchemy Yellowstone stream configured, fresh, replayable, and durably cursor-backed?
 
 The public page is available through **Help -> Live Arena Status** and the `/arena` route. Its read-only JSON source is `/api/arena/status`.
 
 ## Evidence pipeline
 
 ```text
-Birdeye discovery snapshot
-          |
-          v
+Birdeye discovery snapshot -----> candidate mint filter
+          |                              |
+          |                              v
+          |                    Alchemy Yellowstone stream
+          |                       | cursor + dedupe
+          v                       v
 Arena Director response -----> arena_director_events
           |
           |                         public aggregates
@@ -35,7 +39,7 @@ Wallet auth sessions            -> aggregate-only query
 Verified boost burn ledger      -> transaction count + Solscan links
 ```
 
-Telemetry observes these paths. It does not control opponent scoring, combat, match settlement, ELO, boost authorization, or rewards.
+The public telemetry layer observes these paths. It does not control combat, match settlement, ELO, boost authorization, or rewards. The separate Alchemy enrichment path can influence only the bounded Director score described below.
 
 ## Exact metric definitions
 
@@ -49,6 +53,18 @@ Telemetry observes these paths. It does not control opponent scoring, combat, ma
 - **Degraded market selections**: selected responses served while one discovery channel used a fallback or failed while another fresh snapshot remained available.
 
 Provider observation time and provider snapshot time are separate. StickLash never substitutes request time for an unknown market snapshot timestamp.
+
+### Alchemy market stream
+
+- **Transport freshness**: age of the most recent received Yellowstone update, normally a confirmed slot update. It is not the age of Birdeye's market snapshot.
+- **Subscribed candidates**: bounded count of current Birdeye-discovered mint filters. Mint values themselves are not exposed in the health object.
+- **Confirmed candidate transaction observations**: distinct signature hashes inside the configured window whose transactions mention at least one subscribed mint. This is not a trade, buy, sell, USD-volume, revenue, or unique-user count.
+- **Replay cursor**: latest processed confirmed slot, rewound and clamped on reconnect. Public health states whether that cursor is durable PostgreSQL state or process memory.
+- **Reliability counters**: process-lifetime reconnect, ingress, processing, drop, and sanitized-error evidence. A zero drop count does not prove a provider delivered every possible Solana event.
+
+Only a fresh stream can add the bounded Alchemy activity bonus to Director v0.2. `disabled`, `misconfigured`, `connecting`, `stale`, `reconnecting`, and `stopped` states add no score. Birdeye remains the required discovery/base-scoring provider, so Alchemy availability does not determine whether a selection can be returned.
+
+See [Alchemy Yellowstone Candidate Activity Stream](ALCHEMY_STREAM.md) for the exact subscription, scoring, replay, failure, and activation contracts.
 
 ### Matches
 
@@ -102,13 +118,20 @@ All three reject `UPDATE` and `DELETE` through database triggers. Application co
 
 This insert-only telemetry is not the future reward reserve ledger, creator-fee ledger, eligibility snapshot, or claim ledger. Those value-moving systems remain separate and disabled.
 
+Alchemy ingestion state uses two separate operational tables:
+
+- `alchemy_stream_cursor`
+- `alchemy_stream_transactions`
+
+The cursor is updated as confirmed slots are processed. Recent signature-hash rows are deleted after the bounded dedupe-retention window. They are therefore neither insert-only public telemetry nor a permanent transaction ledger, and they must never feed rewards or leaderboard eligibility.
+
 ## Public API contract
 
 The endpoint returns these top-level evidence classes:
 
 ```json
 {
-  "schemaVersion": "2026-08-28.v1",
+  "schemaVersion": "2026-08-28.v2",
   "generatedAt": "2026-08-28T00:00:00+00:00",
   "persistence": {
     "mode": "postgres",
@@ -116,6 +139,15 @@ The endpoint returns these top-level evidence classes:
     "retentionScope": "all retained database events"
   },
   "arenaDirector": {},
+  "marketStream": {
+    "provider": "alchemy",
+    "status": "disabled|misconfigured|connecting|live|degraded|stale|reconnecting|stopped",
+    "freshness": "fresh|stale|unavailable",
+    "subscription": {},
+    "replay": {},
+    "reliability": {},
+    "activity": {}
+  },
   "matches": {},
   "engagement": {},
   "onchain": {},
@@ -125,6 +157,8 @@ The endpoint returns these top-level evidence classes:
 
 The page treats a missing or `null` durable metric as **NOT AVAILABLE**. It does not coerce missing evidence to zero. Every metric group includes a plain-language definition so labels cannot quietly drift into stronger claims.
 
+For stream activity specifically, zero is evidence-backed only when the transport is fresh and at least one candidate is subscribed. All other states return a `null` observation count.
+
 ## Security and privacy properties
 
 - The endpoint is read-only and contains no admin mutation path.
@@ -133,7 +167,9 @@ The page treats a missing or `null` durable metric as **NOT AVAILABLE**. It does
 - Recent Director entries link only public token mints.
 - Recent onchain entries link only public Solana transaction signatures already accepted by the verification ledger.
 - Provider errors are reduced to error types; credentials and provider response bodies are not stored.
-- Test configuration globally removes deployed `REDIS_URL` and `DATABASE_URL` values before each test, preventing unit tests from mutating deployed services.
+- Alchemy endpoint validation forbids URL-embedded credentials and non-Alchemy hosts; the public API returns only a sanitized hostname.
+- Stream transaction bodies, wallet addresses, instructions, and raw signatures are not stored. Dedupe uses a SHA-256 signature hash.
+- Test configuration globally removes deployed `REDIS_URL`, `DATABASE_URL`, and Alchemy stream values before each test, preventing unit tests from connecting to deployed services.
 
 ## Deployment verification
 
@@ -147,13 +183,16 @@ Before calling the page durable:
 6. Complete one server multiplayer round and confirm `authoritativeMultiplayerRounds` increases exactly once.
 7. Confirm the JSON contains no wallet address, room code, player name, auth token, or challenge.
 8. Confirm the `/arena` page renders zero only for connected durable ledgers and renders unavailable metrics as **NOT AVAILABLE**.
+9. If Alchemy is intentionally disabled, confirm `marketStream.status` is `disabled` and its observation count is `null`.
+10. If Alchemy is enabled, require `status: "live"`, `freshness: "fresh"`, `replay.cursorDurable: true`, an advancing slot, and no credential in the response or logs.
+11. Restart the service and confirm it requests a rewound persisted slot without replay duplicates inflating the current observation window.
 
 Do not seed, backfill, or simulate public counters for a demo. A small real number is stronger evidence than an inflated number with ambiguous provenance.
 
 ## Known limitations and next work
 
 - Browser-local AI and Endless outcomes are not server-attested, so the page does not claim a completed "fights directed" count.
-- Birdeye list provenance is implemented; Alchemy Yellowstone replay cursors and stream-health evidence are not.
+- The Alchemy adapter and public health contract are implemented, but deployed Alchemy claims remain gated on credentials, account access, and the production proof checks in `ALCHEMY_STREAM.md`.
 - Social impression/click telemetry is not implemented; only generated cards are counted.
 - Reward epochs, anti-collusion eligibility, reserve accounting, and token claims are not derived from these counters.
 - Multi-region aggregation depends on every instance sharing the same PostgreSQL database.

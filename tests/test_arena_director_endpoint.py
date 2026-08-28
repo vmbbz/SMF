@@ -15,6 +15,8 @@ def disable_external_lifespan_services(monkeypatch: pytest.MonkeyPatch):
     """Endpoint tests must never inherit deployed Redis/Postgres credentials."""
     monkeypatch.delenv("REDIS_URL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("ALCHEMY_STREAM_ENABLED", raising=False)
+    monkeypatch.delenv("ALCHEMY_API_KEY", raising=False)
 
 
 @pytest.mark.asyncio
@@ -67,7 +69,9 @@ def test_arena_director_endpoint_selects_and_explains(monkeypatch) -> None:
     assert [snapshot["channel"] for snapshot in payload["providerSnapshots"]] == [
         "trending",
         "graduated",
+        "yellowstone_candidate_activity",
     ]
+    assert payload["providerSnapshots"][2]["state"] == "disabled"
 
 
 def test_arena_director_endpoint_degrades_when_one_provider_fails(monkeypatch) -> None:
@@ -134,3 +138,62 @@ def test_arena_status_counts_director_responses_without_calling_them_fights(monk
     assert status["matches"]["authoritativeMultiplayerRounds"] == 0
     assert "not completed fights" in status["arenaDirector"]["definition"]
     assert status["onchain"]["verifiedTransactions"] is None
+    assert status["marketStream"]["status"] == "disabled"
+    assert status["marketStream"]["activity"]["observedConfirmedTransactions"] is None
+
+
+def test_arena_director_endpoint_uses_fresh_alchemy_enrichment_without_replacing_birdeye(monkeypatch) -> None:
+    base = {
+        "mint": "mint-enriched",
+        "symbol": "RICH",
+        "volume24h": 350_000,
+        "priceChange24h": 22,
+        "liquidity": 90_000,
+    }
+    enriched = {
+        **base,
+        "alchemyActivity": {
+            "provider": "alchemy",
+            "transport": "yellowstone_grpc",
+            "scoreEligible": True,
+            "observedConfirmedTransactions": 7,
+        },
+    }
+    monkeypatch.setattr(server, "_fetch_market_trending", AsyncMock(return_value=[base]))
+    monkeypatch.setattr(server, "_fetch_market_graduates", AsyncMock(return_value=[]))
+
+    with TestClient(app=app) as client:
+        monkeypatch.setattr(
+            server.alchemy_stream,
+            "enrich_candidate_lists",
+            AsyncMock(return_value=([enriched], [])),
+        )
+        monkeypatch.setattr(
+            server.alchemy_stream,
+            "provider_snapshot",
+            AsyncMock(
+                return_value={
+                    "provider": "alchemy",
+                    "channel": "yellowstone_candidate_activity",
+                    "state": "live",
+                    "freshness": "fresh",
+                    "snapshotAt": "2026-08-28T12:00:00+00:00",
+                    "observedAt": "2026-08-28T12:00:01+00:00",
+                    "ageSeconds": 1,
+                    "tokenCount": 1,
+                    "requiredForSelection": False,
+                    "scoreEligible": True,
+                    "cursorDurable": True,
+                    "lastSlot": 123,
+                }
+            ),
+        )
+        response = client.get("/api/arena/director/next")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert "alchemy_yellowstone_candidate_activity" in payload["inputSources"]
+    assert payload["candidates"][0]["metrics"]["alchemyConfirmedTransactions"] == 7
+    assert payload["providerSnapshots"][2]["state"] == "live"
+    assert payload["providerSnapshots"][2]["requiredForSelection"] is False
+    assert payload["marketDataState"] in {"fresh", "unverified"}

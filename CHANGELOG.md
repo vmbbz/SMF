@@ -2,6 +2,28 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Alchemy Yellowstone Evidence Gate
+
+### Added
+
+- Server-only Alchemy Yellowstone gRPC adapter for confirmed activity involving bounded Birdeye-discovered candidate mints.
+- Durable PostgreSQL replay cursor and pruned signature-hash dedupe cache with 32-slot rewind, replay-window clamping, ping handling, bounded ingress, and exponential reconnect.
+- Public `marketStream` health and provenance in `/api/arena/status`, rendered on the Help-linked `/arena` page.
+- Pinned Apache-2.0 Yellowstone protocol bindings with release hashes and license provenance.
+- Operator runbook and claim boundaries in `docs/ALCHEMY_STREAM.md`.
+
+### Changed
+
+- Arena Director upgraded to v0.2 with a logarithmic confirmed-activity bonus capped at eight points.
+- Birdeye remains required for discovery/base scoring; stale or unavailable Alchemy streaming contributes no bonus and cannot block selection.
+- Public arena evidence schema advanced to `2026-08-28.v2`.
+
+### Safety Gates
+
+- Streaming remains explicitly disabled until `ALCHEMY_STREAM_ENABLED=1` and a server-only key with Yellowstone access are configured.
+- Production may claim live Alchemy streaming only after fresh status, an advancing confirmed slot, a durable cursor, restart replay/dedupe, and Birdeye failover are verified.
+- Stream observations are not labeled trades, USD volume, revenue, unique users, leaderboard eligibility, or rewards.
+
 ## 2026-05-26 - Android MWA Return + 2D Hadouken Release
 
 Release notes: [releases/2026-05-26-android-mwa-fireball.md](releases/2026-05-26-android-mwa-fireball.md)

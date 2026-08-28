@@ -533,6 +533,28 @@
       background: rgba(0, 255, 157, 0.035);
     }
 
+    .arena-stream-box {
+      display: grid;
+      grid-template-columns: minmax(180px, 0.65fr) minmax(0, 1.5fr);
+      gap: 16px;
+      padding: 17px;
+      border: 1px solid rgba(153, 69, 255, 0.35);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(153, 69, 255, 0.07), rgba(0, 212, 255, 0.035));
+    }
+
+    .arena-stream-detail {
+      display: grid;
+      gap: 7px;
+      color: #aeb8be;
+      font-size: 7px;
+      line-height: 1.65;
+    }
+
+    .arena-stream-detail strong {
+      color: #fff;
+    }
+
     .arena-onchain-count {
       color: var(--neon-green);
       font-family: var(--font-display);
@@ -2788,7 +2810,8 @@
         grid-template-columns: repeat(2, minmax(0, 1fr));
       }
       .arena-selection,
-      .arena-onchain-box {
+      .arena-onchain-box,
+      .arena-stream-box {
         grid-template-columns: 1fr;
       }
       .arena-status-actions {
@@ -3210,6 +3233,27 @@
           </article>
         </div>
         <div class="economy-note">Only aggregate counts are public. Wallet addresses, player names, room codes, session tokens, and authentication challenges never appear here.</div>
+      </section>
+
+      <section class="economy-section" aria-labelledby="arena-stream-title">
+        <h2 id="arena-stream-title">ALCHEMY YELLOWSTONE STREAM</h2>
+        <div class="arena-stream-box">
+          <div>
+            <div id="arena-stream-status" class="arena-evidence-tag">CHECKING STREAM</div>
+            <div id="arena-stream-last-update" class="arena-onchain-detail">No stream freshness is inferred until the backend reports it.</div>
+          </div>
+          <div class="arena-stream-detail">
+            <span><strong id="arena-stream-freshness">NOT AVAILABLE</strong> transport freshness</span>
+            <span><strong id="arena-stream-slot">NOT AVAILABLE</strong> latest confirmed slot</span>
+            <span><strong id="arena-stream-candidates">NOT AVAILABLE</strong> subscribed candidate mints</span>
+            <span><strong id="arena-stream-observations">NOT AVAILABLE</strong> candidate transaction observations in the active window</span>
+            <span id="arena-stream-cursor">Replay cursor evidence is loading.</span>
+            <span id="arena-stream-reliability">Reconnect and queue evidence is loading.</span>
+          </div>
+        </div>
+        <div class="economy-note">
+          Birdeye discovers candidates and remains the base market-scoring source. When fresh, Alchemy adds only a bounded signal for confirmed transactions that mention those candidate mints. These observations are not labeled trades, USD volume, revenue, or unique users; stale or unavailable streaming contributes no Director score bonus.
+        </div>
       </section>
 
       <section class="economy-section" aria-labelledby="arena-recent-title">

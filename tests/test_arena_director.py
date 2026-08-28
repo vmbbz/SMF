@@ -104,3 +104,44 @@ def test_non_finite_market_values_are_bounded() -> None:
     assert candidate["metrics"]["priceChange24h"] == 0
     assert candidate["metrics"]["liquidity"] == 0
     assert "thin_liquidity_risk" in candidate["reasons"]
+
+
+def test_fresh_alchemy_activity_adds_only_the_bounded_optional_bonus() -> None:
+    director = ArenaDirector()
+    base = token("mint-activity", "ACTIVE", volume=250_000, change=18, liquidity=70_000)
+    enriched = {
+        **base,
+        "alchemyActivity": {
+            "scoreEligible": True,
+            "observedConfirmedTransactions": 31,
+        },
+    }
+
+    baseline = director.decide([base], [], generated_at=FIXED_TIME)
+    with_activity = director.decide([enriched], [], generated_at=FIXED_TIME)
+    delta = with_activity["candidates"][0]["score"] - baseline["candidates"][0]["score"]
+
+    assert 0 < delta <= with_activity["policy"]["confirmedActivityBonus"]
+    assert "alchemy_yellowstone_candidate_activity" in with_activity["inputSources"]
+    assert "recent_confirmed_onchain_activity" in with_activity["candidates"][0]["reasons"]
+    assert with_activity["candidates"][0]["metrics"]["alchemyConfirmedTransactions"] == 31
+
+
+def test_stale_alchemy_activity_cannot_change_selection_or_score() -> None:
+    director = ArenaDirector()
+    base = token("mint-stale", "STALE", volume=250_000, change=18, liquidity=70_000)
+    stale = {
+        **base,
+        "alchemyActivity": {
+            "scoreEligible": False,
+            "observedConfirmedTransactions": 999_999,
+        },
+    }
+
+    baseline = director.decide([base], [], generated_at=FIXED_TIME)
+    stale_decision = director.decide([stale], [], generated_at=FIXED_TIME)
+
+    assert stale_decision["candidates"][0]["score"] == baseline["candidates"][0]["score"]
+    assert stale_decision["decisionId"] == baseline["decisionId"]
+    assert "alchemy_yellowstone_candidate_activity" not in stale_decision["inputSources"]
+    assert stale_decision["candidates"][0]["metrics"]["alchemyConfirmedTransactions"] is None

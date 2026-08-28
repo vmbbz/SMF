@@ -264,6 +264,28 @@ CREATE TABLE IF NOT EXISTS arena_share_events (
     recorded_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Operational Alchemy Yellowstone replay state. These tables are a bounded
+-- ingestion cursor/dedupe cache, not gameplay telemetry or a reward ledger.
+CREATE TABLE IF NOT EXISTS alchemy_stream_cursor (
+    singleton       SMALLINT PRIMARY KEY CHECK (singleton = 1),
+    last_slot       BIGINT NOT NULL CHECK (last_slot >= 0),
+    last_update_at  TIMESTAMPTZ NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS alchemy_stream_transactions (
+    signature_hash  TEXT PRIMARY KEY CHECK (length(signature_hash) = 64),
+    slot            BIGINT NOT NULL CHECK (slot >= 0),
+    observed_at     TIMESTAMPTZ NOT NULL,
+    mints           TEXT[] NOT NULL CHECK (cardinality(mints) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_alchemy_stream_transactions_observed
+    ON alchemy_stream_transactions (observed_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_alchemy_stream_transactions_mints
+    ON alchemy_stream_transactions USING GIN (mints);
+
 CREATE INDEX IF NOT EXISTS idx_arena_share_events_recorded
     ON arena_share_events (recorded_at DESC);
 

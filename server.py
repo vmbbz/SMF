@@ -24,6 +24,12 @@ from typing import Any, List, Dict, Optional
 from urllib.parse import parse_qs, urlencode, urlparse
 from arena_director import arena_director
 from arena_telemetry import ArenaTelemetryStore, ensure_telemetry_schema
+from alchemy_stream import (
+    AlchemyStreamConfig,
+    AlchemyStreamStore,
+    AlchemyYellowstoneStream,
+    ensure_alchemy_stream_schema,
+)
 from birdeye_service import birdeye_service
 from dexscreener_service import dexscreener_service
 from economy import build_public_economy_policy
@@ -99,6 +105,8 @@ boost_pg_pool: asyncpg.Pool | None = None
 cleanup_task: RoomCleanupTask | None = None
 matchmaking_task: MatchmakingTask | None = None
 arena_telemetry = ArenaTelemetryStore()
+alchemy_stream = AlchemyYellowstoneStream(AlchemyStreamConfig.from_env())
+alchemy_candidate_refresh_task: asyncio.Task[None] | None = None
 
 # ─────────────────────────────────────────────
 # Solana Boost Purchase / Ledger
@@ -546,12 +554,14 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
     """Safe lifespan for $SMF Stick Lash - no required Redis or Postgres"""
     print("[lifespan] Starting safe mode for $SMF Stick Lash")
 
-    global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, boost_pg_pool, cleanup_task, matchmaking_task, arena_telemetry
+    global room_manager, game_loop_manager, signaling_manager, oidc_config, elo_manager, boost_pg_pool, cleanup_task, matchmaking_task, arena_telemetry, alchemy_stream, alchemy_candidate_refresh_task
 
     # Declare variables BEFORE try so finally block never fails
     redis_pool = None
     pg_pool = None
     arena_telemetry = ArenaTelemetryStore()
+    alchemy_store = AlchemyStreamStore()
+    alchemy_candidate_refresh_task = None
 
     try:
         # Redis (optional - initialized from REDIS_URL if set)
@@ -602,6 +612,15 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
                     safe_print(
                         f"[arena-telemetry] Schema unavailable; using process memory: {type(telemetry_exc).__name__}"
                     )
+                try:
+                    await ensure_alchemy_stream_schema(pg_pool)
+                    alchemy_store = AlchemyStreamStore(pg_pool)
+                    print("[alchemy-stream] Durable PostgreSQL cursor enabled")
+                except Exception as alchemy_schema_exc:
+                    alchemy_store = AlchemyStreamStore()
+                    safe_print(
+                        f"[alchemy-stream] Cursor schema unavailable; using process memory: {type(alchemy_schema_exc).__name__}"
+                    )
                 print("[postgres] Connected")
             except Exception:
                 print("[postgres] Skipped - running without database")
@@ -642,10 +661,30 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         else:
             print("[auth] OIDC not configured")
 
+        alchemy_stream = AlchemyYellowstoneStream(AlchemyStreamConfig.from_env(), alchemy_store)
+        if await alchemy_stream.start():
+            alchemy_candidate_refresh_task = asyncio.create_task(
+                _alchemy_candidate_refresh_loop(),
+                name="alchemy-candidate-refresh",
+            )
+            print("[alchemy-stream] Yellowstone worker started")
+        elif alchemy_stream.config.enabled:
+            print("[alchemy-stream] Enabled but not configured; ALCHEMY_API_KEY and a valid HTTPS endpoint are required")
+        else:
+            print("[alchemy-stream] Disabled by configuration")
+
         yield
 
     finally:
         # SAFE SHUTDOWN - only stop what was created
+        if alchemy_candidate_refresh_task is not None:
+            alchemy_candidate_refresh_task.cancel()
+            try:
+                await alchemy_candidate_refresh_task
+            except asyncio.CancelledError:
+                pass
+            alchemy_candidate_refresh_task = None
+        await alchemy_stream.stop()
         if matchmaking_task is not None:
             await matchmaking_task.stop()
         if cleanup_task is not None:
@@ -2876,7 +2915,34 @@ async def _fetch_market_token_details(mint: str) -> Optional[Dict[str, Any]]:
     return await dexscreener_service.get_cached_token(mint)
 
 
-def _arena_provider_snapshots(
+async def _alchemy_candidate_refresh_loop() -> None:
+    """Keep the narrow stream filter aligned with cached Birdeye discovery."""
+    while True:
+        try:
+            results = await asyncio.gather(
+                _fetch_market_trending(16),
+                _fetch_market_graduates(16),
+                return_exceptions=True,
+            )
+            mints: list[str] = []
+            for result in results:
+                if not isinstance(result, list):
+                    continue
+                for token in result:
+                    if not isinstance(token, dict):
+                        continue
+                    mint = str(token.get("mint") or token.get("address") or "").strip()
+                    if mint:
+                        mints.append(mint)
+            await alchemy_stream.set_candidates(mints)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            safe_print(f"[alchemy-stream] Candidate refresh skipped: {type(exc).__name__}")
+        await asyncio.sleep(alchemy_stream.config.candidate_refresh_seconds)
+
+
+async def _arena_provider_snapshots(
     lists: list[List[Dict[str, Any]]],
     provider_errors: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
@@ -2885,6 +2951,7 @@ def _arena_provider_snapshots(
     error_by_provider = {item["provider"]: item["error"] for item in provider_errors}
     for index, channel in enumerate(("trending", "graduated")):
         snapshot = birdeye_service.get_list_provenance(channel)
+        snapshot["requiredForSelection"] = True
         snapshot["tokenCount"] = len(lists[index])
         provider_key = f"birdeye_{channel}"
         if provider_key in error_by_provider:
@@ -2898,6 +2965,7 @@ def _arena_provider_snapshots(
                 }
             )
         snapshots.append(snapshot)
+    snapshots.append(await alchemy_stream.provider_snapshot())
     return snapshots
 
 
@@ -2909,8 +2977,9 @@ def _arena_market_data_state(
     if decision.get("status") != "selected":
         return "unavailable"
 
-    states = {str(item.get("state") or "unavailable") for item in snapshots}
-    freshness = {str(item.get("freshness") or "unavailable") for item in snapshots}
+    required_snapshots = [item for item in snapshots if item.get("requiredForSelection", True)]
+    states = {str(item.get("state") or "unavailable") for item in required_snapshots}
+    freshness = {str(item.get("freshness") or "unavailable") for item in required_snapshots}
     degraded_states = {"graduated_fallback", "stale_cache", "request_error", "unavailable"}
     if states & degraded_states:
         if "fresh" in freshness:
@@ -2947,13 +3016,19 @@ async def api_arena_director_next(
         else:
             lists.append(result if isinstance(result, list) else [])
 
+    try:
+        enriched = await alchemy_stream.enrich_candidate_lists(lists[0], lists[1])
+        lists = [enriched[0], enriched[1]]
+    except Exception as exc:
+        provider_errors.append({"provider": "alchemy_stream", "error": type(exc).__name__})
+
     decision = arena_director.decide(
         lists[0],
         lists[1],
         current_mint=current_mint,
     )
     decision["providerErrors"] = provider_errors
-    provider_snapshots = _arena_provider_snapshots(lists, provider_errors)
+    provider_snapshots = await _arena_provider_snapshots(lists, provider_errors)
     decision["providerSnapshots"] = provider_snapshots
     decision["marketDataState"] = _arena_market_data_state(decision, provider_snapshots)
     try:
@@ -2971,7 +3046,12 @@ async def api_arena_director_next(
 @get(ARENA_STATUS_ROUTE)
 async def api_arena_status(recent: int = 8) -> Dict[str, Any]:
     """Return privacy-safe public metrics with explicit evidence boundaries."""
-    return await arena_telemetry.public_status(recent_limit=recent)
+    status = await arena_telemetry.public_status(recent_limit=recent)
+    status["marketStream"] = await alchemy_stream.public_health()
+    status["boundaries"].append(
+        "Alchemy stream activity counts confirmed candidate-mint transaction observations, not trades, USD volume, revenue, or unique users."
+    )
+    return status
 
 
 @get(MARKET_TRENDING_ROUTE)

@@ -19,7 +19,7 @@ from typing import Any
 import asyncpg  # type: ignore[import-untyped]
 
 
-TELEMETRY_SCHEMA_VERSION = "2026-08-28.v1"
+TELEMETRY_SCHEMA_VERSION = "2026-08-28.v2"
 DEFAULT_MEMORY_EVENT_LIMIT = 500
 DEFAULT_PUBLIC_RECENT_LIMIT = 8
 
@@ -204,15 +204,18 @@ def _json_safe_snapshots(value: Any) -> list[dict[str, Any]]:
 
 
 def _decision_event(decision: dict[str, Any]) -> dict[str, Any]:
-    opponent = decision.get("opponent") if isinstance(decision.get("opponent"), dict) else {}
-    director = opponent.get("arenaDirector") if isinstance(opponent.get("arenaDirector"), dict) else {}
+    opponent_raw = decision.get("opponent")
+    opponent: dict[str, Any] = opponent_raw if isinstance(opponent_raw, dict) else {}
+    director_raw = opponent.get("arenaDirector")
+    director: dict[str, Any] = director_raw if isinstance(director_raw, dict) else {}
     metrics = {
         "volume24h": _number(opponent.get("volume24h")),
         "priceChange24h": _number(opponent.get("priceChange24h")),
         "liquidity": _number(opponent.get("liquidity")),
         "marketCap": _number(opponent.get("marketCap")),
     } if opponent else {}
-    agent = decision.get("agent") if isinstance(decision.get("agent"), dict) else {}
+    agent_raw = decision.get("agent")
+    agent: dict[str, Any] = agent_raw if isinstance(agent_raw, dict) else {}
     market_state = _text(decision.get("marketDataState"), 24)
     if market_state not in {"fresh", "degraded", "stale", "unavailable", "unverified"}:
         market_state = "unverified"

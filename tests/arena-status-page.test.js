@@ -14,6 +14,8 @@ describe('Public Arena Status evidence page', () => {
     expect(html).toContain('LIVE ARENA STATUS →');
     expect(html).toContain('id="arena-status-page"');
     expect(html).toContain('ARENA STATUS');
+    expect(html).toContain('ALCHEMY YELLOWSTONE STREAM');
+    expect(html).toContain('id="arena-stream-status"');
   });
 
   test('separates responses, server rounds, shares, wallets, and onchain evidence', () => {
@@ -22,6 +24,7 @@ describe('Public Arena Status evidence page', () => {
     expect(html).toContain('Generated cards, not confirmed social impressions.');
     expect(html).toContain('Wallet sessions are not paying users.');
     expect(html).toContain('Gameplay events are never labeled onchain volume.');
+    expect(html).toContain('These observations are not labeled trades, USD volume, revenue, or unique users');
   });
 
   test('states the privacy and reward boundaries', () => {
@@ -36,6 +39,8 @@ describe('Public Arena Status evidence page', () => {
 
   test('ships all telemetry dependencies in the production container', () => {
     expect(dockerfile).toContain('COPY arena_telemetry.py .');
+    expect(dockerfile).toContain('COPY alchemy_stream.py .');
+    expect(dockerfile).toContain('COPY yellowstone_proto/ yellowstone_proto/');
     expect(dockerfile).toContain('COPY competition.py .');
     expect(dockerfile).toContain('COPY economy.py .');
   });
