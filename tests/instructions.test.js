@@ -24,6 +24,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
 const mainJs = readFileSync(resolve(__dirname, '../src/main.js'), 'utf-8');
 const gameJs = readFileSync(resolve(__dirname, '../src/game.js'), 'utf-8');
+const trendingStripJs = readFileSync(resolve(__dirname, '../src/trending-strip.js'), 'utf-8');
 
 describe('Landing page', () => {
   test('has tagline explaining game modes', () => {
@@ -58,14 +59,44 @@ describe('Mobile readability and practice contract', () => {
     expect(mainJs).toContain('game.p2.applyMarketStats(p2Token, p2Power)');
     expect(mainJs).toContain("mobileControls.style.display = 'none'");
     expect(html).toMatch(/window\._showMobileControls\s*=\s*\(\)\s*=>\s*\{\s*if \(window\.isTokenExhibition\)/);
-    expect(mainJs).toContain("for (const id of ['btn-boost-hack', 'mic-toggle-btn'])");
+    expect(mainJs).toContain("for (const id of ['mic-toggle-btn'])");
     expect(mainJs).toContain("control.classList.toggle('token-exhibition-control-hidden', exhibitionActive)");
     expect(html).toContain('#hud-widgets button.token-exhibition-control-hidden');
     expect(mainJs).toContain("control.style.setProperty('display', 'none', 'important')");
     expect(mainJs).toContain("[VoiceToggle] Token Exhibition is spectator-only");
-    expect(mainJs).toContain("[BoostTest] Token Exhibition disables one-sided simulated boosts.");
+    expect(mainJs).toContain("window.isTokenExhibition === true");
+    expect(mainJs).toContain("activeGame?.authoritativeMultiplayer === true");
     expect(gameJs).toContain('this.p2.tokenData && !this.tokenExhibition');
     expect(gameJs).toMatch(/!this\.tokenExhibition\s*&&\s*p1Pressed\.has\(Actions\.HADOUKEN\)/);
+  });
+
+  test('uses a non-blocking local boost layer instead of the developer modal', () => {
+    expect(html).not.toContain('id="btn-boost-hack"');
+    expect(html).not.toContain('id="boost-menu"');
+    expect(mainJs).not.toContain('triggerSimulatedBoost');
+    expect(mainJs).toContain('window.triggerControllerBoost = function(tierId)');
+    expect(mainJs).toContain("window.liveBoostSystem.triggerTier(tierId, tokenData, 'p1')");
+    expect(html).toContain('class="control-label">SP</span>');
+    expect(html).toContain('.attack-zone.boost-layer-active');
+  });
+
+  test('documents Help, Pause, Resume, and destructive Home semantics', () => {
+    expect(html).toContain('Before a fight, the live-market center button opens HELP.');
+    expect(html).toContain('During a live round it becomes PAUSE; while manually paused it becomes RESUME.');
+    expect(html).toContain('HOME ends and destroys the current fight');
+    expect(mainJs).toContain('function disposeCurrentGame({ clearCanvas = true } = {})');
+    expect(mainJs).toContain("setMarketStripSurface('fight')");
+    expect(mainJs).toContain("setMarketStripSurface('landing')");
+    expect(mainJs).toContain('const voiceAdapterToCleanup = window.activeVoiceAdapter || null');
+    expect(mainJs).toContain('await voiceAdapterToCleanup.detach()');
+    expect(mainJs).toContain('window._cancelEndlessCountdown?.()');
+    expect(mainJs).toContain('Object.assign(window.endlessSession, { active: false, round: 0, wins: 0, losses: 0, streak: 0 })');
+    expect(trendingStripJs).toContain('data-game-context-action');
+    expect(trendingStripJs).toContain('class="strip-context-label">HELP</span>');
+  });
+
+  test('lowers the compact mobile landing panel by 50 pixels', () => {
+    expect(html).toContain('top: calc(48% + 50px) !important;');
   });
 });
 

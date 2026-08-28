@@ -1099,6 +1099,66 @@
       order: -1;
     }
 
+    @keyframes boost-control-swap {
+      0% { transform: scale(0.68) rotate(-8deg); opacity: 0.35; }
+      65% { transform: scale(1.08) rotate(2deg); opacity: 1; }
+      100% { transform: scale(1) rotate(0); opacity: 1; }
+    }
+
+    .attack-zone.boost-layer-active .atk-btn:not(.btn-hadouken) {
+      animation: boost-control-swap 0.26s cubic-bezier(0.2, 0.9, 0.25, 1.2) both;
+    }
+
+    .attack-zone.boost-layer-active .atk-btn:nth-of-type(3) { animation-delay: 35ms; }
+    .attack-zone.boost-layer-active .atk-btn:nth-of-type(4) { animation-delay: 70ms; }
+    .attack-zone.boost-layer-active .atk-btn:nth-of-type(5) { animation-delay: 105ms; }
+
+    .atk-btn.btn-hadouken.boost-layer-toggle {
+      background: linear-gradient(135deg, rgba(255, 0, 255, 0.5), rgba(0, 212, 255, 0.36));
+      border-color: rgba(255, 0, 255, 0.92);
+      color: #fff;
+      animation: sp-pulse 1.45s ease-in-out infinite;
+    }
+
+    .atk-btn.btn-hadouken.boost-layer-return {
+      background: linear-gradient(135deg, rgba(0, 255, 157, 0.48), rgba(0, 78, 58, 0.76));
+      border-color: rgba(0, 255, 157, 0.94);
+      color: #dffff2;
+      animation: none;
+      box-shadow: 0 0 18px rgba(0, 255, 157, 0.5);
+    }
+
+    .atk-btn.boost-tier-control {
+      font-size: 7px;
+      letter-spacing: 0;
+      border-width: 2px;
+      text-shadow: 0 1px 3px #000;
+    }
+
+    .atk-btn.boost-tier-micro {
+      background: radial-gradient(circle at 35% 30%, rgba(255, 230, 94, 0.76), rgba(96, 69, 0, 0.88));
+      border-color: #ffe65e;
+      box-shadow: 0 0 18px rgba(255, 230, 94, 0.5);
+    }
+
+    .atk-btn.boost-tier-runner {
+      background: radial-gradient(circle at 35% 30%, rgba(255, 145, 45, 0.78), rgba(105, 38, 0, 0.9));
+      border-color: #ff922d;
+      box-shadow: 0 0 18px rgba(255, 128, 24, 0.52);
+    }
+
+    .atk-btn.boost-tier-spike {
+      background: radial-gradient(circle at 35% 30%, rgba(255, 58, 92, 0.8), rgba(105, 0, 27, 0.9));
+      border-color: #ff3a5c;
+      box-shadow: 0 0 18px rgba(255, 34, 68, 0.54);
+    }
+
+    .atk-btn.boost-tier-overdrive {
+      background: radial-gradient(circle at 35% 30%, rgba(210, 67, 255, 0.82), rgba(65, 0, 94, 0.92));
+      border-color: #d243ff;
+      box-shadow: 0 0 20px rgba(204, 0, 255, 0.62);
+    }
+
     /* Floating Mic Button Style */
     .mic-btn {
       width: 58px;
@@ -1295,11 +1355,6 @@
       border: 2px solid var(--neon-blue);
     }
     
-    .boost-btn {
-      border: 2px solid var(--neon-pink);
-      box-shadow: 0 0 10px rgba(255,0,255,0.3);
-    }
-
     .home-btn {
       border: 2px solid var(--neon-green);
       box-shadow: 0 0 10px rgba(20,241,149,0.28);
@@ -1439,33 +1494,6 @@
       border-color: rgba(255, 136, 0, 0.65);
     }
 
-    #boost-menu {
-      box-sizing: border-box;
-    }
-
-    .boost-menu-close {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      border: 1px solid rgba(255, 255, 255, 0.24);
-      background: rgba(255, 255, 255, 0.08);
-      color: #fff;
-      font-family: var(--font-print);
-      font-size: 12px;
-      line-height: 1;
-      cursor: pointer;
-      touch-action: manipulation;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    .boost-menu-close:hover {
-      border-color: var(--neon-pink);
-      box-shadow: 0 0 14px rgba(255, 0, 255, 0.35);
-    }
-
     @media (max-width: 1024px) {
       .screen {
         position: fixed !important;
@@ -1502,7 +1530,7 @@
         box-shadow: 0 20px 55px rgba(0, 0, 0, 0.72), 0 0 28px rgba(255, 85, 0, 0.32);
       }
 
-      /* Weather and Boost buttons as ultra-compact circular glass icons */
+      /* Compact circular fight-HUD controls */
       #hud-widgets button.hud-btn {
         width: 44px !important;
         height: 44px !important;
@@ -1603,18 +1631,6 @@
         bottom: 134px;
       }
 
-      #boost-menu {
-        width: min(320px, calc(100vw - 180px)) !important;
-        bottom: max(54px, calc(env(safe-area-inset-bottom) + 46px)) !important;
-        padding: 10px 12px 8px !important;
-        max-height: calc(100vh - 118px) !important;
-        overflow-y: auto !important;
-        border-radius: 14px !important;
-      }
-
-      #boost-menu .boost-hotkey-tip {
-        display: none !important;
-      }
     }
 
     @media (min-width: 1025px) {
@@ -2955,7 +2971,7 @@
       }
       #landing {
         left: 2vw !important;
-        top: 48% !important;
+        top: calc(48% + 50px) !important;
         width: 96vw !important;
         max-width: min(96vw, 470px) !important;
         max-height: calc(100dvh - 104px);
@@ -3163,13 +3179,14 @@
 
       <div style="background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
         <h3 class="shojumaru-title" style="color: var(--neon-pink); margin-top: 0; font-size: 16px;"><strong>🔥 REAL-TIME PRICE BOOSTS: "LMAO WHIPLASH!"</strong></h3>
-        <p><strong>In human-vs-token modes, your opponent's strength, speed, and health are dictated by live Birdeye market metrics. When that opponent pumps in real-time, timed boosts fire:</strong></p>
+        <p><strong>In human-vs-token modes, your opponent's strength, speed, and health are dictated by live Birdeye market metrics. When that opponent pumps in real-time, market-triggered boosts can fire for the token fighter:</strong></p>
         <ul>
+          <li><strong>🟡 MICRO: short damage burst</strong></li>
           <li><strong>🟠 RUNNER (+20%): 3-hit dash combo + brief stun</strong></li>
           <li><strong>🔴 SPIKE (+45%): 5-hit combo + P1 levitated 1.5s</strong></li>
           <li><strong>🟣 OVERDRIVE (+100%): 10 Hadoukens + P1 levitated 3s</strong></li>
         </ul>
-        <p style="color: #ffcc00; margin-bottom: 0;"><strong>⚠️ STRATEGY: You MUST use Live Boosts to survive against pumping high-volume opponent tokens. Otherwise, LMAO WHIPLASH!</strong></p>
+        <p style="color: #ffcc00; margin-bottom: 0;"><strong>⚠️ These live market reactions are game effects, not leaderboard volume or reward evidence.</strong></p>
       </div>
 
       <div style="background: rgba(0, 212, 255, 0.07); padding: 15px; border-radius: 12px; border: 1px solid rgba(0,212,255,0.35); margin-bottom: 20px;">
@@ -3188,10 +3205,22 @@
       <ul>
         <li><strong>👊 PUNCHES: LP (Light Punch), HP (Heavy Punch)</strong></li>
         <li><strong>🦵 KICKS: LK (Light Kick), HK (Heavy Kick)</strong></li>
-        <li><strong>⚡ SPECIAL: Pulse SP for Hadouken projectiles!</strong></li>
+        <li><strong>⚡ LOCAL BOOST LAYER: In unranked human-vs-AI fights, tap BOOST above the four attack buttons. LP/LK/HP/HK become MICRO/RUN/SPIKE/OVER. Tap ATTACK to restore normal moves.</strong></li>
+        <li><strong>⚡ MULTIPLAYER SPECIAL: The top button remains SP/Hadouken. Authoritative league rules decide whether it is allowed and enforce every paid-charge cap.</strong></li>
         <li><strong>🛡️ BLOCK: Hold BACK (away from opponent) to block attacks</strong></li>
         <li><strong>🌀 JOYSTICK: Left side analog controls all movement (Jump/Crouch)</strong></li>
       </ul>
+
+      <div style="background: rgba(0, 255, 157, 0.07); padding: 15px; border-radius: 12px; border: 1px solid rgba(0,255,157,0.35); margin-bottom: 20px;">
+        <h3 class="shojumaru-title" style="color: var(--neon-green); margin-top: 0; font-size: 16px;"><strong>⏸ FIGHT NAVIGATION</strong></h3>
+        <ul style="margin-bottom: 0;">
+          <li><strong>Before a fight, the live-market center button opens HELP.</strong></li>
+          <li><strong>During a live round it becomes PAUSE; while manually paused it becomes RESUME.</strong></li>
+          <li><strong>HOME ends and destroys the current fight, clears the session, and returns to the initial landing screen. It is not a pause button.</strong></li>
+        </ul>
+      </div>
+
+      <p><strong>The four-tier joypad layer is a free local/unranked showcase only. It never spends tokens and cannot produce ELO, leaderboard credit, or rewards. It is disabled in Token Exhibition and all authoritative multiplayer. Wallet-settled boost sales remain paused until the official game token and reserve are configured.</strong></p>
 
       <h3 class="shojumaru-title" style="color: var(--neon-pink); font-size: 16px;"><strong>🌐 ON-CHAIN WALLET CONNECTION</strong></h3>
       <p><strong>Securely connect your Solana wallet to read the configured payment-token balance and approve boost transactions. Boost sales stay paused until the launched game token and transparent reward split are configured.</strong></p>
@@ -3597,7 +3626,7 @@
 
   <!-- TRENDING STRIP (During Fight, hidden by default until fight starts) -->
   <div id="fight-trending-strip" class="trending-strip"
-    style="display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-green); padding: 6px 15px; z-index: 100; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(0,255,157,0.15); font-family: var(--font-print);">
+    style="display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 100%); border-top: 3px solid var(--neon-green); padding: 6px 15px; z-index: 500; backdrop-filter: blur(10px); box-sizing: border-box; box-shadow: 0 -10px 20px rgba(0,255,157,0.15); font-family: var(--font-print);">
   </div>
   <div id="ranked-fight-status" class="ranked-fight-status hidden" role="status"></div>
 
@@ -3628,11 +3657,6 @@
       <span class="mobile-text">💨</span>
     </button>
 
-    <!-- BOOST HACK TOGGLE -->
-    <button id="btn-boost-hack" class="hud-btn boost-btn" onclick="if(window.toggleBoostMenu) window.toggleBoostMenu()">
-      <span class="desktop-text">⚡ BOOST TEST</span>
-      <span class="mobile-text">⚡</span>
-    </button>
   </div>
 
   <div id="music-dropdown" class="music-dropdown" aria-hidden="true">
@@ -3643,36 +3667,6 @@
       <button id="btn-stage-music-toggle" type="button" aria-label="Play or pause music">▶</button>
       <button id="btn-stage-music-next" type="button" aria-label="Next stage track">⏭</button>
     </div>
-  </div>
-
-  <!-- Developer Boost Menu -->
-  <div id="boost-menu" role="dialog" aria-hidden="true" aria-label="Live boost menu"
-    style="display:none; position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); z-index: 1000; background: rgba(10,10,15,0.95); border: 2px solid var(--neon-pink); border-radius: 16px; padding: 10px; width: 320px; text-align: center; box-shadow: 0 0 20px rgba(255,0,255,0.4); font-family: inherit;">
-    <button class="boost-menu-close" type="button" aria-label="Close live boost menu"
-      onclick="if(window.hideBoostMenu) window.hideBoostMenu()">×</button>
-    <div style="font-size: 10px; margin-bottom: 10px; color: var(--neon-green); font-weight: bold; letter-spacing: 1px;">⚡ LIVE BOOST ⚡</div>
-    
-    <div style="font-size: 7px; color: #888; margin-bottom: 4px; text-align: left; font-weight: bold;">1. SELECT TARGET PLAYER:</div>
-    <div style="display:flex; justify-content: space-around; margin-bottom: 12px; gap: 8px;">
-      <button onclick="if(window.setBoostTarget) window.setBoostTarget('p1')" id="btn-target-p1"
-        style="flex:1; background: var(--neon-green); color: #000; border: none; padding: 6px 4px; font-size: 9px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; border: 1px solid transparent; transition: all 0.2s;">P1 (HUMAN)</button>
-      <button onclick="if(window.setBoostTarget) window.setBoostTarget('p2')" id="btn-target-p2"
-        style="flex:1; background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); padding: 6px 4px; font-size: 9px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; transition: all 0.2s;">P2 (AI/TOKEN)</button>
-    </div>
-    
-    <div style="font-size: 7px; color: #888; margin-bottom: 4px; text-align: left; font-weight: bold;">2. TRIGGER BOOST TIER:</div>
-    <div style="display:flex; flex-direction: column; gap: 8px;">
-      <button onclick="if(window.triggerSimulatedBoost) window.triggerSimulatedBoost('micro')" 
-        style="background: rgba(255,204,0,0.1); border: 1px solid #ffcc00; color: #ffcc00; padding: 8px; font-size: 8px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; text-align:left; transition: all 0.2s;">🟡 MICRO (1.15x Speed Aura)</button>
-      <button onclick="if(window.triggerSimulatedBoost) window.triggerSimulatedBoost('runner')" 
-        style="background: rgba(255,136,0,0.1); border: 1px solid #ff8800; color: #ff8800; padding: 8px; font-size: 8px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; text-align:left; transition: all 0.2s;">🟠 RUNNER (3-Hit Combo + Levit)</button>
-      <button onclick="if(window.triggerSimulatedBoost) window.triggerSimulatedBoost('spike')" 
-        style="background: rgba(255,34,68,0.1); border: 1px solid #ff2244; color: #ff2244; padding: 8px; font-size: 8px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; text-align:left; transition: all 0.2s;">🔴 SPIKE (5-Hit Combo + Levit)</button>
-      <button onclick="if(window.triggerSimulatedBoost) window.triggerSimulatedBoost('overdrive')" 
-        style="background: rgba(204,0,255,0.1); border: 1px solid #cc00ff; color: #cc00ff; padding: 8px; font-size: 8px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family:inherit; text-align:left; transition: all 0.2s;">⚡ OVERDRIVE (10 Hadouken Barrage)</button>
-    </div>
-    
-    <div class="print-font boost-hotkey-tip" style="font-size: 8px; color: #555; margin-top: 10px;">Hotkey: Press 'B' key during fight</div>
   </div>
 
   <!-- MEME PANEL (Main Menu) -->
@@ -4041,27 +4035,27 @@
     <!-- RIGHT: Attack Buttons -->
     <div class="attack-zone">
       <!-- Row 1 (TOP): Special Octagon — easiest thumb reach -->
-      <button id="btn-hadouken" class="atk-btn btn-hadouken">
+      <button id="btn-hadouken" class="atk-btn btn-hadouken" type="button" title="Hadouken special" aria-label="Hadouken special" aria-pressed="false">
         <span class="icon">⚡</span>
-        <span>SP</span>
+        <span class="control-label">SP</span>
       </button>
       <!-- Row 2: Light Punch + Light Kick -->
-      <button id="btn-light-punch" class="atk-btn punch-light">
+      <button id="btn-light-punch" class="atk-btn punch-light" type="button" title="Light punch">
         <span class="icon">👊</span>
-        <span>LP</span>
+        <span class="control-label">LP</span>
       </button>
-      <button id="btn-light-kick" class="atk-btn kick-light">
+      <button id="btn-light-kick" class="atk-btn kick-light" type="button" title="Light kick">
         <span class="icon">🦵</span>
-        <span>LK</span>
+        <span class="control-label">LK</span>
       </button>
       <!-- Row 3: Heavy Punch + Heavy Kick -->
-      <button id="btn-heavy-punch" class="atk-btn punch-heavy">
+      <button id="btn-heavy-punch" class="atk-btn punch-heavy" type="button" title="Heavy punch">
         <span class="icon">🔥</span>
-        <span>HP</span>
+        <span class="control-label">HP</span>
       </button>
-      <button id="btn-heavy-kick" class="atk-btn kick-heavy">
+      <button id="btn-heavy-kick" class="atk-btn kick-heavy" type="button" title="Heavy kick">
         <span class="icon">💥</span>
-        <span>HK</span>
+        <span class="control-label">HK</span>
       </button>
     </div>
   </div>

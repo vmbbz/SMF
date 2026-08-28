@@ -1,6 +1,6 @@
 import { Actions } from "./input.js";
 import { calculateFighterPower } from "./token-power-scaling.js";
-import { getTokenCoverSource, getTokenImageSource, loadGameImage } from "./image-utils.js";
+import { getTokenCoverSource, getTokenImageSource, isDrawableImage, loadGameImage } from "./image-utils.js";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -926,7 +926,7 @@ export class Fighter {
     this._drawLimb(ctx, skeleton.elbowFront, skeleton.handFront);
 
     // === EPIC HEAD SWAP (perfect circular logo + neon glow) ===
-    if (this.headImage && this.headImage.complete) {
+    if (isDrawableImage(this.headImage)) {
       ctx.save();
       // Circular clip + subtle border
       ctx.beginPath();

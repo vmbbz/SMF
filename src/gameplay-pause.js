@@ -11,6 +11,10 @@ const PAUSE_COPY_BY_REASON = Object.freeze({
     status: 'CLOSE HELP TO RESUME',
     detail: 'Fight state held safely while Help is open.',
   }),
+  manual_pause: Object.freeze({
+    status: 'FIGHT HELD',
+    detail: 'Tap RESUME in the live-market bar to continue.',
+  }),
   economy_page: Object.freeze({
     status: 'CLOSE REWARDS TO RESUME',
     detail: 'Fight state held while Rewards is open.',
@@ -66,4 +70,10 @@ export function dispatchGameplayPause(paused, reason, target = window) {
 
 export function getGameplayPauseCopy(reason) {
   return PAUSE_COPY_BY_REASON[String(reason || '')] || DEFAULT_PAUSE_COPY;
+}
+
+export function isManualPauseOnly(reasons) {
+  return reasons instanceof Set
+    && reasons.size === 1
+    && reasons.has('manual_pause');
 }

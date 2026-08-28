@@ -18,7 +18,12 @@ import { announceArenaDirectorDecision, fetchArenaDirectorDecision } from './are
 import { getTokenCoverSource, getTokenImageSource, loadGameImage, proxiedImageUrl } from './image-utils.js';
 import { initializeEconomyPage, openEconomyPage } from './economy-page.js';
 import { initializeArenaStatusPage, openArenaStatusPage } from './arena-status-page.js';
-import { dispatchGameplayPause } from './gameplay-pause.js';
+import {
+  GAMEPLAY_PAUSE_EVENT,
+  WALLET_ACTION_PAUSE_EVENT,
+  dispatchGameplayPause,
+  isManualPauseOnly,
+} from './gameplay-pause.js';
 import {
   calculateTokenExhibitionPower,
   deriveTokenCombatProfile,
@@ -463,8 +468,88 @@ function syncHomeButtonVisibility() {
   btn.style.display = shouldShow ? 'flex' : 'none';
 }
 
+function getLiveFightForContextAction() {
+  const activeGame = getActiveFightGame();
+  if (state !== 'fighting' || !activeGame?.running || activeGame.roundOver) return null;
+  return activeGame;
+}
+
+function setContextActionButton(button, mode) {
+  const icon = button.querySelector('.strip-context-icon');
+  const label = button.querySelector('.strip-context-label');
+  const config = {
+    help: { icon: '?', label: 'HELP', title: 'Open game guide', disabled: false },
+    pause: { icon: '⏸', label: 'PAUSE', title: 'Pause fight', disabled: false },
+    resume: { icon: '▶', label: 'RESUME', title: 'Resume fight', disabled: false },
+    blocked: { icon: '⏸', label: 'PAUSED', title: 'Complete or close the open flow to resume', disabled: true },
+  }[mode];
+  if (!config) return;
+
+  if (icon) icon.textContent = config.icon;
+  if (label) label.textContent = config.label;
+  button.title = config.title;
+  button.setAttribute('aria-label', config.title);
+  button.disabled = config.disabled;
+  button.classList.toggle('is-pause', mode === 'pause');
+  button.classList.toggle('is-resume', mode === 'resume');
+  button.classList.toggle('is-blocked', mode === 'blocked');
+}
+
+function syncGameplayContextAction() {
+  const activeGame = getLiveFightForContextAction();
+  const reasons = activeGame?.gameplayPauseReasons;
+  const manuallyPaused = isManualPauseOnly(reasons);
+
+  for (const button of document.querySelectorAll('[data-game-context-action]')) {
+    const isFightSurface = button.dataset.contextSurface === 'fight';
+    let mode = 'help';
+    if (isFightSurface && activeGame) {
+      if (manuallyPaused) mode = 'resume';
+      else if (activeGame.gameplayPaused) mode = 'blocked';
+      else mode = 'pause';
+    }
+    setContextActionButton(button, mode);
+  }
+}
+
+window.syncGameplayContextAction = syncGameplayContextAction;
+window.handleGameContextAction = function(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+
+  const surface = event?.currentTarget?.dataset?.contextSurface || 'landing';
+  const activeGame = surface === 'fight' ? getLiveFightForContextAction() : null;
+  if (!activeGame) {
+    window.openHelpModal?.();
+    return;
+  }
+
+  if (isManualPauseOnly(activeGame.gameplayPauseReasons)) {
+    dispatchGameplayPause(false, 'manual_pause');
+  } else if (!activeGame.gameplayPaused) {
+    dispatchGameplayPause(true, 'manual_pause');
+  }
+  syncGameplayContextAction();
+};
+
+function scheduleGameplayContextSync() {
+  if (typeof queueMicrotask === 'function') queueMicrotask(syncGameplayContextAction);
+  else Promise.resolve().then(syncGameplayContextAction);
+}
+
+window.addEventListener(GAMEPLAY_PAUSE_EVENT, scheduleGameplayContextSync);
+window.addEventListener(WALLET_ACTION_PAUSE_EVENT, scheduleGameplayContextSync);
+
 function setFightDockVisible() {
   window.closeMusicMenu?.();
+}
+
+function setMarketStripSurface(surface = 'landing') {
+  const fightActive = surface === 'fight';
+  const landingStrip = document.getElementById('trending-strip');
+  const fightStrip = document.getElementById('fight-trending-strip');
+  if (landingStrip) landingStrip.style.display = fightActive ? 'none' : 'block';
+  if (fightStrip) fightStrip.style.display = fightActive ? 'block' : 'none';
 }
 
 function setLandingAudioButtonVisible() {
@@ -474,15 +559,15 @@ function setLandingAudioButtonVisible() {
 
 function hideFightSceneUi() {
   setFightDockVisible(false);
-  const fightStripEl = document.getElementById('fight-trending-strip');
-  if (fightStripEl) fightStripEl.style.display = 'none';
+  setMarketStripSurface('landing');
   const mobileControls = document.getElementById('mobile-controls');
   if (mobileControls) mobileControls.style.display = 'none';
+  window.virtualJoystick?.resetControlLayer?.();
 }
 
 function syncTokenExhibitionControls() {
   const exhibitionActive = window.isTokenExhibition === true;
-  for (const id of ['btn-boost-hack', 'mic-toggle-btn']) {
+  for (const id of ['mic-toggle-btn']) {
     const control = document.getElementById(id);
     if (control) {
       control.classList.toggle('token-exhibition-control-hidden', exhibitionActive);
@@ -492,7 +577,7 @@ function syncTokenExhibitionControls() {
       control.setAttribute('aria-hidden', exhibitionActive ? 'true' : 'false');
     }
   }
-  if (exhibitionActive) window.hideBoostMenu?.();
+  if (exhibitionActive) window.virtualJoystick?.configureForFight?.({ boostLayerAvailable: false });
 }
 
 function prepareFightAudio() {
@@ -625,6 +710,7 @@ function showScreen(name) {
   setLandingAudioButtonVisible(name === 'landing');
   syncTokenExhibitionControls();
   syncHomeButtonVisibility();
+  syncGameplayContextAction();
 
   // Clear keyboard focus indicators from previous screen
   document.querySelectorAll('.kb-focus').forEach(el => el.classList.remove('kb-focus'));
@@ -675,21 +761,12 @@ function createInput(playerNum, modeIdx, providerIdx, character = null) {
 /** Clean up all active adapters */
 async function cleanupAdapters() {
   const adaptersToCleanup = Array.isArray(activeAdapters) ? [...activeAdapters] : [];
-  for (const adapter of adaptersToCleanup) {
-    if (adapter.detach) await adapter.detach();
-  }
-  activeAdapters = [];
-
-  // Reset dynamic Voice Control toggling state
-  if (window.activeVoiceAdapter) {
-    const isManagedByActiveList = adaptersToCleanup.includes(window.activeVoiceAdapter);
-    if (!isManagedByActiveList) {
-      try {
-        await window.activeVoiceAdapter.detach();
-      } catch (e) {
-        console.warn('[Cleanup] Voice adapter detach failed:', e);
-      }
-    }
+  const cleanupSet = new Set(adaptersToCleanup);
+  const voiceAdapterToCleanup = window.activeVoiceAdapter || null;
+  // Remove the snapshot before awaiting detach so a concurrently-started fight
+  // cannot have its fresh adapters erased by this older cleanup operation.
+  activeAdapters = activeAdapters.filter(adapter => !cleanupSet.has(adapter));
+  if (window.activeVoiceAdapter === voiceAdapterToCleanup) {
     window.activeVoiceAdapter = null;
   }
   window.isVoiceControlActive = false;
@@ -699,12 +776,74 @@ async function cleanupAdapters() {
     const tooltip = micBtn.querySelector('.mic-tooltip');
     if (tooltip) tooltip.innerText = 'TOGGLE VOICE CONTROL [V]';
   }
+
+  for (const adapter of adaptersToCleanup) {
+    if (adapter.detach) await adapter.detach();
+  }
+
+  // A dynamically toggled voice adapter can sit outside activeAdapters. Only
+  // detach the captured instance; a replacement may already belong to a new fight.
+  if (voiceAdapterToCleanup && !cleanupSet.has(voiceAdapterToCleanup)) {
+    try {
+      await voiceAdapterToCleanup.detach();
+    } catch (e) {
+      console.warn('[Cleanup] Voice adapter detach failed:', e);
+    }
+  }
 }
+
+/** Release every alias and resource owned by the current fight. */
+function disposeCurrentGame({ clearCanvas = true } = {}) {
+  const instances = new Set([
+    game,
+    window.currentGame,
+    window.game,
+    window._game,
+  ].filter(Boolean));
+
+  for (const instance of instances) {
+    try {
+      if (typeof instance.destroy === 'function') instance.destroy();
+      else {
+        instance.running = false;
+        instance.roundOver = true;
+      }
+    } catch (error) {
+      console.warn('[Game] Fight disposal degraded gracefully:', error);
+    }
+  }
+
+  if (window.liveBoostSystem) {
+    try { window.liveBoostSystem.stop(); } catch (_) {}
+    window.liveBoostSystem = null;
+  }
+
+  game = null;
+  p1Input = null;
+  p2Input = null;
+  window.currentGame = null;
+  window.game = null;
+  window._game = null;
+
+  if (window.virtualJoystick) {
+    window.virtualJoystick._registered = false;
+    window.virtualJoystick.resetControlLayer?.();
+  }
+
+  if (clearCanvas && canvas) {
+    const context = canvas.getContext?.('2d');
+    context?.clearRect?.(0, 0, canvas.width, canvas.height);
+  }
+
+  syncGameplayContextAction();
+}
+
+window.disposeCurrentGame = disposeCurrentGame;
 
 function showOnboarding() {
   window.isTokenExhibition = false;
-  if (game) { game.running = false; game = null; }
-  cleanupAdapters();
+  disposeCurrentGame();
+  void cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
   stopRoomPolling();
   stopWaitingInArena();
@@ -714,8 +853,6 @@ function showOnboarding() {
   mmWaitingGame = false;
   multiplayerFightStarting = false;
   multiplayerRoundOverHandled = false;
-  p1Input = null;
-  p2Input = null;
   stageMusic.stopForMenu();
   shouldResumeLandingAmbient = false;
   syncLandingBgmButton();
@@ -726,8 +863,10 @@ function showOnboarding() {
 
 function showLanding() {
   window.isTokenExhibition = false;
-  if (game) { game.running = false; game = null; }
-  cleanupAdapters();
+  window.isMultiplayerMatch = false;
+  window.currentTokenExhibitionPair = null;
+  disposeCurrentGame();
+  void cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
   stopRoomPolling();
   stopWaitingInArena();
@@ -737,8 +876,16 @@ function showLanding() {
   mmWaitingGame = false;
   multiplayerFightStarting = false;
   multiplayerRoundOverHandled = false;
-  p1Input = null;
-  p2Input = null;
+  window._cancelEndlessCountdown?.();
+  if (window.endlessSession) {
+    Object.assign(window.endlessSession, { active: false, round: 0, wins: 0, losses: 0, streak: 0 });
+  }
+  window.pumpQueue = [];
+  const victoryOverlay = document.getElementById('victory-overlay');
+  if (victoryOverlay) {
+    victoryOverlay.classList.add('hidden');
+    victoryOverlay.style.display = '';
+  }
   teardownFightAudio();
   setLandingAudioButtonVisible(true);
   hideFightSceneUi();
@@ -747,6 +894,7 @@ function showLanding() {
 window.showLanding = showLanding;
 
 async function startFight() {
+  disposeCurrentGame();
   await cleanupAdapters(); // Ensure fresh start
   window.isTokenExhibition = false;
   syncTokenExhibitionControls();
@@ -762,9 +910,9 @@ async function startFight() {
   prepareFightAudio();
 
   // Show Fight Trending Strip
+  setMarketStripSurface('fight');
   const fightStripEl = document.getElementById('fight-trending-strip');
   if (fightStripEl) {
-    fightStripEl.style.display = 'block';
     if (!window.fightTrendingStrip) {
       window.fightTrendingStrip = new window.TrendingStrip('fight-trending-strip');
       window.fightTrendingStrip.init();
@@ -792,12 +940,14 @@ async function startFight() {
   const p1Label = getPlayerLabel(p1ModeIdx, p1ProviderIdx);
   const p2Label = getPlayerLabel(p2ModeIdx, p2ProviderIdx);
   game = new Game(canvas, p1Input, p2Input, sfx, { p1Label, p2Label, stageMusic });
-  game.start();
 
   // Expose game globally immediately (fixes race condition)
   window.game = game;
   window._game = game;
   window.currentGame = game;  // alias used by joystick + nextFight
+  window.virtualJoystick?.configureForFight?.({ boostLayerAvailable: true });
+  game.start();
+  syncGameplayContextAction();
 
   // Re-register virtual joystick with the fresh p1Input on every game start
   // (The _registered guard is intentionally removed so it works after resetAndFight)
@@ -919,46 +1069,20 @@ window.resetAndFight = async function(token) {
 
   console.log('[resetAndFight] Tearing down current game for:', token.symbol);
 
-  // Reset joystick registration so the new game's p1Input gets it
-  if (window.virtualJoystick) window.virtualJoystick._registered = false;
-
   const victoryOverlay = document.getElementById('victory-overlay');
   if (victoryOverlay) {
     victoryOverlay.classList.add('hidden');
     victoryOverlay.style.display = '';
   }
 
-  // Stop RAF loop + live boost
-  if (game) {
-    game.running = false;
-    game.roundOver = true;
-  }
-  if (window.liveBoostSystem) {
-    try { window.liveBoostSystem.stop(); } catch (e) { /* ignore */ }
-    window.liveBoostSystem = null;
-  }
-
-  // Null both references so loadOpponent triggers startFight()
-  game = null;
-  window.currentGame = null;
-  window.game = null;
+  disposeCurrentGame();
   window.isMultiplayerMatch = false;
 
   // Step back state so startFight() runs unconditionally
   state = 'landing';
 
-  // Clear canvas of stale frame
-  const canvas = document.getElementById('game');
-  if (canvas) {
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-
-  // Small yield to let the RAF loop notice running=false before we restart
-  await new Promise(r => setTimeout(r, 32));
-
-  if (window._showMobileControls) window._showMobileControls();
   await window.loadOpponent(token, true);
+  window._showMobileControls?.();
 };
 
 let tokenSwitchInFlight = false;
@@ -1816,10 +1940,7 @@ async function startMultiplayerFight(_roomData) {
     stopRoomPolling();
     stopWaitingInArena();
 
-    if (game) {
-      game.running = false;
-      game.roundOver = true;
-    }
+    disposeCurrentGame();
     if (peerConnection) {
       peerConnection.close();
       peerConnection = null;
@@ -1834,8 +1955,7 @@ async function startMultiplayerFight(_roomData) {
     setFightDockVisible(true);
     prepareFightAudio();
 
-    const fightStripEl = document.getElementById('fight-trending-strip');
-    if (fightStripEl) fightStripEl.style.display = 'block';
+    setMarketStripSurface('fight');
     updateRankedFightStatus(null, myNum);
 
     // Create input for local player based on room controller selection
@@ -1875,11 +1995,12 @@ async function startMultiplayerFight(_roomData) {
       stageMusic,
       authoritativeMultiplayer: true,
     });
-    game.start();
-
     window._game = game;
     window.game = game;
     window.currentGame = game;
+    window.virtualJoystick?.configureForFight?.({ boostLayerAvailable: false });
+    game.start();
+    syncGameplayContextAction();
 
     if (window.virtualJoystick) {
       const alreadyAdded = localInput.adapters && localInput.adapters.includes(window.virtualJoystick);
@@ -2008,6 +2129,7 @@ function handleControllerForfeit(data) {
   const myNum = parseInt(localStorage.getItem('sf_playerNum') || '1', 10);
   const forfeitWinner = data.forfeitWinner;
 
+  disposeCurrentGame({ clearCanvas: false });
   canvas.classList.remove('active');
 
   // Show results screen with forfeit info
@@ -2032,7 +2154,6 @@ function handleControllerForfeit(data) {
 
   state = 'matchResults';
   showScreen('matchResults');
-  game = null;
 }
 
 /** Handle the round_over message from the server */
@@ -2049,7 +2170,7 @@ async function handleMultiplayerRoundOver(msg) {
   const finishedGame = game;
 
   // Stop the game and clean up peer connection
-  if (game) { game.running = false; }
+  disposeCurrentGame({ clearCanvas: false });
   document.getElementById('ranked-fight-status')?.classList.add('hidden');
   const specialButton = document.getElementById('btn-hadouken');
   if (specialButton) specialButton.disabled = false;
@@ -2148,8 +2269,8 @@ async function handleMultiplayerRoundOver(msg) {
     window.showVictoryOverlay(msg.winner, null, null);
   }
 
-  game = null;
   state = 'victoryOverlay';
+  syncGameplayContextAction();
 }
 
 /** Display ELO rating changes on the results screen */
@@ -2219,17 +2340,11 @@ async function returnToRankedQueue() {
   stopRoomPolling();
   stopWaitingInArena();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
-  if (game) { game.running = false; game.roundOver = true; }
+  disposeCurrentGame();
   await cleanupAdapters();
-  game = null;
-  window.currentGame = null;
-  window.game = null;
   window.isMultiplayerMatch = false;
   window.isTokenExhibition = false;
   syncTokenExhibitionControls();
-  window.isTokenExhibition = false;
-  syncTokenExhibitionControls();
-  window.isTokenExhibition = false;
   localStorage.removeItem('sf_roomCode');
   localStorage.removeItem('sf_playerId');
   localStorage.removeItem('sf_playerNum');
@@ -2246,8 +2361,8 @@ async function returnToRankedQueue() {
 function handleRoomExpired() {
   console.log('[room] Room expired due to inactivity');
   // Stop game and clean up all connections gracefully
-  if (game) { game.running = false; game = null; }
-  cleanupAdapters();
+  disposeCurrentGame();
+  void cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
   stopRoomPolling();
   // Clear room data from localStorage
@@ -2615,8 +2730,8 @@ function handleMatchmakingStatus(data) {
     stopMmSearchTimer();
     mmPlayerId = null;
     if (mmWaitingGame) {
-      if (game) { game.running = false; game = null; }
-      cleanupAdapters();
+      disposeCurrentGame();
+      void cleanupAdapters();
       mmWaitingGame = false;
     }
     showMatchmakingScreen();
@@ -2628,8 +2743,8 @@ async function handleMatchFound(data) {
   stopMmSearchTimer();
   // If playing a waiting game, stop it first
   if (mmWaitingGame) {
-    if (game) { game.running = false; game = null; }
-    cleanupAdapters();
+    disposeCurrentGame();
+    await cleanupAdapters();
     mmWaitingGame = false;
   }
 
@@ -2679,7 +2794,9 @@ safeListener('btn-mm-cancel', 'click', async () => {
 });
 
 // Play while you wait
-safeListener('btn-mm-play-wait', 'click', () => {
+safeListener('btn-mm-play-wait', 'click', async () => {
+  disposeCurrentGame();
+  await cleanupAdapters();
   mmWaitingGame = true;
   window.isMultiplayerMatch = false;
   window.isTokenExhibition = false;
@@ -2691,14 +2808,27 @@ safeListener('btn-mm-play-wait', 'click', () => {
   setLandingAudioButtonVisible(false);
   setFightDockVisible(true);
   prepareFightAudio();
-  const fightStripEl = document.getElementById('fight-trending-strip');
-  if (fightStripEl) fightStripEl.style.display = 'block';
+  setMarketStripSurface('fight');
 
   const simInput1 = createInput(1, 0, 0); // Keys
   const simInput2 = createInput(2, 3, 0); // SIM
+  p1Input = simInput1;
+  p2Input = simInput2;
 
   game = new Game(canvas, simInput1, simInput2, sfx, { p1Label: 'You', p2Label: 'SIM Bot', stageMusic });
+  window._game = game;
+  window.game = game;
+  window.currentGame = game;
+  window.virtualJoystick?.configureForFight?.({ boostLayerAvailable: true });
+
+  if (window.virtualJoystick && !simInput1.adapters?.includes(window.virtualJoystick)) {
+    simInput1.addAdapter(window.virtualJoystick);
+    window.virtualJoystick._registered = true;
+  }
+
   game.start();
+  syncGameplayContextAction();
+  window._showMobileControls?.();
 
   for (const adapter of activeAdapters) {
     if (adapter.setGameRef) adapter.setGameRef(game);
@@ -2850,11 +2980,8 @@ async function runTokenExhibitionFight() {
     if (!tokenExhibitionPair) return;
   }
 
+  disposeCurrentGame();
   await cleanupAdapters();
-  if (window.liveBoostSystem) {
-    try { window.liveBoostSystem.stop(); } catch {}
-    window.liveBoostSystem = null;
-  }
   const [p1Token, p2Token] = tokenExhibitionPair;
   const p1Profile = deriveTokenCombatProfile(p1Token);
   const p2Profile = deriveTokenCombatProfile(p2Token);
@@ -2875,9 +3002,9 @@ async function runTokenExhibitionFight() {
   setLandingAudioButtonVisible(false);
   setFightDockVisible(true);
   prepareFightAudio();
+  setMarketStripSurface('fight');
   const fightStripEl = document.getElementById('fight-trending-strip');
   if (fightStripEl) {
-    fightStripEl.style.display = 'block';
     if (!window.fightTrendingStrip && window.TrendingStrip) {
       window.fightTrendingStrip = new window.TrendingStrip('fight-trending-strip');
       void window.fightTrendingStrip.init();
@@ -2924,10 +3051,12 @@ async function runTokenExhibitionFight() {
 
   const mobileControls = document.getElementById('mobile-controls');
   if (mobileControls) mobileControls.style.display = 'none';
+  window.virtualJoystick?.configureForFight?.({ boostLayerAvailable: false });
 
   p1Adapter.setGameRef(game);
   p2Adapter.setGameRef(game);
   game.start();
+  syncGameplayContextAction();
 
   // Token media and audio preload during the cinematic intro. The default
   // Solana head remains available if a remote image cannot be loaded.
@@ -3180,23 +3309,6 @@ document.addEventListener('mousedown', clearKbFocus);
 // Keyboard handlers
 // ─────────────────────────────────────────────
 window.addEventListener('keydown', e => {
-  // Toggle developer boost menu hotkey [B]
-  if (e.code === 'KeyB') {
-    const activeEl = document.activeElement;
-    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
-      return;
-    }
-    if (window.isTokenExhibition) {
-      e.preventDefault();
-      return;
-    }
-    if (typeof window.toggleBoostMenu === 'function') {
-      window.toggleBoostMenu();
-      e.preventDefault();
-      return;
-    }
-  }
-
   // Toggle voice control hotkey [V]
   if (e.code === 'KeyV') {
     const activeEl = document.activeElement;
@@ -3242,8 +3354,8 @@ window.addEventListener('keydown', e => {
     if (e.code === 'Enter' && game && game.roundOver && !peerConnection) {
       if (mmWaitingGame) {
         // Return to matchmaking searching screen
-        if (game) { game.running = false; game = null; }
-        cleanupAdapters();
+        disposeCurrentGame();
+        void cleanupAdapters();
         mmWaitingGame = false;
         showScreen('matchmaking');
       } else if (window.isTokenExhibition) {
@@ -4179,6 +4291,7 @@ window.captureVictory = async function(result = 'player') {
 };
 
 window.showVictoryOverlay = function(winnerNum, token, loserToken, options = {}) {
+  syncGameplayContextAction();
   const overlay = document.getElementById('victory-overlay');
   const winText = document.getElementById('victory-text');
   
@@ -4734,20 +4847,10 @@ window.rematchFight = async function() {
       }
 
       // Cleanup existing game objects before going to controller selection
-      if (game) {
-        game.running = false;
-        game.roundOver = true;
-      }
+      disposeCurrentGame();
       await cleanupAdapters();
-      game = null;
-      window.currentGame = null;
-      window.game = null;
-      
-      const canvas = document.getElementById('game');
       if (canvas) {
         canvas.classList.remove('active');
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
       }
 
       // Back to controller selection
@@ -4765,21 +4868,8 @@ window.rematchFight = async function() {
   // left token back into the user's profile and controls.
   if (window.isTokenExhibition) {
     console.log('[Rematch] Drawing a fresh autonomous token matchup...');
-    if (game) {
-      game.running = false;
-      game.roundOver = true;
-    }
-    if (window.liveBoostSystem) {
-      try { window.liveBoostSystem.stop(); } catch {}
-      window.liveBoostSystem = null;
-    }
+    disposeCurrentGame();
     await cleanupAdapters();
-    game = null;
-    p1Input = null;
-    p2Input = null;
-    window.currentGame = null;
-    window.game = null;
-    window._game = null;
     window.isTokenExhibition = true;
     showScreen('characterSelect');
     const matchupReady = await refreshTokenExhibitionPair({ avoidCurrent: true });
@@ -4797,149 +4887,55 @@ window.rematchFight = async function() {
 
   // 2. Classic / other custom single player match
   console.log('[Rematch] Restarting classic single-player match');
-  if (game) {
-    game.running = false;
-    game.roundOver = true;
-  }
-  if (window.liveBoostSystem) {
-    try { window.liveBoostSystem.stop(); } catch (e) {}
-    window.liveBoostSystem = null;
-  }
-  await cleanupAdapters();
-  game = null;
-  window.currentGame = null;
-  window.game = null;
   state = 'landing';
-  
-  const canvas = document.getElementById('game');
-  if (canvas) {
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
-  
-  await new Promise(r => setTimeout(r, 32));
-  if (window._showMobileControls) window._showMobileControls();
   await startFight();
+  window._showMobileControls?.();
 };
 
 // ─────────────────────────────────────────────
-// Developer Live Boost Simulator Helper API
+// Local joypad boost layer
+// These cinematic tiers are deliberately excluded from authoritative PvP,
+// league ELO, leaderboard credit, and reward settlement.
 // ─────────────────────────────────────────────
-window.boostTarget = 'p1';
-window.setBoostTarget = function(target) {
-  window.boostTarget = target;
-  const btnP1 = document.getElementById('btn-target-p1');
-  const btnP2 = document.getElementById('btn-target-p2');
-  if (target === 'p1') {
-    if (btnP1) {
-      btnP1.style.background = 'var(--neon-green)';
-      btnP1.style.color = '#000';
-      btnP1.style.borderColor = 'transparent';
-    }
-    if (btnP2) {
-      btnP2.style.background = 'rgba(255,255,255,0.1)';
-      btnP2.style.color = '#fff';
-      btnP2.style.borderColor = 'rgba(255,255,255,0.2)';
-    }
-  } else {
-    if (btnP2) {
-      btnP2.style.background = 'var(--neon-green)';
-      btnP2.style.color = '#000';
-      btnP2.style.borderColor = 'transparent';
-    }
-    if (btnP1) {
-      btnP1.style.background = 'rgba(255,255,255,0.1)';
-      btnP1.style.color = '#fff';
-      btnP1.style.borderColor = 'rgba(255,255,255,0.2)';
-    }
-  }
-};
+const LOCAL_CONTROLLER_BOOST_TIERS = new Set(['micro', 'runner', 'spike', 'overdrive']);
 
-window.triggerSimulatedBoost = function(tierId) {
-  if (window.isTokenExhibition) {
-    console.info('[BoostTest] Token Exhibition disables one-sided simulated boosts.');
-    window.hideBoostMenu?.();
-    return;
+window.triggerControllerBoost = function(tierId) {
+  const activeGame = getLiveFightForContextAction();
+  const isAuthoritativeFight = window.isMultiplayerMatch === true || activeGame?.authoritativeMultiplayer === true;
+  const isReady = activeGame
+    && !activeGame.gameplayPaused
+    && !activeGame.waitingForIntro
+    && !activeGame.waitingForProviders
+    && activeGame.fightAlert <= 0;
+
+  if (
+    !LOCAL_CONTROLLER_BOOST_TIERS.has(tierId)
+    || !isReady
+    || isAuthoritativeFight
+    || window.isTokenExhibition === true
+  ) {
+    console.info('[ControllerBoost] Local unranked boost ignored outside an active human-v-AI fight.');
+    return false;
   }
-  const g = window.currentGame || window.game || window._game;
-  if (!g) {
-    console.warn("No active game to boost");
-    return;
-  }
-  if (!window.liveBoostSystem) {
+
+  if (window.liveBoostSystem?.game !== activeGame) {
+    if (window.liveBoostSystem) {
+      try { window.liveBoostSystem.stop(); } catch (_) {}
+    }
     const LiveBoostSystem = window.liveBoostSystemClass;
-    if (LiveBoostSystem) {
-      window.liveBoostSystem = new LiveBoostSystem(g);
-      window.liveBoostSystem.start(g.p2, g.p2.tokenData || { symbol: 'TEST', mint: 'testmint', price: 1, volume24h: 1 });
-    } else {
-      console.error("LiveBoostSystem class not found");
-      return;
+    if (!LiveBoostSystem) {
+      console.error('[ControllerBoost] Live boost system is unavailable.');
+      return false;
     }
+    window.liveBoostSystem = new LiveBoostSystem(activeGame);
   }
-  
-  const tokenData = (g.p2 && g.p2.tokenData) || { symbol: 'TEST', mint: 'testmint', price: 1, volume24h: 1 };
-  window.liveBoostSystem.triggerTier(tierId, tokenData, window.boostTarget);
+
+  const tokenData = activeGame.p2?.tokenData || {
+    symbol: 'SPARRING',
+    mint: 'local-unranked',
+    price: 1,
+    volume24h: 1,
+  };
+  window.liveBoostSystem.triggerTier(tierId, tokenData, 'p1');
+  return true;
 };
-
-function isBoostMenuVisible(menu) {
-  return !!menu && menu.style.display !== 'none' && !!menu.style.display;
-}
-
-window.hideBoostMenu = function() {
-  const menu = document.getElementById('boost-menu');
-  if (menu) {
-    menu.style.display = 'none';
-    menu.setAttribute('aria-hidden', 'true');
-  }
-};
-
-window.showBoostMenu = function() {
-  if (window.isTokenExhibition) {
-    window.hideBoostMenu();
-    return;
-  }
-  const menu = document.getElementById('boost-menu');
-  if (menu) {
-    menu.style.display = 'block';
-    menu.setAttribute('aria-hidden', 'false');
-    window.setBoostTarget('p1');
-  }
-};
-
-window.toggleBoostMenu = function() {
-  const menu = document.getElementById('boost-menu');
-  if (!menu) return;
-  if (window.isTokenExhibition) {
-    window.hideBoostMenu();
-    return;
-  }
-  if (isBoostMenuVisible(menu)) {
-    window.hideBoostMenu();
-  } else {
-    window.showBoostMenu();
-  }
-};
-
-function dismissBoostMenuFromOutside(event) {
-  const menu = document.getElementById('boost-menu');
-  if (!isBoostMenuVisible(menu)) return;
-
-  const toggle = document.getElementById('btn-boost-hack');
-  const target = event.target;
-  if ((menu && menu.contains(target)) || (toggle && toggle.contains(target))) return;
-
-  window.hideBoostMenu();
-  event.preventDefault();
-  event.stopPropagation();
-}
-
-document.addEventListener('pointerdown', dismissBoostMenuFromOutside, true);
-document.addEventListener('touchstart', dismissBoostMenuFromOutside, { capture: true, passive: false });
-
-window.addEventListener('keydown', (event) => {
-  if (event.code !== 'Escape') return;
-  const menu = document.getElementById('boost-menu');
-  if (!isBoostMenuVisible(menu)) return;
-  window.hideBoostMenu();
-  event.preventDefault();
-});

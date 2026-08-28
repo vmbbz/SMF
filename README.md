@@ -215,8 +215,7 @@ When the currently-fought token's price pumps **during your fight**, timed boost
 | 🔴 **Spike** | +45–100% price gain | 5-hit combo + P1 levitated 1.5s |
 | 🟣 **Overdrive** | +100%+ (2× pump) | 10 Hadoukens + P1 levitated 3s, chaos mode |
 
-### ⚠️ Survival Strategy
-> **You MUST rely on active buy pressure or burn Live Boosts to stand a chance against pumping high-volume opponent tokens. Trying to fight a 2× pump vanilla will result in getting completely whipped — LMAO WHIPLASH!**
+The mobile joypad also exposes these cinematic tiers to P1 through a **local, unranked showcase layer**. That layer is deliberately disabled in Token Exhibition and authoritative multiplayer; it spends no tokens and creates no ELO, leaderboard credit, or rewards. Market-triggered token boosts remain game effects rather than evidence of trades, volume, or reward eligibility.
 
 ### 🏆 Victory Screen
 
@@ -244,13 +243,15 @@ When the currently-fought token's price pumps **during your fight**, timed boost
   - Left/right = walk/dash
   - Down = crouch
 - **Right side** attack grid:
-  - ⚡ **SP** (top, octagon shape, gold pulsing glow) — Hadouken/Special
+  - In local human-v-AI fights, the top button is **BOOST**. Tap it to animate the four attack buttons into MICRO / RUN / SPIKE / OVER controls; tap **ATTACK** to return to LP / LK / HP / HK.
+  - In authoritative multiplayer, the top button remains ⚡ **SP** for Hadouken. Skill Championship disables paid specials; Boosted League settlement and its three-charge cap remain server-owned.
   - 👊 LP — Light Punch
   - 🦵 LK — Light Kick
   - 🔥 HP — Heavy Punch
   - 💥 HK — Heavy Kick
 - **Only visible during gameplay** — hidden on the landing/home screen
 - **3-layer reliability**: re-registers on every `resetAndFight`, watchdog polling every 500ms, `_showMobileControls` polling until `p1Input` is available
+- **Navigation contract**: the market-bar Help control becomes PAUSE during a live round and RESUME while manually paused. HOME permanently disposes the fight and returns to a clean landing state.
 
 ### 🌦️ Weather System
 
@@ -305,6 +306,8 @@ stick-fighter/
 |---|---|---|
 | `window.loadOpponent(token, forceRestart?)` | `main.js` | Load a token fighter into P2 |
 | `window.resetAndFight(token)` | `main.js` | Full teardown + fresh game start (the single source of truth for "next fight") |
+| `window.disposeCurrentGame()` | `main.js` | Cancels the active RAF loop and releases game listeners, boost state, input aliases, and canvas state |
+| `window.triggerControllerBoost(tier)` | `main.js` | Triggers a guarded local/unranked P1 cinematic boost; rejects exhibition and authoritative PvP |
 | `window.nextFight()` | `main.js` | Requests an Arena Director decision, then uses queue/strip/API fallbacks before resetAndFight |
 | `window.fightToken(mint)` | `index.html` | Fetches token by mint and calls loadOpponent |
 | `window.startEndlessMode()` | `index.html` | Starts an Arena Director-selected opponent and enables automatic next fights |

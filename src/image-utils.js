@@ -63,6 +63,19 @@ export function getTokenCoverSource(token, fallback = '') {
   );
 }
 
+export function isDrawableImage(image) {
+  if (!image || image.complete !== true) return false;
+
+  const width = typeof image.naturalWidth === 'number'
+    ? image.naturalWidth
+    : Number(image.width);
+  const height = typeof image.naturalHeight === 'number'
+    ? image.naturalHeight
+    : Number(image.height);
+  return Number.isFinite(width) && width > 0
+    && Number.isFinite(height) && height > 0;
+}
+
 export function loadImage(src, { crossOrigin = true } = {}) {
   return new Promise((resolve, reject) => {
     const url = normalizeImageUrl(src);

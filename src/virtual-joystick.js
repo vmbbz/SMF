@@ -5,6 +5,13 @@
 // ─────────────────────────────────────────────
 import { Actions } from './input.js';
 
+const ATTACK_CONTROLS = Object.freeze([
+  { id: 'btn-light-punch', actions: [Actions.LIGHT_PUNCH], icon: '👊', label: 'LP', tier: 'micro', boostIcon: '🟡', boostLabel: 'MICRO' },
+  { id: 'btn-light-kick', actions: [Actions.LIGHT_KICK], icon: '🦵', label: 'LK', tier: 'runner', boostIcon: '🟠', boostLabel: 'RUN' },
+  { id: 'btn-heavy-punch', actions: [Actions.HEAVY_PUNCH], icon: '🔥', label: 'HP', tier: 'spike', boostIcon: '🔴', boostLabel: 'SPIKE' },
+  { id: 'btn-heavy-kick', actions: [Actions.HEAVY_KICK], icon: '💥', label: 'HK', tier: 'overdrive', boostIcon: '🟣', boostLabel: 'OVER' },
+]);
+
 export class VirtualJoystickAdapter {
   constructor() {
     this.held = new Set();
@@ -24,53 +31,67 @@ export class VirtualJoystickAdapter {
     this.knob = null;
     this.container = null;
 
-    // Attack buttons
-    this._attackListeners = [];
+    this._listeners = [];
+    this._attached = false;
+    this.boostLayerAvailable = false;
+    this.boostLayerActive = false;
+    this._lastTouchPressAt = 0;
   }
 
   attach() {
+    if (this._attached) return;
     this.base = document.getElementById('joystick-base');
     this.knob = document.getElementById('joystick-knob');
     this.container = document.getElementById('joystick-container');
     if (!this.base || !this.knob) return;
+    this._attached = true;
 
     // Touch events on the joystick base
-    this.base.addEventListener('touchstart', e => this._onTouchStart(e), { passive: false });
-    window.addEventListener('touchmove', e => this._onTouchMove(e), { passive: false });
-    window.addEventListener('touchend', e => this._onTouchEnd(e), { passive: false });
-    window.addEventListener('touchcancel', e => this._onTouchEnd(e), { passive: false });
+    this._addListener(this.base, 'touchstart', e => this._onTouchStart(e), { passive: false });
+    this._addListener(window, 'touchmove', e => this._onTouchMove(e), { passive: false });
+    this._addListener(window, 'touchend', e => this._onTouchEnd(e), { passive: false });
+    this._addListener(window, 'touchcancel', e => this._onTouchEnd(e), { passive: false });
 
     // Mouse fallback for desktop testing
-    this.base.addEventListener('mousedown', e => this._onMouseStart(e));
-    window.addEventListener('mousemove', e => this._onMouseMove(e));
-    window.addEventListener('mouseup', () => this._onRelease());
+    this._addListener(this.base, 'mousedown', e => this._onMouseStart(e));
+    this._addListener(window, 'mousemove', e => this._onMouseMove(e));
+    this._addListener(window, 'mouseup', () => this._onRelease());
 
     // Attack buttons
     this._hookAttackButtons();
   }
 
   detach() {
-    // Clean up listeners if needed
+    for (const { element, type, listener, options } of this._listeners) {
+      element.removeEventListener(type, listener, options);
+    }
+    this._listeners = [];
+    this._attached = false;
+    this.resetControlLayer();
+  }
+
+  _addListener(element, type, listener, options) {
+    element.addEventListener(type, listener, options);
+    this._listeners.push({ element, type, listener, options });
   }
 
   _hookAttackButtons() {
-    const map = [
-      { id: 'btn-light-punch', actions: [Actions.LIGHT_PUNCH] },
-      { id: 'btn-heavy-punch', actions: [Actions.HEAVY_PUNCH] },
-      { id: 'btn-light-kick',  actions: [Actions.LIGHT_KICK] },
-      { id: 'btn-heavy-kick',  actions: [Actions.HEAVY_KICK] },
-      { id: 'btn-jump',        actions: [Actions.JUMP, Actions.UP] },
-      { id: 'btn-hadouken',    actions: [Actions.HADOUKEN] },
-    ];
-
-    for (const { id, actions } of map) {
+    for (const control of ATTACK_CONTROLS) {
+      const { id, actions, tier } = control;
       const el = document.getElementById(id);
       if (!el) continue;
 
       const onDown = (e) => {
         e.preventDefault();
-        for (const a of actions) this.justPressed.add(a);
-        if (window.haptic) window.haptic.lightHit();
+        if (e.type === 'touchstart') this._lastTouchPressAt = Date.now();
+        if (e.type === 'mousedown' && Date.now() - this._lastTouchPressAt < 600) return;
+
+        if (this.boostLayerAvailable && this.boostLayerActive) {
+          window.triggerControllerBoost?.(tier);
+        } else {
+          for (const action of actions) this.justPressed.add(action);
+          window.haptic?.lightHit?.();
+        }
         el.classList.add('active');
       };
       const onUp = (e) => {
@@ -78,10 +99,109 @@ export class VirtualJoystickAdapter {
         el.classList.remove('active');
       };
 
-      el.addEventListener('touchstart', onDown, { passive: false });
-      el.addEventListener('touchend', onUp, { passive: false });
-      el.addEventListener('mousedown', onDown);
-      el.addEventListener('mouseup', onUp);
+      this._addAttackListener(el, 'touchstart', onDown, { passive: false });
+      this._addAttackListener(el, 'touchend', onUp, { passive: false });
+      this._addAttackListener(el, 'touchcancel', onUp, { passive: false });
+      this._addAttackListener(el, 'mousedown', onDown);
+      this._addAttackListener(el, 'mouseup', onUp);
+      this._addAttackListener(el, 'mouseleave', onUp);
+    }
+
+    const special = document.getElementById('btn-hadouken');
+    if (!special) return;
+
+    const onSpecialDown = (e) => {
+      e.preventDefault();
+      if (e.type === 'touchstart') this._lastTouchPressAt = Date.now();
+      if (e.type === 'mousedown' && Date.now() - this._lastTouchPressAt < 600) return;
+
+      if (this.boostLayerAvailable) {
+        this.setBoostLayerActive(!this.boostLayerActive);
+      } else {
+        this.justPressed.add(Actions.HADOUKEN);
+      }
+      window.haptic?.lightHit?.();
+      special.classList.add('active');
+    };
+    const onSpecialUp = (e) => {
+      e.preventDefault();
+      special.classList.remove('active');
+    };
+    this._addAttackListener(special, 'touchstart', onSpecialDown, { passive: false });
+    this._addAttackListener(special, 'touchend', onSpecialUp, { passive: false });
+    this._addAttackListener(special, 'touchcancel', onSpecialUp, { passive: false });
+    this._addAttackListener(special, 'mousedown', onSpecialDown);
+    this._addAttackListener(special, 'mouseup', onSpecialUp);
+    this._addAttackListener(special, 'mouseleave', onSpecialUp);
+    this._syncControlLayerDom();
+  }
+
+  _addAttackListener(element, type, listener, options) {
+    this._addListener(element, type, listener, options);
+  }
+
+  configureForFight({ boostLayerAvailable = false } = {}) {
+    this.boostLayerAvailable = Boolean(boostLayerAvailable);
+    if (!this.boostLayerAvailable) this.boostLayerActive = false;
+    this._syncControlLayerDom();
+  }
+
+  setBoostLayerActive(active) {
+    this.boostLayerActive = this.boostLayerAvailable && Boolean(active);
+    this.justPressed.clear();
+    this._syncControlLayerDom();
+    return this.boostLayerActive;
+  }
+
+  resetControlLayer() {
+    this.boostLayerAvailable = false;
+    this.boostLayerActive = false;
+    this.justPressed.clear();
+    this.held.clear();
+    this._syncControlLayerDom();
+  }
+
+  _syncControlLayerDom() {
+    if (typeof document === 'undefined') return;
+    const attackZone = document.querySelector('.attack-zone');
+    attackZone?.classList.toggle('boost-layer-available', this.boostLayerAvailable);
+    attackZone?.classList.toggle('boost-layer-active', this.boostLayerActive);
+
+    const special = document.getElementById('btn-hadouken');
+    if (special) {
+      const icon = special.querySelector('.icon');
+      const label = special.querySelector('.control-label') || special.querySelector('span:last-child');
+      if (this.boostLayerAvailable) {
+        if (icon) icon.textContent = this.boostLayerActive ? '↩' : '⚡';
+        if (label) label.textContent = this.boostLayerActive ? 'ATTACK' : 'BOOST';
+        special.title = this.boostLayerActive ? 'Return to attack controls' : 'Open local boost controls';
+      } else {
+        if (icon) icon.textContent = '⚡';
+        if (label) label.textContent = 'SP';
+        special.title = 'Hadouken special';
+      }
+      special.setAttribute('aria-label', special.title);
+      special.classList.toggle('boost-layer-toggle', this.boostLayerAvailable);
+      special.classList.toggle('boost-layer-return', this.boostLayerActive);
+      special.setAttribute('aria-pressed', this.boostLayerActive ? 'true' : 'false');
+    }
+
+    for (const control of ATTACK_CONTROLS) {
+      const button = document.getElementById(control.id);
+      if (!button) continue;
+      const icon = button.querySelector('.icon');
+      const label = button.querySelector('.control-label') || button.querySelector('span:last-child');
+      if (icon) icon.textContent = this.boostLayerActive ? control.boostIcon : control.icon;
+      if (label) label.textContent = this.boostLayerActive ? control.boostLabel : control.label;
+      button.title = this.boostLayerActive
+        ? `Trigger ${control.boostLabel.toLowerCase()} local boost`
+        : `${control.label} attack`;
+      button.setAttribute('aria-label', button.title);
+      button.dataset.boostTier = this.boostLayerActive ? control.tier : '';
+      button.classList.toggle('boost-tier-control', this.boostLayerActive);
+      for (const tierName of ['micro', 'runner', 'spike', 'overdrive']) {
+        button.classList.toggle(`boost-tier-${tierName}`, this.boostLayerActive && tierName === control.tier);
+      }
     }
   }
 
@@ -285,4 +405,3 @@ export class HapticEngine {
 }
 
 window.haptic = HapticEngine;
-

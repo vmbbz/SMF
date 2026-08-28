@@ -6,6 +6,7 @@ import {
   WALLET_ACTION_PAUSE_EVENT,
   dispatchGameplayPause,
   getGameplayPauseCopy,
+  isManualPauseOnly,
 } from '../src/gameplay-pause.js';
 import {
   closeEconomyPage,
@@ -182,6 +183,17 @@ describe('Gameplay pause ownership', () => {
     expect(getGameplayPauseCopy('arena_status_page').detail).toContain('Arena Status');
     expect(getGameplayPauseCopy('economy_page').detail).not.toMatch(/wallet/i);
     expect(getGameplayPauseCopy('arena_status_page').detail).not.toMatch(/wallet/i);
+    expect(getGameplayPauseCopy('manual_pause')).toEqual({
+      status: 'FIGHT HELD',
+      detail: 'Tap RESUME in the live-market bar to continue.',
+    });
+  });
+
+  test('offers RESUME only when manual pause is the sole owner', () => {
+    expect(isManualPauseOnly(new Set(['manual_pause']))).toBe(true);
+    expect(isManualPauseOnly(new Set(['manual_pause', 'help_modal']))).toBe(false);
+    expect(isManualPauseOnly(new Set(['help_modal']))).toBe(false);
+    expect(isManualPauseOnly(undefined)).toBe(false);
   });
 
   test('keeps wallet pauses on their dedicated compatibility channel', () => {
@@ -195,5 +207,13 @@ describe('Gameplay pause ownership', () => {
     expect(indexSource).toContain(`new CustomEvent('${GAMEPLAY_PAUSE_EVENT}'`);
     expect(indexSource).not.toContain('options.resumeFight');
     expect(indexSource).not.toContain('closeHelpModal({ resumeFight: false })');
+  });
+
+  test('Game destruction unregisters pause/profile listeners and cancels its RAF', () => {
+    expect(gameSource).toContain('destroy()');
+    expect(gameSource).toContain('cancelAnimationFrame(this._animationFrameId)');
+    expect(gameSource).toContain('window.removeEventListener(GAMEPLAY_PAUSE_EVENT, this._applyGameplayPause)');
+    expect(gameSource).toContain('window.removeEventListener(WALLET_ACTION_PAUSE_EVENT, this._applyGameplayPause)');
+    expect(gameSource).toContain("window.removeEventListener('smf_profile_updated', this._profileUpdateHandler)");
   });
 });

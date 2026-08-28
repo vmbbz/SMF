@@ -92,13 +92,17 @@ export class TrendingStrip {
   }
 
   render() {
+    const contextSurface = this.container.id === 'fight-trending-strip' ? 'fight' : 'landing';
     this.container.innerHTML = `
       <div class="strip-header">
         <div class="strip-title-wrap" aria-label="Live market stream">
           <span class="strip-signal-dot"></span>
           <span class="strip-title">LIVE MARKET</span>
         </div>
-        <button class="strip-info-btn" type="button" onclick="window.openHelpModal && window.openHelpModal()" title="Game Guide">?</button>
+        <button class="strip-info-btn" data-game-context-action data-context-surface="${contextSurface}" type="button" onclick="window.handleGameContextAction && window.handleGameContextAction(event)" title="Open game guide" aria-label="Open game guide">
+          <span class="strip-context-icon" aria-hidden="true">?</span>
+          <span class="strip-context-label">HELP</span>
+        </button>
         <div class="strip-actions">
           <button onclick="window.${this.container.id === 'fight-trending-strip' ? 'fightTrendingStrip' : 'trendingStrip'}.toggleMode()" class="toggle-btn strip-mode-btn" type="button">
             ${this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS'}
@@ -119,9 +123,13 @@ export class TrendingStrip {
           0% { transform: translateX(0); }
           100% { transform: translateX(-50%); }
         }
+        @keyframes context-pause-pulse {
+          0%, 100% { box-shadow: 0 0 10px rgba(255, 34, 68, 0.48); }
+          50% { box-shadow: 0 0 20px rgba(255, 34, 68, 0.9), 0 0 34px rgba(255, 34, 68, 0.28); }
+        }
         .strip-header {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+          grid-template-columns: minmax(0, 1fr) 68px minmax(0, 1fr);
           align-items: center;
           column-gap: 8px;
           width: 100%;
@@ -154,9 +162,9 @@ export class TrendingStrip {
           text-shadow: 0 0 10px rgba(0, 212, 255, 0.7);
         }
         .strip-info-btn {
-          width: 24px;
+          width: 64px;
           height: 24px;
-          border-radius: 50%;
+          border-radius: 999px;
           border: 1px solid rgba(255, 0, 255, 0.75);
           background: rgba(0, 0, 0, 0.62);
           color: #fff;
@@ -169,11 +177,49 @@ export class TrendingStrip {
           font-size: 9px;
           line-height: 1;
           box-shadow: 0 0 9px rgba(255, 0, 255, 0.48);
-          transition: transform 0.15s ease, border-color 0.15s ease;
+          gap: 5px;
+          transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
         }
+        .strip-context-icon {
+          font-family: system-ui, sans-serif;
+          font-size: 12px;
+          line-height: 1;
+        }
+        .strip-context-label { display: inline; }
         .strip-info-btn:hover {
           transform: scale(1.12);
           border-color: var(--neon-green);
+        }
+        #fight-trending-strip .strip-header {
+          grid-template-columns: minmax(0, 1fr) 84px minmax(0, 1fr);
+        }
+        #fight-trending-strip .strip-info-btn {
+          width: 80px;
+          height: 26px;
+          border-radius: 999px;
+          border-width: 2px;
+          font-size: 7px;
+          letter-spacing: 0.04em;
+        }
+        #fight-trending-strip .strip-context-label { display: inline; }
+        #fight-trending-strip .strip-info-btn.is-pause {
+          border-color: #ff2244;
+          background: linear-gradient(135deg, rgba(255, 34, 68, 0.34), rgba(78, 0, 19, 0.78));
+          color: #fff;
+          animation: context-pause-pulse 1.7s ease-in-out infinite;
+        }
+        #fight-trending-strip .strip-info-btn.is-resume {
+          border-color: var(--neon-green);
+          background: linear-gradient(135deg, rgba(0, 255, 157, 0.42), rgba(0, 65, 42, 0.82));
+          box-shadow: 0 0 16px rgba(0, 255, 157, 0.65);
+          color: #fff;
+        }
+        #fight-trending-strip .strip-info-btn.is-blocked {
+          border-color: #ffcc00;
+          background: rgba(73, 58, 0, 0.8);
+          color: #ffea8a;
+          cursor: not-allowed;
+          opacity: 0.82;
         }
         .strip-actions {
           display: flex;
@@ -269,9 +315,12 @@ export class TrendingStrip {
         }
         @media (max-width: 1024px) {
           .strip-header {
-            grid-template-columns: minmax(0, 1fr) 26px minmax(0, 1fr);
+            grid-template-columns: minmax(0, 1fr) 62px minmax(0, 1fr);
             column-gap: 6px;
             min-height: 26px;
+          }
+          #fight-trending-strip .strip-header {
+            grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr);
           }
           .strip-title-wrap,
           .strip-actions {
@@ -281,9 +330,14 @@ export class TrendingStrip {
             font-size: 9px;
           }
           .strip-info-btn {
-            width: 22px;
+            width: 58px;
             height: 22px;
-            font-size: 10px;
+            font-size: 7px;
+          }
+          #fight-trending-strip .strip-info-btn {
+            width: 72px;
+            height: 24px;
+            font-size: 6px;
           }
           .strip-mode-btn {
             height: 22px;
@@ -325,6 +379,7 @@ export class TrendingStrip {
       `;
       document.head.appendChild(style);
     }
+    window.syncGameplayContextAction?.();
   }
 
   renderTokens() {

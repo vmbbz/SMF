@@ -2,6 +2,25 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-29 - Mobile Fight Controls and Lifecycle
+
+### Fixed
+
+- Made HOME a true end-session action: it destroys the active game loop, unregisters per-game listeners, stops live boost work, clears every game alias and input reference, cancels Endless auto-advance, clears the canvas, and returns to a clean landing state.
+- Added an explicit `Game.destroy()` lifecycle so rematches, matchmaking transitions, room expiry, Token Exhibition, and navigation cannot leave stale animation loops or pause listeners behind.
+- Snapshot old input and voice adapters before asynchronous teardown so a late cleanup cannot detach controls created by the next fight.
+- Made UI pause transitions pause stage music without changing the player's saved music preference; resuming restarts music only when autoplay remains enabled.
+- Kept the landing market strip from covering the fight strip, so the visible in-fight context action is always PAUSE/RESUME rather than the landing HELP action.
+- Guarded canvas image drawing against completed-but-broken remote images; fighters now fall back to their neon placeholders instead of aborting a render frame.
+
+### Changed
+
+- Replaced the market-strip `?` control during gameplay with a high-visibility PAUSE button and an explicit RESUME state. Outside an active round it remains HELP.
+- Removed the fight-blocking developer boost modal and top-HUD boost button.
+- Added an animated mobile joypad boost layer for local human-v-AI fights: BOOST remaps LP/LK/HP/HK to MICRO/RUN/SPIKE/OVER, and ATTACK restores normal moves.
+- Kept authoritative multiplayer on the existing SP/Hadouken path. The local cinematic boost layer is rejected in Token Exhibition and multiplayer and cannot affect ELO, leaderboards, settlement, or rewards.
+- Lowered the compact mobile game-mode panel by 50 pixels so it clears the top menu controls.
+
 ## 2026-08-28 - Score-Saturated Alchemy Evidence
 
 ### Changed

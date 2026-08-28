@@ -3,7 +3,7 @@ import { calculateFighterPower } from "./token-power-scaling.js";
 import { Fighter, HADOUKEN_DATA } from "./fighter.js";
 import { DG } from "./ui.js";
 import { LiveBoostSystem } from "./live-boost-system.js";
-import { loadGameImage } from "./image-utils.js";
+import { isDrawableImage, loadGameImage } from "./image-utils.js";
 import {
   GAMEPLAY_PAUSE_EVENT,
   WALLET_ACTION_PAUSE_EVENT,
@@ -113,8 +113,9 @@ export class Game {
     }
 
     // Listen for dynamic profile updates (e.g. name or avatar changes in user profile modal)
+    this._profileUpdateHandler = null;
     if (this.useP1Profile) {
-      window.addEventListener('smf_profile_updated', (e) => {
+      this._profileUpdateHandler = (e) => {
         const profile = e.detail;
         if (profile) {
           if (profile.name) {
@@ -126,7 +127,8 @@ export class Game {
               .catch(error => console.warn('[Game] Failed to refresh P1 profile avatar:', error));
           }
         }
-      });
+      };
+      window.addEventListener('smf_profile_updated', this._profileUpdateHandler);
     }
 
     // Game logic works in CSS pixel space
@@ -202,13 +204,16 @@ export class Game {
     this.gameplayPaused = false;
     this.gameplayPauseReason = "";
     this.gameplayPauseReasons = new Set();
+    this._animationFrameId = null;
+    this._destroyed = false;
+    this._boundLoop = (timestamp) => this._loop(timestamp);
 
-    const applyGameplayPause = (e) => {
+    this._applyGameplayPause = (e) => {
       const detail = e && e.detail ? e.detail : {};
       this._setGameplayPause(detail);
     };
-    window.addEventListener(GAMEPLAY_PAUSE_EVENT, applyGameplayPause);
-    window.addEventListener(WALLET_ACTION_PAUSE_EVENT, applyGameplayPause);
+    window.addEventListener(GAMEPLAY_PAUSE_EVENT, this._applyGameplayPause);
+    window.addEventListener(WALLET_ACTION_PAUSE_EVENT, this._applyGameplayPause);
   }
 
   /** Logical (CSS pixel) dimensions */
@@ -234,6 +239,7 @@ export class Game {
   }
 
   start() {
+    if (this._destroyed) return;
     this.running = true;
     this.lastTime = performance.now();
 
@@ -242,6 +248,49 @@ export class Game {
     }
 
     this._loop(this.lastTime);
+  }
+
+  _requestNextFrame() {
+    if (!this.running || this._destroyed) return;
+    this._animationFrameId = requestAnimationFrame(this._boundLoop);
+  }
+
+  /** Permanently release one fight's loop, listeners, and transient effects. */
+  destroy() {
+    if (this._destroyed) return;
+    this._destroyed = true;
+    this.running = false;
+    this.roundOver = true;
+
+    if (this._animationFrameId !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(this._animationFrameId);
+    }
+    this._animationFrameId = null;
+
+    window.removeEventListener(GAMEPLAY_PAUSE_EVENT, this._applyGameplayPause);
+    window.removeEventListener(WALLET_ACTION_PAUSE_EVENT, this._applyGameplayPause);
+    if (this._profileUpdateHandler) {
+      window.removeEventListener('smf_profile_updated', this._profileUpdateHandler);
+      this._profileUpdateHandler = null;
+    }
+
+    this.gameplayPauseReasons.clear();
+    this.gameplayPaused = false;
+    this.gameplayPauseReason = '';
+    this._hadoukenConsumePending = false;
+    this._hadoukenConsumeQueued = false;
+
+    try {
+      this.p1Input?.endFrame?.();
+      this.p2Input?.endFrame?.();
+    } catch (_) {
+      // A detached input adapter must not prevent game teardown.
+    }
+
+    if (window.liveBoostSystem?.game === this) {
+      try { window.liveBoostSystem.stop(); } catch (_) {}
+      window.liveBoostSystem = null;
+    }
   }
 
   _setGameplayPause(detail = {}) {
@@ -260,9 +309,13 @@ export class Game {
     this.gameplayPaused = reasons.length > 0;
     this.gameplayPauseReason = reasons[reasons.length - 1] || '';
 
+    if (!wasPaused && this.gameplayPaused && this.stageMusic?.stopForMenu) {
+      this.stageMusic.stopForMenu();
+    }
     if (wasPaused && !this.gameplayPaused) {
       this._resumeAfterUiPause();
     }
+    window.syncGameplayContextAction?.();
   }
 
   _resumeAfterUiPause() {
@@ -298,6 +351,7 @@ export class Game {
   }
 
   _loop(timestamp) {
+    this._animationFrameId = null;
     if (!this.running) {
       if (this.stageMusic && this.stageMusic.stopForMenu) {
         this.stageMusic.stopForMenu();
@@ -317,7 +371,7 @@ export class Game {
       this._draw();
       this.p1Input.endFrame();
       this.p2Input.endFrame();
-      requestAnimationFrame((t) => this._loop(t));
+      this._requestNextFrame();
       return;
     }
 
@@ -333,7 +387,7 @@ export class Game {
     this.p1Input.endFrame();
     this.p2Input.endFrame();
 
-    requestAnimationFrame((t) => this._loop(t));
+    this._requestNextFrame();
   }
 
   applyAuthoritativeSnapshot(snapshot) {
@@ -1180,7 +1234,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
 
     // Try to draw opponent's cover image as a dimmed background
     const bgImg = this.p2.headerImage || this.p2.headImage;
-    if (bgImg && bgImg.complete) {
+    if (isDrawableImage(bgImg)) {
       // Subtle pulse based on time
       const pulse = 0.35 + Math.sin(performance.now() / 2000) * 0.15;
       ctx.globalAlpha = pulse;
@@ -1287,7 +1341,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.fill();
       ctx.strokeStyle = color;
       ctx.stroke();
-      if (fighter.headImage?.complete) {
+      if (isDrawableImage(fighter.headImage)) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(centerX, iconY, iconRadius, 0, Math.PI * 2);
@@ -1395,7 +1449,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.shadowBlur = 0;
 
       // Draw P1 Avatar Image or default icon
-      if (this.p1 && this.p1.headImage && this.p1.headImage.complete) {
+      if (isDrawableImage(this.p1?.headImage)) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(p1X, avatarY, 34, 0, Math.PI * 2);
@@ -1441,7 +1495,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.shadowBlur = 0;
 
       // Draw P2 Avatar Image or default icon
-      if (this.p2 && this.p2.headImage && this.p2.headImage.complete) {
+      if (isDrawableImage(this.p2?.headImage)) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(p2X, avatarY, 34, 0, Math.PI * 2);
@@ -1902,7 +1956,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     ctx.strokeRect(p2BarX, barY, barW, barH);
 
     // Draw P1 circular mini-avatar next to health bar
-    if (this.p1.headImage && this.p1.headImage.complete) {
+    if (isDrawableImage(this.p1.headImage)) {
       ctx.save();
       const p1AvatarX = p1BarX - 12;
       const p1AvatarY = barY + barH / 2;
@@ -1925,7 +1979,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     }
 
     // Draw P2 circular mini-avatar next to health bar
-    if (this.p2.headImage && this.p2.headImage.complete) {
+    if (isDrawableImage(this.p2.headImage)) {
       ctx.save();
       const p2AvatarX = p2BarX + barW + 12;
       const p2AvatarY = barY + barH / 2;
