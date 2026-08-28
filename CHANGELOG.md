@@ -10,6 +10,7 @@ All notable StickLash release changes are tracked here.
 - Added bounded `getSignaturesForAddress` reconnect backfill with a durable slot cursor, 32-slot overlap, per-candidate history caps, serialized cooldowns, truncation evidence, and signature-hash deduplication.
 - Added active, pending, and failed subscription counts plus explicit recovery mode and coverage completeness to public arena health.
 - Added explicit coverage provenance so judges can distinguish a complete bounded backfill from a complete continuously observed live window.
+- Added a provider-capability fallback from unsupported `rootSubscribe` to the finalized `root` field of `slotSubscribe`, with the selected heartbeat source disclosed publicly.
 
 ### Changed
 

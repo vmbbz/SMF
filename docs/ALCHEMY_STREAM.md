@@ -77,7 +77,11 @@ wss://solana-mainnet.g.alchemy.com/v2/<server-only-key>
 
 It owns these subscriptions:
 
-- one `rootSubscribe` heartbeat; root notifications represent finalized slots;
+- one `rootSubscribe` heartbeat when the endpoint supports it; root
+  notifications represent finalized slots;
+- a capability fallback to `slotSubscribe` when `rootSubscribe` returns JSON-RPC
+  `-32601`; only the notification's finalized `root` value is accepted as the
+  heartbeat/cursor, never its newer processed `slot` value;
 - one `logsSubscribe` per candidate mint;
 - each log filter contains exactly one `{ "mentions": ["<mint>"] }` value,
   because Solana permits only one pubkey in a `mentions` filter;
@@ -98,9 +102,11 @@ from receiving an unfair bonus while another token's filter is unavailable.
 
 ## Freshness, queueing, and reconnects
 
-The root heartbeat proves that the WebSocket is receiving current Solana data;
-it does not prove that candidate transactions occurred. Transport freshness is
-the age of the latest accepted root or log notification.
+The finalized-root heartbeat proves that the WebSocket is receiving current
+Solana data; it does not prove that candidate transactions occurred. Public
+health discloses the selected heartbeat method, source, and fallback state.
+Transport freshness is the age of the latest accepted finalized root or log
+notification.
 
 Ingress passes through a bounded queue. If processing cannot accept an update
 within five seconds, the connection fails closed, increments `droppedUpdates`,

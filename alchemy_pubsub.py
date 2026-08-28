@@ -83,6 +83,8 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
         self._mint_subscriptions: dict[str, int] = {}
         self._failed_candidate_mints: set[str] = set()
         self._root_subscription_id: int | None = None
+        self._heartbeat_method = "rootSubscribe"
+        self._heartbeat_fallback = False
         self._backfill_tasks: set[asyncio.Task[None]] = set()
         self._backfill_tail: asyncio.Task[None] | None = None
         self._backfill_pending = False
@@ -246,6 +248,9 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             raise
 
     async def _queue_root_subscription(self) -> None:
+        if self._heartbeat_fallback:
+            await self._queue_request("slot_subscribe", "slotSubscribe", [])
+            return
         await self._queue_request("root_subscribe", "rootSubscribe", [])
 
     async def _queue_logs_subscription(self, mint: str) -> None:
@@ -304,7 +309,6 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                 self._connected = True
                 self._state = "connected"
                 self._last_connected_at = _utc_now()
-                self._last_error_code = None
                 self._schedule_backfill(
                     candidate_snapshot,
                     name="alchemy-pubsub-backfill",
@@ -356,21 +360,36 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
         if isinstance(error, dict):
             error_code = str(error.get("code") or "unknown").replace("-", "neg")
             if pending.action == "root_subscribe":
+                if error_code == "neg32601":
+                    self._heartbeat_method = "slotSubscribe"
+                    self._heartbeat_fallback = True
+                    self._last_error_code = "root_subscribe_unsupported_slot_fallback"
+                    await self._queue_request("slot_subscribe", "slotSubscribe", [])
+                    return
                 raise _PubSubProtocolError(f"root_subscribe_rpc_{error_code}")
+            if pending.action == "slot_subscribe":
+                raise _PubSubProtocolError(f"slot_subscribe_rpc_{error_code}")
             if pending.action == "logs_subscribe" and pending.mint:
                 self._failed_candidate_mints.add(pending.mint)
                 self._live_coverage_started_at = None
                 self._last_error_code = f"logs_subscribe_rpc_{error_code}"
             return
 
-        if pending.action in {"root_subscribe", "logs_subscribe"}:
+        if pending.action in {"root_subscribe", "slot_subscribe", "logs_subscribe"}:
             subscription_id = _parse_int(message.get("result"))
             if subscription_id is None:
                 raise _PubSubProtocolError("subscribe_missing_id")
 
-            if pending.action == "root_subscribe":
+            if pending.action in {"root_subscribe", "slot_subscribe"}:
                 self._root_subscription_id = subscription_id
-                self._subscriptions[subscription_id] = ("root", None)
+                self._heartbeat_method = (
+                    "slotSubscribe" if pending.action == "slot_subscribe" else "rootSubscribe"
+                )
+                self._subscriptions[subscription_id] = (
+                    "slot_root" if pending.action == "slot_subscribe" else "root",
+                    None,
+                )
+                self._last_error_code = None
                 self._refresh_live_coverage_start()
                 return
 
@@ -409,6 +428,19 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                 return
             slot = max(0, parsed_slot)
             await self._queue_ingress(_PubSubUpdate(kind="root", slot=slot), received_at, ())
+            return
+
+        if kind == "slot_root" and message.get("method") == "slotNotification":
+            if not isinstance(result, dict):
+                return
+            parsed_root = _parse_int(result.get("root"))
+            if parsed_root is None:
+                return
+            await self._queue_ingress(
+                _PubSubUpdate(kind="root", slot=max(0, parsed_root)),
+                received_at,
+                (),
+            )
             return
 
         if kind != "logs" or not mint or message.get("method") != "logsNotification":
@@ -649,8 +681,14 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             "transactionMethod": "logsSubscribe",
             "transactionFilter": "one_mentions_pubkey_per_candidate",
             "transactionCommitment": "confirmed",
-            "heartbeatMethod": "rootSubscribe",
-            "heartbeatCommitment": "finalized",
+            "heartbeatMethod": self._heartbeat_method,
+            "heartbeatSource": (
+                "slot_notification_finalized_root"
+                if self._heartbeat_method == "slotSubscribe"
+                else "root_notification"
+            ),
+            "heartbeatFallback": self._heartbeat_fallback,
+            "heartbeatCommitment": "finalized_root",
             "rootSubscriptionActive": self._root_subscription_id is not None,
             "voteTransactions": False,
             "failedTransactions": False,

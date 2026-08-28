@@ -90,6 +90,77 @@ async def test_candidate_filters_use_one_confirmed_logs_subscription_per_mint() 
 
 
 @pytest.mark.asyncio
+async def test_unsupported_root_subscription_falls_back_to_slot_root_heartbeat() -> None:
+    stream = pubsub_stream()
+    stream._connected = True
+    stream._request_queue = asyncio.Queue(maxsize=8)
+    root_request = stream._request("root_subscribe", "rootSubscribe", [])
+
+    await stream._handle_response(
+        {
+            "jsonrpc": "2.0",
+            "id": root_request["id"],
+            "error": {"code": -32601, "message": "Method not found"},
+        }
+    )
+    slot_request = await stream._request_queue.get()
+
+    assert slot_request["method"] == "slotSubscribe"
+    assert slot_request["params"] == []
+    assert stream._heartbeat_fallback is True
+    assert stream._last_error_code == "root_subscribe_unsupported_slot_fallback"
+
+    await stream._handle_response(
+        {"jsonrpc": "2.0", "id": slot_request["id"], "result": 77}
+    )
+    await stream._handle_notification(
+        {
+            "jsonrpc": "2.0",
+            "method": "slotNotification",
+            "params": {
+                "subscription": 77,
+                "result": {"parent": 900, "root": 899, "slot": 901},
+            },
+        },
+        datetime.now(timezone.utc),
+    )
+    envelope = await stream._updates.get()
+    await stream._process_update(envelope)
+    stream._updates.task_done()
+    health = await stream.public_health()
+
+    assert stream._last_slot == 899
+    assert stream._last_error_code is None
+    assert health["subscription"]["heartbeatMethod"] == "slotSubscribe"
+    assert health["subscription"]["heartbeatSource"] == "slot_notification_finalized_root"
+    assert health["subscription"]["heartbeatFallback"] is True
+    assert health["subscription"]["rootSubscriptionActive"] is True
+
+    stream._connection_closed()
+    stream._connected = True
+    stream._request_queue = asyncio.Queue(maxsize=8)
+    await stream._queue_root_subscription()
+    reconnect_request = await stream._request_queue.get()
+
+    assert reconnect_request["method"] == "slotSubscribe"
+
+
+@pytest.mark.asyncio
+async def test_non_capability_root_errors_still_fail_closed() -> None:
+    stream = pubsub_stream()
+    root_request = stream._request("root_subscribe", "rootSubscribe", [])
+
+    with pytest.raises(RuntimeError, match="root_subscribe_rpc_neg32000"):
+        await stream._handle_response(
+            {
+                "jsonrpc": "2.0",
+                "id": root_request["id"],
+                "error": {"code": -32000, "message": "provider error"},
+            }
+        )
+
+
+@pytest.mark.asyncio
 async def test_notifications_are_attributed_and_duplicate_signatures_merge_mints() -> None:
     stream = pubsub_stream()
     await stream.set_candidates([MINT_A, MINT_B])
