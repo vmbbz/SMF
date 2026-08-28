@@ -11,14 +11,21 @@ import { parseRoute } from './router.js';
 import { isAuthConfigured, login, logout, handleCallback, checkAuth, isLoggedIn, getUser, updateUsername } from './auth.js';
 import { PeerConnection, RemoteInputAdapter } from './webrtc.js';
 import { PredictionManager } from './prediction.js';
-import { generatePersonality, getTokenByMint } from './token-utils.js';
+import { generatePersonality, getTokenByMint, getTrendingTokens } from './token-utils.js';
 import { StageMusicManager } from './stage-music.js';
 import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
 import { announceArenaDirectorDecision, fetchArenaDirectorDecision } from './arena-director-client.js';
-import { getTokenCoverSource, getTokenImageSource, loadGameImage } from './image-utils.js';
+import { getTokenCoverSource, getTokenImageSource, loadGameImage, proxiedImageUrl } from './image-utils.js';
 import { initializeEconomyPage, openEconomyPage } from './economy-page.js';
 import { initializeArenaStatusPage, openArenaStatusPage } from './arena-status-page.js';
 import { dispatchGameplayPause } from './gameplay-pause.js';
+import {
+  calculateTokenExhibitionPower,
+  deriveTokenCombatProfile,
+  selectDistinctTokenPair,
+  tuneTokenCombatPlan,
+  uniqueExhibitionTokens,
+} from './token-exhibition.js';
 import { getProfile, getStoredWalletAuthHeaders } from '../wallet-connect.js';
 
 window.generatePersonality = generatePersonality;
@@ -281,7 +288,7 @@ function mergeTokenImageFields(baseToken = {}, detailToken = {}) {
   return merged;
 }
 
-async function hydrateOpponentVisualToken(token) {
+async function hydrateTokenVisuals(token) {
   if (!token || !token.mint) return token;
   if (hasUsableTokenImage(token) && hasUsableTokenCover(token)) return token;
 
@@ -294,7 +301,7 @@ async function hydrateOpponentVisualToken(token) {
       return mergeTokenImageFields(token, detail);
     }
   } catch (e) {
-    console.warn('[loadOpponent] Token visual hydration failed:', e);
+    console.warn('[token-visuals] Token visual hydration failed:', e);
   }
 
   return token;
@@ -473,6 +480,21 @@ function hideFightSceneUi() {
   if (mobileControls) mobileControls.style.display = 'none';
 }
 
+function syncTokenExhibitionControls() {
+  const exhibitionActive = window.isTokenExhibition === true;
+  for (const id of ['btn-boost-hack', 'mic-toggle-btn']) {
+    const control = document.getElementById(id);
+    if (control) {
+      control.classList.toggle('token-exhibition-control-hidden', exhibitionActive);
+      if (exhibitionActive) control.style.setProperty('display', 'none', 'important');
+      else control.style.removeProperty('display');
+      control.disabled = exhibitionActive;
+      control.setAttribute('aria-hidden', exhibitionActive ? 'true' : 'false');
+    }
+  }
+  if (exhibitionActive) window.hideBoostMenu?.();
+}
+
 function prepareFightAudio() {
   shouldResumeLandingAmbient = !!window.sfx?._bgmActive;
   if (window.sfx?._bgmActive) {
@@ -601,6 +623,7 @@ function showScreen(name) {
     stageMusic.stopForMenu();
   }
   setLandingAudioButtonVisible(name === 'landing');
+  syncTokenExhibitionControls();
   syncHomeButtonVisibility();
 
   // Clear keyboard focus indicators from previous screen
@@ -679,6 +702,7 @@ async function cleanupAdapters() {
 }
 
 function showOnboarding() {
+  window.isTokenExhibition = false;
   if (game) { game.running = false; game = null; }
   cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
@@ -701,6 +725,7 @@ function showOnboarding() {
 }
 
 function showLanding() {
+  window.isTokenExhibition = false;
   if (game) { game.running = false; game = null; }
   cleanupAdapters();
   if (peerConnection) { peerConnection.close(); peerConnection = null; }
@@ -723,6 +748,8 @@ window.showLanding = showLanding;
 
 async function startFight() {
   await cleanupAdapters(); // Ensure fresh start
+  window.isTokenExhibition = false;
+  syncTokenExhibitionControls();
   state = 'fighting';
   if (screens.onboarding && screens.onboarding.classList) {
     screens.onboarding.classList.add('hidden');
@@ -822,7 +849,7 @@ window.loadOpponent = async function(token, forceRestart = false) {
   }
 
   const opponent = game.p2;
-  token = await hydrateOpponentVisualToken(token);
+  token = await hydrateTokenVisuals(token);
 
   // 4. Apply token market stats
   try {
@@ -2198,6 +2225,11 @@ async function returnToRankedQueue() {
   window.currentGame = null;
   window.game = null;
   window.isMultiplayerMatch = false;
+  window.isTokenExhibition = false;
+  syncTokenExhibitionControls();
+  window.isTokenExhibition = false;
+  syncTokenExhibitionControls();
+  window.isTokenExhibition = false;
   localStorage.removeItem('sf_roomCode');
   localStorage.removeItem('sf_playerId');
   localStorage.removeItem('sf_playerNum');
@@ -2650,6 +2682,7 @@ safeListener('btn-mm-cancel', 'click', async () => {
 safeListener('btn-mm-play-wait', 'click', () => {
   mmWaitingGame = true;
   window.isMultiplayerMatch = false;
+  window.isTokenExhibition = false;
   // Start a SIM fight — keys for P1, simulated for P2
   state = 'fighting';
   hideAllScreens();
@@ -2687,61 +2720,153 @@ safeListener('btn-mm-back', 'click', async () => {
 });
 
 // ─────────────────────────────────────────────
-// Character select (single-player AI opponent)
+// Token Exhibition (spectator-only market AI vs market AI)
 // ─────────────────────────────────────────────
-let selectedCharacter = null;
-let characterList = [];
+let tokenExhibitionPair = null;
+let tokenExhibitionPool = [];
+let tokenExhibitionLoadVersion = 0;
 
-/** Fetch characters from server and show the character select screen */
-async function showCharacterSelect() {
-  showScreen('characterSelect');
-  const watchBtn = document.getElementById('btn-char-watch');
-  if (watchBtn) watchBtn.disabled = true;
-  selectedCharacter = null;
+function formatCompactUsd(value) {
+  const amount = Math.max(0, Number(value) || 0);
+  if (amount >= 1000000000) return `$${(amount / 1000000000).toFixed(1)}B`;
+  if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
+  if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}K`;
+  return amount > 0 ? `$${amount.toFixed(0)}` : 'N/A';
+}
 
-  try {
-    if (characterList.length === 0) {
-      const resp = await fetch('/api/characters');
-      if (resp.ok) characterList = await resp.json();
-    }
-    renderCharacterCards();
-  } catch (err) {
-    console.error('[character-select] Failed to load characters:', err);
+function exhibitionTicker(token, fallback = 'TOKEN') {
+  return String(token?.symbol || token?.name || fallback)
+    .trim()
+    .replace(/^\$+/, '')
+    .toUpperCase() || fallback;
+}
+
+function getLoadedTokenExhibitionSources() {
+  return [
+    tokenExhibitionPool,
+    window.trendingStrip?.tokens || [],
+    window.fightTrendingStrip?.tokens || [],
+    window.pumpQueue || [],
+  ];
+}
+
+function renderTokenExhibitionCard(elementId, token, side) {
+  const element = document.getElementById(elementId);
+  if (!element || !token) return;
+
+  const power = calculateTokenExhibitionPower(token);
+  const profile = deriveTokenCombatProfile(token);
+  const symbol = exhibitionTicker(token);
+  const name = String(token.name || token.symbol || 'Unknown token');
+  const change = Number(token.priceChange24h) || 0;
+  const changeLabel = `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
+  const changeColor = change >= 0 ? 'var(--neon-green)' : '#ff526d';
+  const image = proxiedImageUrl(getTokenImageSource(token, 'assets/smf-logo.png'));
+
+  element.innerHTML = `
+    <div class="token-exhibition-corner">${side === 'p1' ? 'LEFT CORNER · P1' : 'RIGHT CORNER · P2'}</div>
+    <img class="token-exhibition-icon" src="${escapeHtml(image)}" alt="${escapeHtml(symbol)} token icon" onerror="this.onerror=null;this.src='assets/smf-logo.png'">
+    <div class="token-exhibition-symbol">$${escapeHtml(symbol)}</div>
+    <div class="token-exhibition-name">${escapeHtml(name)}</div>
+    <div class="token-exhibition-style" title="${escapeHtml(profile.detail)}">${escapeHtml(profile.label)}</div>
+    <div class="token-exhibition-stats">
+      <span><b>${escapeHtml(power.rating)}</b> POWER</span>
+      <span><b>${power.health}</b> ARENA HP</span>
+      <span><b>${power.damageMult.toFixed(2)}x</b> DAMAGE</span>
+      <span><b>${power.speedMult.toFixed(2)}x</b> SPEED</span>
+      <span><b>${formatCompactUsd(token.volume24h)}</b> 24H VOL</span>
+      <span style="color:${changeColor}"><b>${changeLabel}</b> 24H</span>
+    </div>
+  `;
+}
+
+function renderTokenExhibitionEmpty(message) {
+  for (const id of ['token-exhibition-p1', 'token-exhibition-p2']) {
+    const element = document.getElementById(id);
+    if (element) element.innerHTML = `<div class="token-exhibition-empty">${escapeHtml(message)}</div>`;
   }
 }
 
-/** Render character cards into the grid */
-function renderCharacterCards() {
-  const container = document.getElementById('char-cards');
-  container.innerHTML = characterList.map(c => `
-    <button class="char-card${selectedCharacter === c.id ? ' selected' : ''}" data-char="${c.id}">
-      <div class="char-icon">${c.icon}</div>
-      <div class="char-name">${escapeHtml(c.name)}</div>
-      <div class="char-provider">Powered by ${escapeHtml(c.provider)}</div>
-      <div class="char-desc">${escapeHtml(c.description)}</div>
-    </button>
-  `).join('');
+async function refreshTokenExhibitionPair({ avoidCurrent = true } = {}) {
+  const loadVersion = ++tokenExhibitionLoadVersion;
+  const watchButton = document.getElementById('btn-char-watch');
+  const rerollButton = document.getElementById('btn-exhibition-reroll');
+  const status = document.getElementById('token-exhibition-status');
+  if (watchButton) watchButton.disabled = true;
+  if (rerollButton) rerollButton.disabled = true;
+  if (status) status.textContent = 'SCANNING THE LOADED SOLANA MARKET POOL…';
+  renderTokenExhibitionEmpty('SCANNING MARKET…');
 
-  // Attach click listeners
-  container.querySelectorAll('.char-card').forEach(card => {
-    card.addEventListener('click', () => {
-      selectedCharacter = card.dataset.char;
-      container.querySelectorAll('.char-card').forEach(c => c.classList.remove('selected'));
-      card.classList.add('selected');
-      const watchBtn = document.getElementById('btn-char-watch');
-      if (watchBtn) watchBtn.disabled = false;
-    });
+  let fetched = [];
+  try {
+    fetched = await getTrendingTokens(16);
+  } catch (error) {
+    console.warn('[token-exhibition] Market refresh failed, using loaded strips:', error);
+  }
+
+  const pool = uniqueExhibitionTokens([fetched, ...getLoadedTokenExhibitionSources()]);
+  const selected = selectDistinctTokenPair(pool, {
+    excludePair: avoidCurrent ? tokenExhibitionPair : null,
   });
+
+  if (loadVersion !== tokenExhibitionLoadVersion) return false;
+  if (!selected) {
+    tokenExhibitionPair = null;
+    tokenExhibitionPool = pool;
+    renderTokenExhibitionEmpty('TWO DISTINCT TOKENS REQUIRED');
+    if (status) {
+      status.textContent = pool.length === 1
+        ? 'ONLY ONE VALID TOKEN IS LOADED · RETRY WHEN THE MARKET FEED EXPANDS'
+        : 'MARKET FEED UNAVAILABLE · RETRY TO LOAD A REAL MATCHUP';
+    }
+    if (rerollButton) rerollButton.disabled = false;
+    return false;
+  }
+
+  const hydrated = await Promise.all(selected.map(token => hydrateTokenVisuals(token)));
+  if (loadVersion !== tokenExhibitionLoadVersion) return false;
+
+  tokenExhibitionPool = pool;
+  tokenExhibitionPair = hydrated;
+  renderTokenExhibitionCard('token-exhibition-p1', hydrated[0], 'p1');
+  renderTokenExhibitionCard('token-exhibition-p2', hydrated[1], 'p2');
+  if (status) status.textContent = `PAIR LOCKED · ${pool.length} UNIQUE TOKENS IN THE LOADED MARKET POOL`;
+  if (watchButton) watchButton.disabled = false;
+  if (rerollButton) rerollButton.disabled = false;
+  return true;
 }
 
-/** Start a fight against the selected character */
-async function startCharacterFight() {
-  if (!selectedCharacter) return;
+/** Load a random two-token matchup and show the spectator screen. */
+async function showCharacterSelect() {
+  window.isTokenExhibition = true;
+  showScreen('characterSelect');
+  await refreshTokenExhibitionPair({ avoidCurrent: true });
+}
 
-  const char = characterList.find(c => c.id === selectedCharacter);
-  if (!char) return;
+/** Build one local-only autonomous fight between the selected real tokens. */
+async function runTokenExhibitionFight() {
+  if (!tokenExhibitionPair || tokenExhibitionPair.length !== 2) {
+    await refreshTokenExhibitionPair({ avoidCurrent: false });
+    if (!tokenExhibitionPair) return;
+  }
+
+  await cleanupAdapters();
+  if (window.liveBoostSystem) {
+    try { window.liveBoostSystem.stop(); } catch {}
+    window.liveBoostSystem = null;
+  }
+  const [p1Token, p2Token] = tokenExhibitionPair;
+  const p1Profile = deriveTokenCombatProfile(p1Token);
+  const p2Profile = deriveTokenCombatProfile(p2Token);
+  const p1Power = calculateTokenExhibitionPower(p1Token);
+  const p2Power = calculateTokenExhibitionPower(p2Token);
 
   state = 'fighting';
+  mmWaitingGame = false;
+  window.isMultiplayerMatch = false;
+  window.isTokenExhibition = true;
+  syncTokenExhibitionControls();
+  if (window.endlessSession) window.endlessSession.active = false;
   if (screens.characterSelect && screens.characterSelect.classList) {
     screens.characterSelect.classList.add('hidden');
   }
@@ -2751,51 +2876,90 @@ async function startCharacterFight() {
   setFightDockVisible(true);
   prepareFightAudio();
   const fightStripEl = document.getElementById('fight-trending-strip');
-  if (fightStripEl) fightStripEl.style.display = 'block';
-
-  // Agent Lab is deliberately spectator-only: the local simulation adapter is
-  // a stable benchmark for the selected LLM fighter and does not incur a
-  // second provider stream.
-  p1Input = createInput(1, 3, 0);
-  const p2Manager = new InputManager();
-  const adapter = new LLMAdapter(2, char.provider, char.id);
-  p2Manager.addAdapter(adapter);
-  activeAdapters.push(adapter);
-  p2Input = p2Manager;
-
-  // Preload SFX + wait for adapters
-  const readyPromises = [sfx.preload()];
-  for (const a of activeAdapters) {
-    if (a.waitUntilReady) readyPromises.push(a.waitUntilReady());
+  if (fightStripEl) {
+    fightStripEl.style.display = 'block';
+    if (!window.fightTrendingStrip && window.TrendingStrip) {
+      window.fightTrendingStrip = new window.TrendingStrip('fight-trending-strip');
+      void window.fightTrendingStrip.init();
+    }
   }
 
-  // Start game loop
-  const p1Label = 'SIM Benchmark';
-  const p2Label = char.name;
-  game = new Game(canvas, p1Input, p2Input, sfx, { p1Label, p2Label, stageMusic });
-  game.start();
+  // Both agents use the existing tactical behavior tree in local-only mode.
+  // No provider requests, human controls, or paid-boost settlement are involved.
+  p1Input = new InputManager();
+  const p1Adapter = new LLMAdapter(1, 'local', null, {
+    localOnly: true,
+    moveIntervalMs: p1Profile.cadenceMs,
+    planTransform: plan => tuneTokenCombatPlan(plan, p1Profile),
+  });
+  p1Input.addAdapter(p1Adapter);
+  const p2Manager = new InputManager();
+  const p2Adapter = new LLMAdapter(2, 'local', null, {
+    localOnly: true,
+    moveIntervalMs: p2Profile.cadenceMs,
+    planTransform: plan => tuneTokenCombatPlan(plan, p2Profile),
+  });
+  p2Manager.addAdapter(p2Adapter);
+  activeAdapters.push(p1Adapter, p2Adapter);
+  p2Input = p2Manager;
+
+  const p1Label = `$${exhibitionTicker(p1Token, 'P1').slice(0, 12)}`;
+  const p2Label = `$${exhibitionTicker(p2Token, 'P2').slice(0, 12)}`;
+  game = new Game(canvas, p1Input, p2Input, sfx, {
+    p1Label,
+    p2Label,
+    stageMusic,
+    tokenExhibition: true,
+    useP1Profile: false,
+    p1CombatProfile: p1Profile,
+    p2CombatProfile: p2Profile,
+  });
+  game.p1.applyMarketStats(p1Token, p1Power);
+  game.p2.applyMarketStats(p2Token, p2Power);
   window.game = game;
   window._game = game;
   window.currentGame = game;
+  window.currentTokenExhibitionPair = [p1Token, p2Token];
+  window.lastOpponentSymbol = exhibitionTicker(p2Token, 'MEME');
 
   const mobileControls = document.getElementById('mobile-controls');
   if (mobileControls) mobileControls.style.display = 'none';
 
-  // Wire adapter game ref
-  for (const a of activeAdapters) {
-    if (a.setGameRef) a.setGameRef(game);
-  }
+  p1Adapter.setGameRef(game);
+  p2Adapter.setGameRef(game);
+  game.start();
 
-  await Promise.all(readyPromises);
-  game.showFightAlert();
+  // Token media and audio preload during the cinematic intro. The default
+  // Solana head remains available if a remote image cannot be loaded.
+  void Promise.all([
+    sfx.preload(),
+    p1Adapter.waitUntilReady(),
+    p2Adapter.waitUntilReady(),
+    game.p1.loadTokenHead(p1Token),
+    game.p2.loadTokenHead(p2Token),
+  ]).catch(error => console.warn('[token-exhibition] Preload degraded gracefully:', error));
+}
+
+let tokenExhibitionStartPromise = null;
+
+/** Start exactly one exhibition even if a touch event fires more than once. */
+async function startCharacterFight() {
+  if (tokenExhibitionStartPromise) return tokenExhibitionStartPromise;
+  tokenExhibitionStartPromise = runTokenExhibitionFight()
+    .finally(() => { tokenExhibitionStartPromise = null; });
+  return tokenExhibitionStartPromise;
 }
 
 safeListener('btn-char-watch', 'click', () => startCharacterFight());
+safeListener('btn-exhibition-reroll', 'click', () => refreshTokenExhibitionPair({ avoidCurrent: true }));
 safeListener('btn-char-classic', 'click', () => {
-  selectedCharacter = null;
+  window.isTokenExhibition = false;
   showScreen('onboarding');
 });
-safeListener('btn-char-back', 'click', () => showScreen('landing'));
+safeListener('btn-char-back', 'click', () => {
+  window.isTokenExhibition = false;
+  showScreen('landing');
+});
 
 // ─────────────────────────────────────────────
 // Leaderboard
@@ -3022,6 +3186,10 @@ window.addEventListener('keydown', e => {
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
       return;
     }
+    if (window.isTokenExhibition) {
+      e.preventDefault();
+      return;
+    }
     if (typeof window.toggleBoostMenu === 'function') {
       window.toggleBoostMenu();
       e.preventDefault();
@@ -3033,6 +3201,10 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyV') {
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+      return;
+    }
+    if (window.isTokenExhibition) {
+      e.preventDefault();
       return;
     }
     if (typeof window.toggleVoiceControl === 'function') {
@@ -3074,12 +3246,8 @@ window.addEventListener('keydown', e => {
         cleanupAdapters();
         mmWaitingGame = false;
         showScreen('matchmaking');
-      } else if (selectedCharacter) {
-        // Character fight: Enter goes back to character select
-        if (game) { game.running = false; game = null; }
-        cleanupAdapters();
-        p1Input = null; p2Input = null;
-        showCharacterSelect();
+      } else if (window.isTokenExhibition) {
+        void window.rematchFight?.();
       } else {
         // Classic single-player: Enter restarts
         showOnboarding();
@@ -3156,20 +3324,14 @@ window.addEventListener('keydown', e => {
       loadLeaderboard(league, lbCategory);
     }
   } else if (state === 'characterSelect') {
-    // Character select: Up/Down (or Left/Right) between characters; Enter fights
-    const cards = Array.from(document.querySelectorAll('#char-cards .char-card'));
-    if (cards.length > 0) {
-      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'ArrowUp' || e.code === 'ArrowDown') {
-        e.preventDefault();
-        const dir = (e.code === 'ArrowRight' || e.code === 'ArrowDown') ? 1 : -1;
-        const currentIdx = cards.findIndex(c => c.classList.contains('selected'));
-        const nextIdx = currentIdx < 0 ? 0 : (currentIdx + dir + cards.length) % cards.length;
-        cards[nextIdx]?.click();
-      } else if (e.code === 'Enter') {
-        if (selectedCharacter) {
-          document.getElementById('btn-char-watch')?.click();
-        }
-      }
+    // Token Exhibition: Enter watches the locked pair; R draws a fresh pair.
+    if (e.code === 'Enter') {
+      const watchButton = document.getElementById('btn-char-watch');
+      if (watchButton && !watchButton.disabled) watchButton.click();
+    } else if (e.code === 'KeyR') {
+      e.preventDefault();
+      const rerollButton = document.getElementById('btn-exhibition-reroll');
+      if (rerollButton && !rerollButton.disabled) rerollButton.click();
     }
   } else if (state === 'matchResults') {
     // Match results: Left/Right between Rematch/Leave; Enter selects
@@ -3704,7 +3866,10 @@ async function composeVictoryShareCard({ frameBlob, isWin, symbol, mode, opponen
   const accent = isWin ? '#13ef95' : '#ff2bd6';
   const secondary = isWin ? '#00d9ff' : '#ff7a00';
   const cleanSymbol = String(symbol || 'MEME').replace(/[^a-z0-9_$.-]/gi, '').slice(0, 16) || 'MEME';
-  const result = isWin ? 'VICTORY' : 'REVENGE RUN';
+  const cleanOpponent = String(opponentName || 'RIVAL').replace(/[^a-z0-9_$.-]/gi, '').slice(0, 16) || 'RIVAL';
+  const result = mode === 'exhibition'
+    ? (isWin ? 'TOKEN K.O.' : 'EXHIBITION DRAW')
+    : (isWin ? 'VICTORY' : 'REVENGE RUN');
 
   const bg = ctx.createLinearGradient(0, 0, 1200, 675);
   bg.addColorStop(0, '#020607');
@@ -3768,19 +3933,29 @@ async function composeVictoryShareCard({ frameBlob, isWin, symbol, mode, opponen
   ctx.fillText('STICKLASH', 820, 112);
 
   ctx.fillStyle = accent;
-  ctx.font = '900 82px Shojumaru, Georgia, serif';
+  ctx.font = mode === 'exhibition'
+    ? '900 50px Shojumaru, Georgia, serif'
+    : '900 82px Shojumaru, Georgia, serif';
   ctx.shadowColor = accent;
   ctx.shadowBlur = 24;
   ctx.fillText(result, 820, 205);
   ctx.shadowBlur = 0;
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = '700 30px "Press Start 2P", monospace';
-  ctx.fillText(`vs $${cleanSymbol}`, 826, 272);
+  ctx.font = mode === 'exhibition'
+    ? '700 20px "Press Start 2P", monospace'
+    : '700 30px "Press Start 2P", monospace';
+  ctx.fillText(
+    mode === 'exhibition' ? `$${cleanSymbol} vs $${cleanOpponent}` : `vs $${cleanSymbol}`,
+    826,
+    272,
+  );
 
   ctx.fillStyle = secondary;
   ctx.font = '700 22px "Press Start 2P", monospace';
-  const modeLabel = mode === 'pvp' ? `PVP: ${String(opponentName || 'RIVAL').slice(0, 18).toUpperCase()}` : 'LIVE MEME TOKEN BATTLE';
+  const modeLabel = mode === 'pvp'
+    ? `PVP: ${String(opponentName || 'RIVAL').slice(0, 18).toUpperCase()}`
+    : (mode === 'exhibition' ? 'AUTONOMOUS TOKEN EXHIBITION' : 'LIVE MEME TOKEN BATTLE');
   ctx.fillText(modeLabel, 826, 328);
 
   drawRoundRectPath(ctx, 816, 372, 310, 98, 22);
@@ -3855,11 +4030,21 @@ async function ensureVictorySharePayload() {
   return queueVictoryShareCapture({
     isWin: window._lastVictoryIsWin !== false,
     symbol: window.lastOpponentSymbol || 'MEME',
+    mode: window.isTokenExhibition ? 'exhibition' : (window.isMultiplayerMatch ? 'pvp' : 'solo'),
+    opponentName: window.isTokenExhibition
+      ? String(window.currentTokenExhibitionPair?.[1]?.symbol || 'TOKEN').toUpperCase()
+      : (window.opponentProfile?.name || ''),
   });
 }
 
 function buildVictoryShareText({ symbol, isWin, mode, opponentName }) {
   const cleanSymbol = String(symbol || 'MEME').replace(/[^a-z0-9_$.-]/gi, '').slice(0, 16) || 'MEME';
+  if (mode === 'exhibition') {
+    const rival = String(opponentName || 'TOKEN').replace(/[^a-z0-9_$.-]/gi, '').slice(0, 16) || 'TOKEN';
+    return isWin
+      ? `$${cleanSymbol} knocked out $${rival} in a market-powered autonomous StickLash Token Exhibition.`
+      : `$${cleanSymbol} and $${rival} fought to a draw in a market-powered autonomous StickLash Token Exhibition.`;
+  }
   if (mode === 'pvp') {
     const rival = String(opponentName || 'a rival').toUpperCase();
     return randomChoice(isWin ? [
@@ -3904,7 +4089,9 @@ async function uploadVictoryShareCard(payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         imageData,
-        result: payload.isWin ? 'win' : 'loss',
+        result: payload.mode === 'exhibition' && !payload.isWin
+          ? 'draw'
+          : (payload.isWin ? 'win' : 'loss'),
         symbol: payload.symbol || 'MEME',
         mode: payload.mode || 'solo',
       }),
@@ -3987,11 +4174,11 @@ window.captureVictory = async function(result = 'player') {
   return queueVictoryShareCapture({
     isWin,
     symbol: window.lastOpponentSymbol || 'MEME',
-    mode: window.isMultiplayerMatch ? 'pvp' : 'solo',
+    mode: window.isTokenExhibition ? 'exhibition' : (window.isMultiplayerMatch ? 'pvp' : 'solo'),
   });
 };
 
-window.showVictoryOverlay = function(winnerNum, token, loserToken) {
+window.showVictoryOverlay = function(winnerNum, token, loserToken, options = {}) {
   const overlay = document.getElementById('victory-overlay');
   const winText = document.getElementById('victory-text');
   
@@ -4001,15 +4188,31 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
 
   if (!overlay || !winContainer || !loseContainer) return;
 
+  const tokenExhibition = options.mode === 'token_exhibition' || window.isTokenExhibition;
   const myNum = parseInt(localStorage.getItem('sf_playerNum') || '1', 10);
-  const isPlayer = window.isMultiplayerMatch ? winnerNum === myNum : winnerNum === 1;
+  const isPlayer = !tokenExhibition && (window.isMultiplayerMatch ? winnerNum === myNum : winnerNum === 1);
   const rankedMultiplayer = window.isMultiplayerMatch && isCurrentRankedMatch();
   const summary = document.getElementById('ranked-result-summary');
   if (summary && !rankedMultiplayer) summary.classList.add('hidden');
   const victoryRematch = document.getElementById('btn-victory-rematch');
-  if (victoryRematch && !rankedMultiplayer) victoryRematch.textContent = 'REMATCH 🥊';
-  winText.textContent = winnerNum == null ? 'DRAW!' : (isPlayer ? 'YOU WIN!' : 'K.O.');
-  winText.style.color = isPlayer ? 'var(--neon-blue)' : 'var(--neon-pink)';
+  const nextFightButton = document.getElementById('btn-next-fight');
+  if (victoryRematch && !rankedMultiplayer) {
+    victoryRematch.textContent = tokenExhibition ? 'NEW TOKEN MATCHUP ⚡' : 'REMATCH 🥊';
+  }
+  if (nextFightButton) nextFightButton.style.display = tokenExhibition ? 'none' : '';
+  if (tokenExhibition) {
+    const endlessHeader = document.getElementById('endless-session-header');
+    const endlessCountdown = document.getElementById('endless-countdown');
+    if (endlessHeader) endlessHeader.style.display = 'none';
+    if (endlessCountdown) endlessCountdown.style.display = 'none';
+  }
+  const winningSymbol = exhibitionTicker(token);
+  winText.textContent = tokenExhibition
+    ? (winnerNum == null ? 'EXHIBITION DRAW' : `$${winningSymbol} WINS!`)
+    : (winnerNum == null ? 'DRAW!' : (isPlayer ? 'YOU WIN!' : 'K.O.'));
+  winText.style.color = tokenExhibition
+    ? (winnerNum === 1 ? 'var(--neon-green)' : (winnerNum === 2 ? 'var(--neon-pink)' : 'var(--neon-blue)'))
+    : (isPlayer ? 'var(--neon-blue)' : 'var(--neon-pink)');
   
   winText.style.transform = 'scale(1)';
   winText.style.fontSize = ''; 
@@ -4068,32 +4271,78 @@ window.showVictoryOverlay = function(winnerNum, token, loserToken) {
     }
   };
 
-  renderCard(winContainer, isPlayer ? null : token, true);
-  renderCard(loseContainer, isPlayer ? loserToken : null, false);
+  const renderExhibitionCard = (container, tokenData, label, color) => {
+    const safeToken = tokenData || {};
+    const symbol = exhibitionTicker(safeToken);
+    const name = String(safeToken.name || safeToken.symbol || 'Unknown token');
+    const image = proxiedImageUrl(getTokenImageSource(safeToken, 'assets/smf-logo.png'));
+    const power = calculateTokenExhibitionPower(safeToken);
+    const profile = deriveTokenCombatProfile(safeToken);
+    const change = Number(safeToken.priceChange24h) || 0;
+    container.innerHTML = `
+      <div class="card-header" style="color:${color};font-size:11px;font-weight:bold;margin-bottom:10px;letter-spacing:2px;font-family:var(--font-print, monospace);">${escapeHtml(label)}</div>
+      <img src="${escapeHtml(image)}" alt="${escapeHtml(symbol)} token icon" style="width:88px;height:88px;object-fit:cover;border-radius:50%;border:3px solid ${color};" onerror="this.onerror=null;this.src='assets/smf-logo.png'">
+      <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:21px;font-weight:900;color:#fff;margin-top:10px;font-family:'Shojumaru',var(--font-print,monospace);">$${escapeHtml(symbol)}</div>
+      <div style="color:rgba(255,255,255,.64);font-size:11px;margin:5px 0 9px;">${escapeHtml(name)}</div>
+      <div style="color:${color};font:700 8px/1.5 var(--font-print,monospace);">${escapeHtml(profile.label)}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;font:700 8px/1.35 monospace;">
+        <span style="padding:6px;background:rgba(255,255,255,.05);border-radius:7px;"><b style="display:block;color:#fff;font-size:11px;">${escapeHtml(power.rating)}</b>POWER</span>
+        <span style="padding:6px;background:rgba(255,255,255,.05);border-radius:7px;"><b style="display:block;color:#fff;font-size:11px;">${power.health}</b>ARENA HP</span>
+        <span style="padding:6px;background:rgba(255,255,255,.05);border-radius:7px;"><b style="display:block;color:#fff;font-size:10px;">${formatCompactUsd(safeToken.volume24h)}</b>24H VOL</span>
+        <span style="padding:6px;background:rgba(255,255,255,.05);border-radius:7px;"><b style="display:block;color:${change >= 0 ? 'var(--neon-green)' : '#ff526d'};font-size:10px;">${change >= 0 ? '+' : ''}${change.toFixed(1)}%</b>24H</span>
+      </div>
+      <div style="margin-top:9px;color:rgba(255,255,255,.48);font:7px/1.45 var(--font-print,monospace);">AUTONOMOUS EXHIBITION · NO REWARD CREDIT</div>
+    `;
+  };
 
-  const memeToken = isPlayer ? loserToken : token;
+  if (tokenExhibition) {
+    renderExhibitionCard(
+      winContainer,
+      token,
+      winnerNum == null ? 'LEFT TOKEN' : 'EXHIBITION WINNER',
+      winnerNum === 2 ? 'var(--neon-pink)' : 'var(--neon-green)',
+    );
+    renderExhibitionCard(
+      loseContainer,
+      loserToken,
+      winnerNum == null ? 'RIGHT TOKEN' : 'RUNNER-UP',
+      winnerNum === 2 ? 'var(--neon-green)' : 'var(--neon-pink)',
+    );
+  } else {
+    renderCard(winContainer, isPlayer ? null : token, true);
+    renderCard(loseContainer, isPlayer ? loserToken : null, false);
+  }
+
+  const memeToken = tokenExhibition ? token : (isPlayer ? loserToken : token);
   if (buyBtn && memeToken) {
+    const marketSymbol = tokenExhibition
+      ? exhibitionTicker(memeToken)
+      : String(memeToken.symbol || 'TOKEN').replace(/^\$+/, '');
     buyBtn.style.display = 'block';
-    buyBtn.textContent = `BUY $${memeToken.symbol} 🛒`;
+    buyBtn.textContent = tokenExhibition
+      ? `VIEW $${marketSymbol} MARKET ↗`
+      : `BUY $${marketSymbol} 🛒`;
     buyBtn.onclick = () => window.open(memeToken.url || `https://dexscreener.com/solana/${memeToken.mint}`, '_blank');
-    window.lastOpponentSymbol = memeToken.symbol;
+    window.lastOpponentSymbol = marketSymbol;
   } else {
     if (buyBtn) buyBtn.style.display = 'none';
     window.lastOpponentSymbol = 'MEME';
   }
 
   // Store win/loss state for shareVictory
-  window._lastVictoryIsWin = isPlayer;
+  window._lastVictoryIsWin = tokenExhibition ? winnerNum != null : isPlayer;
   queueVictoryShareCapture({
-    isWin: isPlayer,
+    isWin: tokenExhibition ? winnerNum != null : isPlayer,
     symbol: window.lastOpponentSymbol || 'MEME',
-    mode: window.isMultiplayerMatch ? 'pvp' : 'solo',
-    opponentName: window.opponentProfile?.name || '',
+    mode: tokenExhibition ? 'exhibition' : (window.isMultiplayerMatch ? 'pvp' : 'solo'),
+    opponentName: tokenExhibition
+      ? exhibitionTicker(loserToken)
+      : (window.opponentProfile?.name || ''),
   });
 
   // ── 3-second delay before overlay appears ───────────────────────────
   // This lets the player see the final KO frame on the stage
-  if (window.effects) window.effects.addCoinRain();
+  if (window.effects && !tokenExhibition) window.effects.addCoinRain();
 
   setTimeout(() => {
     overlay.classList.remove('hidden');
@@ -4169,9 +4418,11 @@ window.shareVictory = async function() {
   const opponentName = payload?.opponentName || window.opponentProfile?.name || '';
   const canonicalUrl = getCanonicalShareUrl('/');
   const text = buildVictoryShareText({ symbol, isWin, mode, opponentName });
-  const shareTitle = mode === 'pvp'
-    ? (isWin ? `I won a StickLash PvP fight` : `I need a StickLash rematch`)
-    : (isWin ? `I beat $${symbol} in StickLash` : `$${symbol} beat me in StickLash`);
+  const shareTitle = mode === 'exhibition'
+    ? `StickLash Token Exhibition: $${symbol}`
+    : (mode === 'pvp'
+      ? (isWin ? `I won a StickLash PvP fight` : `I need a StickLash rematch`)
+      : (isWin ? `I beat $${symbol} in StickLash` : `$${symbol} beat me in StickLash`));
 
   if (!payload?.blob) {
     const tweetUrl = buildTweetIntentUrl(text, canonicalUrl);
@@ -4304,6 +4555,11 @@ window.activeVoiceAdapter = null;
 window.isVoiceControlActive = false;
 
 window.toggleVoiceControl = async function(forceState) {
+  if (window.isTokenExhibition) {
+    console.info('[VoiceToggle] Token Exhibition is spectator-only; voice input remains disabled.');
+    return;
+  }
+
   const g = window.currentGame || window._game || window.game;
   if (!g || !g.p1Input) {
     console.warn('[VoiceToggle] No active game or P1 input found.');
@@ -4504,6 +4760,33 @@ window.rematchFight = async function() {
     return;
   }
 
+  // Token Exhibition rematches always draw a fresh distinct pairing. They do
+  // not fall through to the human-v-token rematch path, which would turn the
+  // left token back into the user's profile and controls.
+  if (window.isTokenExhibition) {
+    console.log('[Rematch] Drawing a fresh autonomous token matchup...');
+    if (game) {
+      game.running = false;
+      game.roundOver = true;
+    }
+    if (window.liveBoostSystem) {
+      try { window.liveBoostSystem.stop(); } catch {}
+      window.liveBoostSystem = null;
+    }
+    await cleanupAdapters();
+    game = null;
+    p1Input = null;
+    p2Input = null;
+    window.currentGame = null;
+    window.game = null;
+    window._game = null;
+    window.isTokenExhibition = true;
+    showScreen('characterSelect');
+    const matchupReady = await refreshTokenExhibitionPair({ avoidCurrent: true });
+    if (matchupReady) await startCharacterFight();
+    return;
+  }
+
   // 1. Check if we fought an enriched token (Trending Arena / Meme fighter)
   const token = game?.p2?.tokenData || window.currentGame?.p2?.tokenData || window.game?.p2?.tokenData;
   if (token) {
@@ -4512,36 +4795,7 @@ window.rematchFight = async function() {
     return;
   }
 
-  // 2. Check if we fought a standard select character
-  if (selectedCharacter) {
-    console.log('[Rematch] Restarting character fight against:', selectedCharacter);
-    if (game) {
-      game.running = false;
-      game.roundOver = true;
-    }
-    if (window.liveBoostSystem) {
-      try { window.liveBoostSystem.stop(); } catch (e) {}
-      window.liveBoostSystem = null;
-    }
-    await cleanupAdapters();
-    game = null;
-    window.currentGame = null;
-    window.game = null;
-    state = 'landing';
-    
-    const canvas = document.getElementById('game');
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-    }
-    
-    await new Promise(r => setTimeout(r, 32));
-    if (window._showMobileControls) window._showMobileControls();
-    await startCharacterFight();
-    return;
-  }
-
-  // 3. Classic / other custom single player match
+  // 2. Classic / other custom single player match
   console.log('[Rematch] Restarting classic single-player match');
   if (game) {
     game.running = false;
@@ -4602,6 +4856,11 @@ window.setBoostTarget = function(target) {
 };
 
 window.triggerSimulatedBoost = function(tierId) {
+  if (window.isTokenExhibition) {
+    console.info('[BoostTest] Token Exhibition disables one-sided simulated boosts.');
+    window.hideBoostMenu?.();
+    return;
+  }
   const g = window.currentGame || window.game || window._game;
   if (!g) {
     console.warn("No active game to boost");
@@ -4635,6 +4894,10 @@ window.hideBoostMenu = function() {
 };
 
 window.showBoostMenu = function() {
+  if (window.isTokenExhibition) {
+    window.hideBoostMenu();
+    return;
+  }
   const menu = document.getElementById('boost-menu');
   if (menu) {
     menu.style.display = 'block';
@@ -4646,6 +4909,10 @@ window.showBoostMenu = function() {
 window.toggleBoostMenu = function() {
   const menu = document.getElementById('boost-menu');
   if (!menu) return;
+  if (window.isTokenExhibition) {
+    window.hideBoostMenu();
+    return;
+  }
   if (isBoostMenuVisible(menu)) {
     window.hideBoostMenu();
   } else {

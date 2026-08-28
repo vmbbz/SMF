@@ -466,10 +466,13 @@ const BT = {
 };
 
 export class LLMAdapter {
-  constructor(player, provider = 'anthropic', character = null) {
+  constructor(player, provider = 'anthropic', character = null, options = {}) {
     this.player = player;
     this.provider = provider;
     this.character = character;
+    this.localOnly = options.localOnly === true;
+    this.moveInterval = Math.max(450, Math.min(1500, Number(options.moveIntervalMs) || MOVE_INTERVAL));
+    this.planTransform = typeof options.planTransform === 'function' ? options.planTransform : null;
     this.command = new CommandAdapter();
     this.game = null;
     this._running = false;
@@ -538,7 +541,7 @@ export class LLMAdapter {
 
     // Execute next move from plan if interval has elapsed
     if (this._plan.length > 0 && this._planIndex < this._plan.length) {
-      if (this._moveTimer >= MOVE_INTERVAL) {
+      if (this._moveTimer >= this.moveInterval) {
         const move = this._plan[this._planIndex];
         console.log(`[LLM P${this.player}] execute [${this._planIndex + 1}/${this._plan.length}]: "${move}"  (timer=${Math.round(this._moveTimer)}ms)`);
 
@@ -601,7 +604,21 @@ export class LLMAdapter {
       const me  = this.player === 1 ? this.game.p1 : this.game.p2;
       const opp = this.player === 1 ? this.game.p2 : this.game.p1;
       if (me && opp) {
-        const plan = BT.plan(me, opp, this.game, this._tactics);
+        const basePlan = BT.plan(me, opp, this.game, this._tactics);
+        let plan = basePlan;
+        if (this.planTransform) {
+          try {
+            const transformed = this.planTransform(basePlan, {
+              me,
+              opponent: opp,
+              game: this.game,
+              player: this.player,
+            });
+            if (Array.isArray(transformed) && transformed.length > 0) plan = transformed;
+          } catch (error) {
+            console.warn(`[BT P${this.player}] plan transform failed, using base tactics:`, error);
+          }
+        }
         console.log(`[BT P${this.player}] plan: ${JSON.stringify(plan)}`);
         return plan;
       }
@@ -634,7 +651,7 @@ export class LLMAdapter {
       }
       this._plan = plan;
       this._planIndex = 0;
-      this._moveTimer = MOVE_INTERVAL; // execute first move immediately
+      this._moveTimer = this.moveInterval; // execute first move immediately
       this._lastPlanDealt = 0;
       this._lastPlanTaken = 0;
     }
@@ -647,6 +664,15 @@ export class LLMAdapter {
 
     // Show subtle thinking indicator while LLM processes
     this._setThinking(true);
+
+    if (this.localOnly) {
+      const plan = this._behaviorTreePlan();
+      this._applyPlan(plan, 0, true);
+      this._setThinking(false);
+      this._setToast(null);
+      this._requesting = false;
+      return;
+    }
 
     try {
       const state = this._buildState();

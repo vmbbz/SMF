@@ -158,9 +158,11 @@ describe('Leaderboard keyboard navigation', () => {
   });
 });
 
-describe('Character select keyboard navigation', () => {
-  test('character cards container exists', () => {
-    expect(html).toContain('id="char-cards"');
+describe('Token Exhibition keyboard navigation', () => {
+  test('both token corners and reroll control exist', () => {
+    expect(html).toContain('id="token-exhibition-p1"');
+    expect(html).toContain('id="token-exhibition-p2"');
+    expect(html).toContain('id="btn-exhibition-reroll"');
   });
 
   test('spectator exhibition button exists', () => {

@@ -2589,7 +2589,13 @@
       outline-offset: 3px;
     }
 
-    /* ── Character select screen ── */
+    .token-exhibition-control-hidden,
+    #hud-widgets button.token-exhibition-control-hidden,
+    #mobile-controls button.token-exhibition-control-hidden {
+      display: none !important;
+    }
+
+    /* ── Token Exhibition screen ── */
     .character-select {
       flex: 1;
       display: flex;
@@ -2601,31 +2607,164 @@
     }
     .character-select.hidden { display: none; }
 
-    .char-cards {
-      display: flex;
-      gap: 24px;
-    }
-
     .character-select {
-      max-width: 760px;
-      width: min(94vw, 760px);
+      max-width: 920px;
+      width: min(96vw, 920px);
       max-height: 86vh;
       overflow-y: auto;
       box-sizing: border-box;
     }
 
     .character-select .join-hint {
-      max-width: 620px;
+      max-width: 760px;
       color: #e8eef5;
       font-size: 12px;
       line-height: 1.65;
       margin: -8px auto 0;
     }
 
+    .token-exhibition-status {
+      width: min(100%, 760px);
+      min-height: 18px;
+      color: var(--neon-blue);
+      font-family: var(--font-print, 'Press Start 2P', monospace);
+      font-size: 9px;
+      line-height: 1.55;
+      text-align: center;
+    }
+
+    .character-select .token-exhibition-boundary {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 0 6px;
+      color: #f4f7fb;
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .character-select > .lb-link {
+      padding: 5px 8px;
+      color: #aebdca;
+    }
+
+    .token-exhibition-matchup {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      align-items: stretch;
+      gap: 14px;
+      width: min(100%, 820px);
+    }
+
+    .token-exhibition-card {
+      min-width: 0;
+      padding: 16px 14px;
+      border: 2px solid var(--neon-green);
+      border-radius: 18px;
+      background: linear-gradient(160deg, rgba(0, 255, 157, 0.1), rgba(5, 8, 12, 0.96) 46%);
+      box-shadow: 0 0 24px rgba(0, 255, 157, 0.14);
+      text-align: center;
+    }
+
+    .token-exhibition-card.p2 {
+      border-color: var(--neon-pink);
+      background: linear-gradient(200deg, rgba(255, 0, 255, 0.11), rgba(5, 8, 12, 0.96) 46%);
+      box-shadow: 0 0 24px rgba(255, 0, 255, 0.14);
+    }
+
+    .token-exhibition-corner,
+    .token-exhibition-style {
+      color: var(--neon-green);
+      font-family: var(--font-print, 'Press Start 2P', monospace);
+      font-size: 8px;
+      line-height: 1.45;
+      letter-spacing: 0.04em;
+    }
+
+    .token-exhibition-card.p2 .token-exhibition-corner,
+    .token-exhibition-card.p2 .token-exhibition-style { color: var(--neon-pink); }
+
+    .token-exhibition-icon {
+      display: block;
+      width: 78px;
+      height: 78px;
+      margin: 12px auto 10px;
+      border: 3px solid currentColor;
+      border-radius: 50%;
+      background: #06090d;
+      color: var(--neon-green);
+      object-fit: cover;
+    }
+
+    .token-exhibition-card.p2 .token-exhibition-icon { color: var(--neon-pink); }
+
+    .token-exhibition-symbol {
+      overflow: hidden;
+      color: #fff;
+      font-family: 'Shojumaru', var(--font-print, monospace);
+      font-size: 20px;
+      line-height: 1.25;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .token-exhibition-name {
+      min-height: 34px;
+      margin: 5px 0 8px;
+      color: rgba(255,255,255,0.7);
+      font-size: 12px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .token-exhibition-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .token-exhibition-stats span {
+      min-width: 0;
+      padding: 7px 4px;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      color: rgba(255,255,255,0.64);
+      font-family: monospace;
+      font-size: 8px;
+      line-height: 1.35;
+    }
+
+    .token-exhibition-stats b {
+      display: block;
+      color: #fff;
+      font-size: 10px;
+    }
+
+    .token-exhibition-vs {
+      align-self: center;
+      color: var(--neon-blue);
+      font-family: 'Shojumaru', var(--font-print, monospace);
+      font-size: 22px;
+      text-shadow: 0 0 14px var(--neon-blue);
+    }
+
+    .token-exhibition-empty {
+      display: grid;
+      min-height: 264px;
+      place-items: center;
+      color: rgba(255,255,255,0.56);
+      font-family: var(--font-print, 'Press Start 2P', monospace);
+      font-size: 9px;
+      line-height: 1.6;
+    }
+
     .practice-actions {
-      display: flex;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
       justify-content: center;
-      width: min(100%, 620px);
+      width: min(100%, 680px);
     }
 
     .practice-actions .premium-btn {
@@ -2646,48 +2785,6 @@
     .landing-primary-modes .premium-btn {
       min-width: 0;
       margin: 0;
-    }
-
-    .char-card {
-      font-family: monospace;
-      background: #111;
-      color: var(--neon-pink);
-      border: 3px solid var(--neon-pink);
-      padding: 12px 20px;
-      margin: 8px 4px;
-      font-family: 'Press Start 2P';
-      font-size: 14px;
-      cursor: pointer;
-      text-shadow: 0 0 10px var(--neon-pink);
-      transition: all 0.2s;
-    }
-    .char-card:hover { transform: scale(1.05); box-shadow: 0 0 20px var(--neon-pink); }
-    .char-card.selected {
-      border-color: var(--dg-secondary);
-      background: rgba(20, 154, 251, 0.1);
-    }
-
-    .char-icon {
-      font-size: 48px;
-      margin-bottom: 8px;
-    }
-    .char-name {
-      font-size: 18px;
-      font-weight: bold;
-      color: var(--dg-secondary);
-      margin-bottom: 4px;
-    }
-    .char-provider {
-      font-size: 10px;
-      color: var(--dg-pebble);
-      margin-bottom: 10px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-    }
-    .char-desc {
-      font-size: 11px;
-      color: var(--dg-slate);
-      line-height: 1.5;
     }
 
     /* ── Super-Aligned Multiplayer UI Sizing ── */
@@ -2917,22 +3014,50 @@
         font-size: 13px;
         line-height: 1.65;
       }
-      .char-cards {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 10px;
+      .token-exhibition-status { font-size: 9px; }
+      .token-exhibition-matchup {
+        grid-template-columns: minmax(0, 1fr) 22px minmax(0, 1fr);
+        gap: 5px;
         width: 100%;
       }
-      .char-card {
-        min-width: 0;
-        margin: 0;
-        padding: 14px 10px;
-        font-size: 12px;
+      .token-exhibition-card {
+        padding: 10px 6px;
+        border-radius: 13px;
       }
-      .char-icon { font-size: 36px; }
-      .char-name { font-size: 15px; line-height: 1.3; }
-      .char-provider { font-size: 9px; line-height: 1.4; }
-      .char-desc { font-size: 11px; line-height: 1.6; }
+      .token-exhibition-corner,
+      .token-exhibition-style { font-size: 6px; }
+      .token-exhibition-icon {
+        width: 52px;
+        height: 52px;
+        margin: 8px auto 7px;
+        border-width: 2px;
+      }
+      .token-exhibition-symbol { font-size: clamp(12px, 4vw, 16px); }
+      .token-exhibition-name {
+        min-height: 30px;
+        margin: 4px 0 6px;
+        font-size: 9px;
+      }
+      .token-exhibition-stats {
+        grid-template-columns: 1fr;
+        gap: 3px;
+        margin-top: 8px;
+      }
+      .token-exhibition-stats span {
+        padding: 4px 2px;
+        font-size: 6px;
+      }
+      .token-exhibition-stats b { font-size: 8px; }
+      .token-exhibition-vs { font-size: 13px; }
+      .token-exhibition-empty {
+        min-height: 218px;
+        font-size: 8px;
+      }
+      .character-select .token-exhibition-boundary {
+        margin: 0 auto;
+        font-size: 11px;
+        line-height: 1.55;
+      }
       .practice-actions {
         gap: 8px;
       }
@@ -3038,13 +3163,25 @@
 
       <div style="background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); margin-bottom: 20px;">
         <h3 class="shojumaru-title" style="color: var(--neon-pink); margin-top: 0; font-size: 16px;"><strong>🔥 REAL-TIME PRICE BOOSTS: "LMAO WHIPLASH!"</strong></h3>
-        <p><strong>Your opponent's strength, speed, and health are dictated by live Birdeye market metrics! When a token pumps in real-time, timed boosts fire:</strong></p>
+        <p><strong>In human-vs-token modes, your opponent's strength, speed, and health are dictated by live Birdeye market metrics. When that opponent pumps in real-time, timed boosts fire:</strong></p>
         <ul>
           <li><strong>🟠 RUNNER (+20%): 3-hit dash combo + brief stun</strong></li>
           <li><strong>🔴 SPIKE (+45%): 5-hit combo + P1 levitated 1.5s</strong></li>
           <li><strong>🟣 OVERDRIVE (+100%): 10 Hadoukens + P1 levitated 3s</strong></li>
         </ul>
         <p style="color: #ffcc00; margin-bottom: 0;"><strong>⚠️ STRATEGY: You MUST use Live Boosts to survive against pumping high-volume opponent tokens. Otherwise, LMAO WHIPLASH!</strong></p>
+      </div>
+
+      <div style="background: rgba(0, 212, 255, 0.07); padding: 15px; border-radius: 12px; border: 1px solid rgba(0,212,255,0.35); margin-bottom: 20px;">
+        <h3 class="shojumaru-title" style="color: var(--neon-blue); margin-top: 0; font-size: 16px;"><strong>🤖 TOKEN EXHIBITION</strong></h3>
+        <p><strong>Watch two distinct real tokens drawn from the loaded Solana market pool fight each other. Both wear their own symbol, name, and icon.</strong></p>
+        <ul>
+          <li><strong>Market rating stays visible; arena health is compressed to keep fights fast and watchable.</strong></li>
+          <li><strong>Momentum, volume, and liquidity select a named combat style and tactical cadence for each side.</strong></li>
+          <li><strong>Both fighters use local tactical AI. No LLM-provider request is made.</strong></li>
+          <li><strong>It is spectator-only: no controls, paid boost spend, ELO, leaderboard credit, or token rewards.</strong></li>
+        </ul>
+        <p style="margin-bottom: 0;"><strong>Use RANDOMIZE MATCHUP to draw another pair. If fewer than two valid mints are available, StickLash shows the feed limitation instead of inventing opponents.</strong></p>
       </div>
 
       <h3 class="shojumaru-title" style="color: var(--neon-blue); font-size: 16px;"><strong>🎮 MOVE LIST & CONTROLS</strong></h3>
@@ -3567,7 +3704,7 @@
         })();
       </script>
     </div>
-    <p class="landing-tagline">Fight live Solana token AI for practice, or enter wallet-verified human competition.</p>
+    <p class="landing-tagline">Watch live Solana tokens fight autonomously, or enter wallet-verified human competition.</p>
     <div class="landing-primary-modes" aria-label="Token fight modes">
       <button class="premium-btn" onclick="startTrendingMode()">TRENDING <span class="cartoon-icon">🔥</span></button>
       <button class="premium-btn" onclick="startEndlessMode()">ENDLESS <span class="cartoon-icon">🌀</span></button>
@@ -3577,7 +3714,7 @@
       <button class="premium-btn" onclick="startCustomFight()"
         style="width:auto;margin:0;padding:10px 20px;">FIGHT <span class="cartoon-icon">👊</span></button>
     </div>
-    <button id="btn-singleplayer" class="premium-btn">AGENT LAB · WATCH AI FIGHT <span class="cartoon-icon">🤖</span></button>
+    <button id="btn-singleplayer" class="premium-btn">TOKEN EXHIBITION · WATCH AI TOKENS <span class="cartoon-icon">🤖</span></button>
     <button id="btn-multiplayer" class="premium-btn pink">HUMAN MULTIPLAYER <span class="cartoon-icon">🌐</span></button>
     <button id="btn-leaderboard" class="premium-btn">RANKED STANDINGS <span class="cartoon-icon">🏆</span></button>
     <div id="status"></div>
@@ -3765,15 +3902,24 @@
     <button class="back-btn" id="btn-mm-back">&larr; BACK</button>
   </div>
 
-  <!-- Character select screen (single-player opponent) -->
+  <!-- Token Exhibition screen (spectator-only market AI vs market AI) -->
   <div class="screen character-select hidden" id="character-select">
-    <h2>CHOOSE YOUR OPPONENT</h2>
-    <p class="join-hint">Choose an LLM agent and watch it fight the local simulation benchmark. This spectator lab has no touch controls, ELO, or token rewards.</p>
-    <div class="char-cards" id="char-cards">
-      <!-- Populated by JS from /api/characters -->
+    <h2>TOKEN EXHIBITION</h2>
+    <p class="join-hint">Two distinct tokens are drawn from the loaded Solana market pool. Their real market signals become bounded arena stats and visible fighting styles, then both sides battle autonomously.</p>
+    <div id="token-exhibition-status" class="token-exhibition-status" role="status" aria-live="polite">SCANNING THE LOADED SOLANA MARKET POOL…</div>
+    <div class="token-exhibition-matchup" aria-label="Autonomous token matchup">
+      <article id="token-exhibition-p1" class="token-exhibition-card p1" aria-label="Left token fighter">
+        <div class="token-exhibition-empty">SCANNING MARKET…</div>
+      </article>
+      <div class="token-exhibition-vs" aria-hidden="true">VS</div>
+      <article id="token-exhibition-p2" class="token-exhibition-card p2" aria-label="Right token fighter">
+        <div class="token-exhibition-empty">SCANNING MARKET…</div>
+      </article>
     </div>
+    <p class="token-exhibition-boundary"><strong>Spectator exhibition only:</strong> no player controls, paid boosts, ELO, leaderboard credit, or token rewards.</p>
     <div class="practice-actions">
-      <button class="premium-btn pink" id="btn-char-watch" disabled>START AGENT EXHIBITION</button>
+      <button class="premium-btn dark" id="btn-exhibition-reroll" disabled>RANDOMIZE MATCHUP 🎲</button>
+      <button class="premium-btn pink" id="btn-char-watch" disabled>WATCH TOKEN FIGHT ⚡</button>
     </div>
     <button class="lb-link" id="btn-char-classic">or choose classic mode &rarr;</button>
     <button class="back-btn" id="btn-char-back">&larr; BACK</button>
@@ -4114,12 +4260,20 @@
         // Global helper — called by every game launcher AND resetAndFight.
         // Shows the controls (Mic button wrapper on PC, Full JoyPad on Mobile)
         window._showMobileControls = () => {
+          if (window.isTokenExhibition) {
+            mobileControls.style.display = 'none';
+            return;
+          }
           mobileControls.style.display = 'flex';
 
           if (isMobile && window.virtualJoystick) {
             // Poll until p1Input is available then register/re-register
             let retries = 0;
             const poll = setInterval(() => {
+              if (window.isTokenExhibition) {
+                clearInterval(poll);
+                return;
+              }
               const g = window.currentGame;
               if (g && g.p1Input) {
                 const adapters = g.p1Input.adapters || [];
@@ -4140,6 +4294,7 @@
         // Also wire up a persistent watcher — handles edge cases for joystick recovery
         if (isMobile) {
           setInterval(() => {
+            if (window.isTokenExhibition) return;
             if (!window.virtualJoystick || !window.currentGame) return;
             const g = window.currentGame;
             if (!g.p1Input) return;

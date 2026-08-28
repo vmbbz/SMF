@@ -23,10 +23,11 @@ const { INPUT_MODES } = await import('../src/ui.js');
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
 const mainJs = readFileSync(resolve(__dirname, '../src/main.js'), 'utf-8');
+const gameJs = readFileSync(resolve(__dirname, '../src/game.js'), 'utf-8');
 
 describe('Landing page', () => {
   test('has tagline explaining game modes', () => {
-    expect(html).toContain('Fight live Solana token AI for practice, or enter wallet-verified human competition.');
+    expect(html).toContain('Watch live Solana tokens fight autonomously, or enter wallet-verified human competition.');
   });
 
   test('tagline has proper CSS class', () => {
@@ -45,12 +46,26 @@ describe('Mobile readability and practice contract', () => {
     expect(html).toContain('>ENDLESS <span');
   });
 
-  test('Agent Lab is explicitly spectator-only', () => {
+  test('Token Exhibition is explicitly spectator-only and symmetric', () => {
     expect(html).not.toContain('id="btn-char-fight"');
-    expect(html).toContain('id="btn-char-watch" disabled>START AGENT EXHIBITION');
-    expect(html).toContain('spectator lab has no touch controls');
-    expect(mainJs).toContain('p1Input = createInput(1, 3, 0)');
+    expect(html).toContain('id="btn-char-watch" disabled>WATCH TOKEN FIGHT');
+    expect(html).toContain('id="btn-exhibition-reroll" disabled>RANDOMIZE MATCHUP');
+    expect(html).toContain('id="token-exhibition-p1"');
+    expect(html).toContain('id="token-exhibition-p2"');
+    expect(html).toContain('no player controls, paid boosts, ELO, leaderboard credit, or token rewards');
+    expect(mainJs).toContain('localOnly: true');
+    expect(mainJs).toContain('game.p1.applyMarketStats(p1Token, p1Power)');
+    expect(mainJs).toContain('game.p2.applyMarketStats(p2Token, p2Power)');
     expect(mainJs).toContain("mobileControls.style.display = 'none'");
+    expect(html).toMatch(/window\._showMobileControls\s*=\s*\(\)\s*=>\s*\{\s*if \(window\.isTokenExhibition\)/);
+    expect(mainJs).toContain("for (const id of ['btn-boost-hack', 'mic-toggle-btn'])");
+    expect(mainJs).toContain("control.classList.toggle('token-exhibition-control-hidden', exhibitionActive)");
+    expect(html).toContain('#hud-widgets button.token-exhibition-control-hidden');
+    expect(mainJs).toContain("control.style.setProperty('display', 'none', 'important')");
+    expect(mainJs).toContain("[VoiceToggle] Token Exhibition is spectator-only");
+    expect(mainJs).toContain("[BoostTest] Token Exhibition disables one-sided simulated boosts.");
+    expect(gameJs).toContain('this.p2.tokenData && !this.tokenExhibition');
+    expect(gameJs).toMatch(/!this\.tokenExhibition\s*&&\s*p1Pressed\.has\(Actions\.HADOUKEN\)/);
   });
 });
 

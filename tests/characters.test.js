@@ -45,6 +45,34 @@ describe('LLMAdapter character support', () => {
     expect(adapter.character).toBeNull();
   });
 
+  test('local-only tactical agents never call an LLM provider', async () => {
+    const adapter = new LLMAdapter(1, 'local', null, {
+      localOnly: true,
+      moveIntervalMs: 520,
+      planTransform: plan => [...plan.slice(0, 4), 'hadouken'],
+    });
+    adapter._running = true;
+    adapter._ready = true;
+    adapter.game = {
+      p1: { x: 100, y: 0, health: 160, healthMax: 160, state: 'idle', grounded: true },
+      p2: { x: 300, y: 0, health: 180, healthMax: 180, state: 'idle', grounded: true },
+      roundOver: false,
+      waitingForProviders: false,
+      fightAlert: 0,
+      roundTimer: 60,
+      p1LlmToast: null,
+    };
+
+    await adapter._requestPlan();
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(adapter.localOnly).toBe(true);
+    expect(adapter.moveInterval).toBe(520);
+    expect(adapter._plan).toHaveLength(5);
+    expect(adapter._plan.at(-1)).toBe('hadouken');
+    expect(adapter.game.p1LlmToast).toBeNull();
+  });
+
   test('_requestPlan sends character in body when set', async () => {
     global.fetch.mockResolvedValue({
       ok: true,

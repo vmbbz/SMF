@@ -2,6 +2,25 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Autonomous Token Exhibition
+
+### Added
+
+- Replaced Agent Lab with a spectator-only Token Exhibition that randomly pairs two distinct real mints from the fresh and already loaded Solana market pool.
+- Added symmetric token names, icons, market stats, bounded arena power, and visible Momentum Rush, Reversal Hunter, Liquidity Tank, Volume Pressure, and Degen Wildcard combat styles.
+- Added local-only tactical agents for both corners, fresh-pair rerolls, token-aware intro/result cards, and autonomous exhibition share copy.
+- Added a public Help guide and `docs/TOKEN_EXHIBITION.md` covering selection, scaling, AI behavior, failure handling, and economic boundaries.
+
+### Safety and Fairness
+
+- Exhibition fighters make no LLM-provider calls and accept no keyboard, touch, phone, voice, or remote input.
+- The mode stops one-sided live-market boosts, bypasses paid-boost settlement without consuming inventory, and cannot update ELO, leaderboards, or reward eligibility.
+- Fewer than two distinct valid mints produces a visible retry state; StickLash does not fabricate token opponents.
+
+### Verification
+
+- Added deterministic tests for mint de-duplication, distinct pairing, rerolls, style thresholds, bounded power, non-mutating tactical transforms, and zero provider requests.
+
 ## 2026-08-28 - Modal Pause Ownership
 
 ### Fixed

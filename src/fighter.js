@@ -99,7 +99,7 @@ const SOLANA_DEFAULT_HEAD_IMAGE = 'https://raw.githubusercontent.com/solana-labs
 // Fighter
 // ─────────────────────────────────────────────
 export class Fighter {
-  constructor(x, floorY, facing, color, playerNum = 1) {
+  constructor(x, floorY, facing, color, playerNum = 1, options = {}) {
     // Position / physics
     this.x = x;
     this.y = floorY;
@@ -151,15 +151,19 @@ export class Fighter {
     // Per-frame events for SFX (consumed by Game each frame)
     this.events = new Set();
     this.neckOffset = 45; // Phase 3: Aggressive neck to ensure head clears all limb moves
-    this.headScale = playerNum === 1 ? 0.7 : 1.25; // Phase 3: P1 small, AI Boss big
+    const configuredHeadScale = Number(options.headScale);
+    this.headScale = Number.isFinite(configuredHeadScale) && configuredHeadScale > 0
+      ? configuredHeadScale
+      : (playerNum === 1 ? 0.7 : 1.25); // Human-vs-token default presentation
     this.tokenData = null;
+    this.combatPower = null;
     this.personality = null;
     this.headImage = new Image();
     this.headImage.crossOrigin = 'anonymous';
     this.headImage.src = SOLANA_DEFAULT_HEAD_IMAGE;
     
     // Load custom profile avatar from localStorage for P1 (Human Player) if available
-    if (playerNum === 1) {
+    if (playerNum === 1 && options.useProfileAvatar !== false) {
       try {
         const profileStr = localStorage.getItem('smf_user_profile');
         if (profileStr) {
@@ -300,19 +304,33 @@ export class Fighter {
   }
 
 
-  applyMarketStats(token) {
+  applyMarketStats(token, powerOverride = null) {
     if (!token) return;
     this.marketData = token;
-    
-    const power = calculateFighterPower(token);
 
-    this.healthMax = power.health;
-    this.health = power.health;
-    this.damageMultiplier = power.damageMult;
-    this.walkSpeed = WALK_SPEED * power.speedMult;
-    this.dashSpeed = DASH_SPEED * power.speedMult;
+    const calculatedPower = calculateFighterPower(token);
+    const power = powerOverride && typeof powerOverride === 'object'
+      ? { ...calculatedPower, ...powerOverride }
+      : calculatedPower;
+    const health = Number.isFinite(Number(power.health))
+      ? Math.max(1, Math.round(Number(power.health)))
+      : calculatedPower.health;
+    const damageMult = Number.isFinite(Number(power.damageMult))
+      ? Math.max(0.1, Number(power.damageMult))
+      : calculatedPower.damageMult;
+    const speedMult = Number.isFinite(Number(power.speedMult))
+      ? Math.max(0.1, Number(power.speedMult))
+      : calculatedPower.speedMult;
 
-    console.log(`[Fighter] ${token.symbol} powered up → ${power.rating} (H:${power.health} D:${power.damageMult.toFixed(2)} S:${power.speedMult.toFixed(2)})`);
+    this.healthMax = health;
+    this.health = health;
+    this.damageMultiplier = damageMult;
+    this.walkSpeed = WALK_SPEED * speedMult;
+    this.dashSpeed = DASH_SPEED * speedMult;
+
+    this.combatPower = { ...power, health, damageMult, speedMult };
+    console.log(`[Fighter] ${token.symbol} powered up → ${power.rating} (H:${health} D:${damageMult.toFixed(2)} S:${speedMult.toFixed(2)})`);
+    return this.combatPower;
   }
 
   update(dt, actions, justPressed, opponent, stageLeft, stageRight) {

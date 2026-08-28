@@ -53,7 +53,7 @@ After every production push, confirm the Render deploy is live for the intended 
 
 The server-side **StickLash Arena Director v0.2** merges live trending and graduated-token candidates, scores them using volume, volatility, liquidity, and discovery signals, and selects the next opponent for Trending and Endless modes. When a fresh Alchemy Yellowstone stream is configured, confirmed transactions mentioning subscribed candidate mints add a logarithmic bonus capped at eight points. Stale or unavailable streaming adds nothing and never blocks Birdeye-based selection. Each decision includes a deterministic decision ID, policy version, ranked candidates, reason codes, provider snapshots, and sanitized errors so the autonomous choice can be explained and audited. If the Director endpoint is unavailable, gameplay falls back to the existing local market queue.
 
-See [AnsemHack Readiness](ANSEMHACK_READINESS.md), [Alchemy Yellowstone Candidate Activity Stream](docs/ALCHEMY_STREAM.md), [Arena Telemetry and Public Evidence](docs/ARENA_TELEMETRY.md), [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md), and [Gameplay Pause Ownership](docs/GAMEPLAY_PAUSE.md). The app exposes the same public boundaries through **Help → Live Arena Status** at <https://sticklash.fun/arena> and **Help → Economy & Rewards** at <https://sticklash.fun/economy>.
+See [AnsemHack Readiness](ANSEMHACK_READINESS.md), [Token Exhibition](docs/TOKEN_EXHIBITION.md), [Alchemy Yellowstone Candidate Activity Stream](docs/ALCHEMY_STREAM.md), [Arena Telemetry and Public Evidence](docs/ARENA_TELEMETRY.md), [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md), and [Gameplay Pause Ownership](docs/GAMEPLAY_PAUSE.md). The app exposes the same public boundaries through **Help → Live Arena Status** at <https://sticklash.fun/arena> and **Help → Economy & Rewards** at <https://sticklash.fun/economy>.
 
 The Arena Status page reports separate evidence classes: Director API responses, Alchemy stream health and replay state, server-authoritative multiplayer rounds, generated share cards, aggregate wallet sessions, and server-verified Solana ledger transactions. It never calls Alchemy observations trades or volume, Director responses completed fights, share cards impressions, wallet sessions paying users, or gameplay events onchain volume. Without durable evidence, unavailable metrics remain unavailable rather than becoming a misleading zero.
 
@@ -181,7 +181,7 @@ If the direct URL returns `404`, the app-domain relationship is not live yet. De
 | **Trending Arena** | Fight a random token from the current Birdeye trending list |
 | **Endless Pump Stream** | Auto-queues 12 trending tokens; 8-second countdown auto-advances to the next fight after each win or loss |
 | **Custom Fight** | Paste any Solana token mint address and fight that specific token |
-| **Agent Lab** | Choose one of two intentionally distinct LLM personas and watch it fight a stable local simulation benchmark; spectator-only, no ELO, and no rewards |
+| **Token Exhibition** | Watch two distinct real tokens fight autonomously with symmetric identity, bounded market-powered stats, and visible tactical styles; no controls, paid boosts, ELO, leaderboard credit, or rewards |
 | **Multiplayer** | WebRTC peer-to-peer 2P local or remote matches (requires auth) |
 
 ### ⚔️ Combat Engine
@@ -190,7 +190,7 @@ If the direct URL returns `404`, the app-domain relationship is not live yet. De
 - **Full move set**: light/heavy punch, light/heavy kick, jump, crouch, dash, block, Hadouken (projectile)
 - **Hitbox system**: limb-specific collision with head/crotch shot bonuses and clash detection
 - **Combo engine**: buffered input system with timing windows for multi-hit strings
-- **AI opponent**: LLM-driven command planning (with mock fallback) — commands queued in 5-action batches
+- **AI combat**: provider-backed command planning for supported modes plus a zero-provider, state-aware behavior tree for both Token Exhibition fighters
 - **Damage log**: real-time HUD showing recent hits between the two fighters
 
 ### 📊 Token Power Scaling
@@ -308,7 +308,8 @@ stick-fighter/
 | `window.fightToken(mint)` | `index.html` | Fetches token by mint and calls loadOpponent |
 | `window.startEndlessMode()` | `index.html` | Starts an Arena Director-selected opponent and enables automatic next fights |
 | `window.latestArenaDirectorDecision` | `arena-director-client.js` | Latest auditable market-agent decision shown by the active client |
-| `window.showVictoryOverlay(winnerNum, token, loserToken)` | `main.js` | Renders victory screen + session stats + countdown |
+| `window.showVictoryOverlay(winnerNum, token, loserToken, options?)` | `main.js` | Renders mode-aware human, token, or autonomous-exhibition results |
+| `window.currentTokenExhibitionPair` | `main.js` | Current two-token spectator matchup; never used for ELO or rewards |
 | `window.endlessSession` | `main.js` | `{active, round, wins, losses, streak}` — session state for endless mode |
 | `window._cancelEndlessCountdown()` | `main.js` | Cancels 8s auto-advance timer |
 | `window._showMobileControls()` | `index.html` | Shows joystick UI + registers adapter with current p1Input |

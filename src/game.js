@@ -73,7 +73,16 @@ export class Game {
     p1Input,
     p2Input,
     sfx = null,
-    { p1Label = "P1", p2Label = "P2", stageMusic = null, authoritativeMultiplayer = false } = {},
+    {
+      p1Label = "P1",
+      p2Label = "P2",
+      stageMusic = null,
+      authoritativeMultiplayer = false,
+      tokenExhibition = false,
+      useP1Profile = true,
+      p1CombatProfile = null,
+      p2CombatProfile = null,
+    } = {},
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
@@ -85,11 +94,15 @@ export class Game {
     this.p1Label = p1Label;
     this.p2Label = p2Label;
     this.authoritativeMultiplayer = authoritativeMultiplayer;
+    this.tokenExhibition = tokenExhibition === true;
+    this.useP1Profile = useP1Profile !== false;
+    this.p1CombatProfile = p1CombatProfile;
+    this.p2CombatProfile = p2CombatProfile;
 
     // Load custom profile name from localStorage for P1 if available
     try {
       const profileStr = localStorage.getItem('smf_user_profile');
-      if (profileStr) {
+      if (this.useP1Profile && profileStr) {
         const profile = JSON.parse(profileStr);
         if (profile && profile.name) {
           this.p1Label = profile.name;
@@ -100,19 +113,21 @@ export class Game {
     }
 
     // Listen for dynamic profile updates (e.g. name or avatar changes in user profile modal)
-    window.addEventListener('smf_profile_updated', (e) => {
-      const profile = e.detail;
-      if (profile) {
-        if (profile.name) {
-          this.p1Label = profile.name;
+    if (this.useP1Profile) {
+      window.addEventListener('smf_profile_updated', (e) => {
+        const profile = e.detail;
+        if (profile) {
+          if (profile.name) {
+            this.p1Label = profile.name;
+          }
+          if (profile.avatar && this.p1) {
+            loadGameImage(profile.avatar)
+              .then(img => { this.p1.headImage = img; })
+              .catch(error => console.warn('[Game] Failed to refresh P1 profile avatar:', error));
+          }
         }
-        if (profile.avatar && this.p1) {
-          loadGameImage(profile.avatar)
-            .then(img => { this.p1.headImage = img; })
-            .catch(e => console.warn('[Game] Failed to refresh P1 profile avatar:', e));
-        }
-      }
-    });
+      });
+    }
 
     // Game logic works in CSS pixel space
     const logicalW = canvas.width / this.dpr;
@@ -123,8 +138,14 @@ export class Game {
     const stageRight = logicalW * (1 - STAGE_MARGIN);
     const startOffset = (stageRight - stageLeft) * 0.25;
 
-    this.p1 = new Fighter(stageLeft + startOffset, floorY, 1, DG.primary, 1);
-    this.p2 = new Fighter(stageRight - startOffset, floorY, -1, DG.secondary, 2);
+    const exhibitionHeadScale = this.tokenExhibition ? 1.08 : null;
+    this.p1 = new Fighter(stageLeft + startOffset, floorY, 1, DG.primary, 1, {
+      useProfileAvatar: this.useP1Profile,
+      headScale: exhibitionHeadScale,
+    });
+    this.p2 = new Fighter(stageRight - startOffset, floorY, -1, DG.secondary, 2, {
+      headScale: exhibitionHeadScale,
+    });
 
     this.lastTime = 0;
     this.running = false;
@@ -270,7 +291,7 @@ export class Game {
       this.sfx.playFightStartSound();
     }
     
-    if (this.p2.tokenData) {
+    if (this.p2.tokenData && !this.tokenExhibition) {
       window.liveBoostSystem = new LiveBoostSystem(this);
       window.liveBoostSystem.start(this.p2, this.p2.tokenData);
     }
@@ -499,6 +520,7 @@ export class Game {
     // Intercept Hadouken attack for P1 (the human player) to validate premium boosts.
     if (
       !this.authoritativeMultiplayer &&
+      !this.tokenExhibition &&
       p1Pressed.has(Actions.HADOUKEN) &&
       this._isP1ReadyForHadouken() &&
       !skipHadoukenConsumeCheck
@@ -1189,11 +1211,140 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     }
   }
 
+  _drawTokenExhibitionIntro(ctx) {
+    const w = this.logicalW;
+    const h = this.logicalH;
+    const compact = w < 620;
+    const cardW = Math.min(w - (compact ? 16 : 32), 820);
+    const cardH = compact ? 226 : 252;
+    const cardX = (w - cardW) / 2;
+    const cardY = Math.max(54, h / 2 - cardH / 2 - (compact ? 12 : 24));
+    const centerGap = compact ? 42 : 74;
+    const panelGap = compact ? 8 : 14;
+    const panelW = (cardW - centerGap - panelGap * 2) / 2;
+    const panelH = cardH - (compact ? 58 : 64);
+    const panelY = cardY + (compact ? 44 : 48);
+    const leftX = cardX + panelGap;
+    const rightX = cardX + cardW - panelGap - panelW;
+
+    ctx.fillStyle = 'rgba(5, 8, 12, 0.9)';
+    ctx.shadowColor = 'rgba(0, 229, 255, 0.28)';
+    ctx.shadowBlur = 28;
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, cardH, compact ? 16 : 22);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    const border = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY);
+    border.addColorStop(0, '#00ff9d');
+    border.addColorStop(0.5, '#00d9ff');
+    border.addColorStop(1, '#ff00ff');
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${compact ? 11 : 14}px monospace`;
+    ctx.fillText('TOKEN EXHIBITION · AUTONOMOUS MARKET FIGHT', w / 2, cardY + 18);
+    ctx.fillStyle = 'rgba(255,255,255,0.58)';
+    ctx.font = `bold ${compact ? 7 : 9}px monospace`;
+    ctx.fillText('NO CONTROLS · NO ELO · NO TOKEN REWARDS', w / 2, cardY + 34);
+
+    const formatUsd = value => {
+      const amount = Math.max(0, Number(value) || 0);
+      if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
+      if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}K`;
+      return amount > 0 ? `$${amount.toFixed(0)}` : 'N/A';
+    };
+    const trim = (value, max) => {
+      const text = String(value || 'TOKEN').toUpperCase();
+      return text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text;
+    };
+    const drawFighterCard = (x, fighter, profile, color, sideLabel) => {
+      const token = fighter.tokenData || fighter.marketData || {};
+      const power = fighter.combatPower || calculateFighterPower(token);
+      const iconRadius = compact ? 24 : 31;
+      const iconY = panelY + (compact ? 34 : 42);
+      const centerX = x + panelW / 2;
+
+      ctx.fillStyle = 'rgba(255,255,255,0.035)';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(x, panelY, panelW, panelH, compact ? 12 : 16);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.font = `bold ${compact ? 7 : 9}px monospace`;
+      ctx.fillText(sideLabel, centerX, panelY + 12);
+
+      ctx.fillStyle = '#07090d';
+      ctx.beginPath();
+      ctx.arc(centerX, iconY, iconRadius + 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = color;
+      ctx.stroke();
+      if (fighter.headImage?.complete) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(centerX, iconY, iconRadius, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(fighter.headImage, centerX - iconRadius, iconY - iconRadius, iconRadius * 2, iconRadius * 2);
+        ctx.restore();
+      }
+
+      const symbol = trim(String(token.symbol || token.name || 'TOKEN').replace(/^\$+/, ''), compact ? 10 : 15);
+      const name = trim(token.name || token.symbol, compact ? 15 : 22);
+      const momentum = Number(token.priceChange24h) || 0;
+      const momentumLabel = `${momentum >= 0 ? '+' : ''}${momentum.toFixed(1)}%`;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${compact ? 14 : 20}px system-ui`;
+      ctx.fillText(`$${symbol}`, centerX, panelY + (compact ? 72 : 86));
+      ctx.fillStyle = 'rgba(255,255,255,0.66)';
+      ctx.font = `${compact ? 8 : 10}px system-ui`;
+      ctx.fillText(name, centerX, panelY + (compact ? 88 : 104));
+
+      ctx.fillStyle = color;
+      ctx.font = `bold ${compact ? 7 : 9}px monospace`;
+      ctx.fillText(trim(profile?.label || 'MARKET AI', compact ? 17 : 24), centerX, panelY + (compact ? 105 : 124));
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `bold ${compact ? 8 : 10}px monospace`;
+      ctx.fillText(`POWER ${power.rating} · HP ${fighter.healthMax}`, centerX, panelY + (compact ? 123 : 146));
+      ctx.fillStyle = 'rgba(255,255,255,0.72)';
+      ctx.font = `${compact ? 7 : 9}px monospace`;
+      ctx.fillText(`DMG ${power.damageMult.toFixed(2)}x · SPD ${power.speedMult.toFixed(2)}x`, centerX, panelY + (compact ? 139 : 164));
+      ctx.fillText(`VOL ${formatUsd(token.volume24h)} · 24H ${momentumLabel}`, centerX, panelY + (compact ? 155 : 182));
+    };
+
+    drawFighterCard(leftX, this.p1, this.p1CombatProfile, '#00ff9d', 'LEFT CORNER · P1');
+    drawFighterCard(rightX, this.p2, this.p2CombatProfile, '#ff00ff', 'RIGHT CORNER · P2');
+
+    ctx.fillStyle = '#05080c';
+    ctx.strokeStyle = '#00d9ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(w / 2, panelY + panelH / 2, compact ? 17 : 25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${compact ? 13 : 20}px monospace`;
+    ctx.fillText('VS', w / 2, panelY + panelH / 2);
+  }
+
   _drawIntroStats(ctx) {
     const w = this.logicalW;
     const h = this.logicalH;
     
     ctx.save();
+
+    if (this.tokenExhibition) {
+      this._drawTokenExhibitionIntro(ctx);
+      ctx.restore();
+      return;
+    }
     
     if (window.isMultiplayerMatch) {
       const cardW = 520;
@@ -1641,7 +1792,7 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
     }
 
     // "Waiting..." overlay
-    if (this.waitingForProviders) {
+    if (this.waitingForProviders && !this.tokenExhibition) {
       ctx.save();
       ctx.globalAlpha = 0.5 + Math.sin(performance.now() / 300) * 0.3;
       ctx.font = "bold 24px monospace";
@@ -1831,10 +1982,10 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.textAlign = "center";
       let text = "TIME!";
       if (this.p1.health <= 0 && this.p2.health <= 0) text = "DOUBLE KO!";
-      else if (this.p1.health <= 0) text = "P2 WINS!";
-      else if (this.p2.health <= 0) text = "P1 WINS!";
-      else if (this.p1.health > this.p2.health) text = "P1 WINS!";
-      else if (this.p2.health > this.p1.health) text = "P2 WINS!";
+      else if (this.p1.health <= 0) text = this.tokenExhibition ? `${this.p2Label} WINS!` : "P2 WINS!";
+      else if (this.p2.health <= 0) text = this.tokenExhibition ? `${this.p1Label} WINS!` : "P1 WINS!";
+      else if (this.p1.health > this.p2.health) text = this.tokenExhibition ? `${this.p1Label} WINS!` : "P1 WINS!";
+      else if (this.p2.health > this.p1.health) text = this.tokenExhibition ? `${this.p2Label} WINS!` : "P2 WINS!";
       else text = "DRAW!";
 
       // Pause fight music immediately when the round ends
@@ -1845,23 +1996,25 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       // Premium Victory Overlay (Phase 3)
       if (!this.victoryOverlayTriggered) {
         this.victoryOverlayTriggered = true;
-        const winnerNum = (this.p1.health > this.p2.health) ? 1 : 2;
-        const winner = winnerNum === 1 ? this.p1 : this.p2;
-        const loser = winnerNum === 1 ? this.p2 : this.p1;
+        const winnerNum = this.tokenExhibition && this.p1.health === this.p2.health
+          ? null
+          : ((this.p1.health > this.p2.health) ? 1 : 2);
+        const winner = winnerNum === 1 ? this.p1 : (winnerNum === 2 ? this.p2 : null);
+        const loser = winnerNum === 1 ? this.p2 : (winnerNum === 2 ? this.p1 : null);
         
         // Play victory chime arpeggio or sad defeat minor chime
         if (this.sfx) {
           this.sfx.playKoScream();
-          if (winnerNum === 1) {
+          if (this.tokenExhibition || winnerNum === 1) {
             this.sfx.playVictorySound();
-          } else {
+          } else if (winnerNum === 2) {
             this.sfx.playDefeatSound();
           }
         }
 
         // Deepgram Zeus winner announcer!
         if (window.liveBoostSystem) {
-          const sym = (loser.tokenData?.symbol || winner.tokenData?.symbol || 'MEME').toUpperCase();
+          const sym = (loser?.tokenData?.symbol || winner?.tokenData?.symbol || 'MEME').toUpperCase();
           const p1Label = (this.p1Label || 'GUEST FIGHTER').toUpperCase();
           let msg = "";
           if (winnerNum === 1) {
@@ -1873,7 +2026,11 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
         }
 
         if (window.showVictoryOverlay) {
-          window.showVictoryOverlay(winnerNum, winner.tokenData, loser.tokenData);
+          const winnerToken = winner?.tokenData || this.p1.tokenData || null;
+          const loserToken = loser?.tokenData || this.p2.tokenData || null;
+          window.showVictoryOverlay(winnerNum, winnerToken, loserToken, {
+            mode: this.tokenExhibition ? 'token_exhibition' : 'solo',
+          });
         }
       }
 
