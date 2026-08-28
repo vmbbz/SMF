@@ -2,6 +2,20 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Modal Pause Ownership
+
+### Fixed
+
+- Closing Help after visiting Economy & Rewards or Arena Status now releases every informational-overlay pause and resumes the active fight.
+- Read-only pages no longer show the false "complete wallet action" instruction.
+- Help-to-page and page-to-Help handoffs retain an uninterrupted pause, preventing the round timer or fighters from advancing between overlays.
+
+### Changed
+
+- Informational overlays and token-switch confirmation now use the neutral `smf_gameplay_pause` event; actual wallet flows retain `smf_wallet_action_pause`.
+- The game owns one reason-aware pause ledger across both event channels, so closing one surface releases only its own reason and cannot override another active safety pause.
+- Added reason-specific, mobile-length pause copy for Help, Rewards, Arena Status, token switching, wallet connection, wallet security, and boost purchase flows.
+
 ## 2026-08-28 - Mobile Menu and Practice Clarity
 
 ### Changed

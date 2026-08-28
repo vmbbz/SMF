@@ -18,6 +18,7 @@ import { announceArenaDirectorDecision, fetchArenaDirectorDecision } from './are
 import { getTokenCoverSource, getTokenImageSource, loadGameImage } from './image-utils.js';
 import { initializeEconomyPage, openEconomyPage } from './economy-page.js';
 import { initializeArenaStatusPage, openArenaStatusPage } from './arena-status-page.js';
+import { dispatchGameplayPause } from './gameplay-pause.js';
 import { getProfile, getStoredWalletAuthHeaders } from '../wallet-connect.js';
 
 window.generatePersonality = generatePersonality;
@@ -1073,9 +1074,7 @@ function finishTokenSwitchConfirm(confirmed) {
   const modal = document.getElementById('token-switch-confirm');
   if (modal) modal.classList.remove('active');
 
-  window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
-    detail: { paused: false, reason: 'token_switch_confirm' }
-  }));
+  dispatchGameplayPause(false, 'token_switch_confirm');
 
   if (tokenSwitchConfirmResolve) tokenSwitchConfirmResolve(Boolean(confirmed));
   tokenSwitchConfirmResolve = null;
@@ -1092,9 +1091,7 @@ function confirmTokenSwitch(token) {
     body.textContent = `Switch to $${symbol}? This ends the current match and reloads the arena with fresh token art, stats, health bars, and stage assets.`;
   }
 
-  window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
-    detail: { paused: true, reason: 'token_switch_confirm' }
-  }));
+  dispatchGameplayPause(true, 'token_switch_confirm');
 
   modal.classList.add('active');
   const confirmButton = modal.querySelector('[data-token-switch-confirm]');

@@ -1,6 +1,8 @@
 import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
+import { dispatchGameplayPause } from './gameplay-pause.js';
 
 let openedFromHelp = false;
+let fightPauseHeld = false;
 let statusLoadPromise = null;
 
 function getElement(id) {
@@ -11,10 +13,15 @@ function fightIsActive() {
   return getElement('game')?.classList.contains('active') === true;
 }
 
-function setFightPause(paused) {
-  window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
-    detail: { paused, reason: 'arena_status_page' },
-  }));
+function holdFightPause() {
+  if (fightPauseHeld || !fightIsActive()) return;
+  fightPauseHeld = dispatchGameplayPause(true, 'arena_status_page');
+}
+
+function releaseFightPause() {
+  if (!fightPauseHeld) return;
+  dispatchGameplayPause(false, 'arena_status_page');
+  fightPauseHeld = false;
 }
 
 function setText(id, value) {
@@ -315,11 +322,13 @@ export function openArenaStatusPage({ fromHelp = false } = {}) {
   openedFromHelp = fromHelp;
   const backButton = getElement('btn-arena-status-back');
   if (backButton) backButton.textContent = fromHelp ? 'BACK TO GUIDE' : 'BACK TO GAME';
+  holdFightPause();
   if (fromHelp && typeof window.closeHelpModal === 'function') {
-    window.closeHelpModal({ resumeFight: false });
+    // The status-page pause is acquired first, so the fight cannot advance
+    // while Help hands off to this read-only overlay.
+    window.closeHelpModal();
   }
 
-  if (fightIsActive()) setFightPause(true);
   page.classList.remove('hidden');
   page.querySelector('.economy-page-scroll')?.scrollTo({ top: 0, behavior: 'auto' });
   getElement('btn-arena-status-close')?.focus();
@@ -334,11 +343,13 @@ export function closeArenaStatusPage() {
   page.classList.add('hidden');
   if (openedFromHelp && typeof window.openHelpModal === 'function') {
     openedFromHelp = false;
+    // Reacquire Help before releasing this page for an uninterrupted hold.
     window.openHelpModal();
+    releaseFightPause();
     return true;
   }
 
-  if (fightIsActive()) setFightPause(false);
+  releaseFightPause();
   if (window.location.pathname === '/arena' || window.location.pathname === '/arena/') {
     window.history.replaceState({}, '', '/');
   }

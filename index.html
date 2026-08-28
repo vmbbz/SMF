@@ -4239,7 +4239,7 @@
       if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
       const fightActive = document.getElementById('game')?.classList.contains('active');
       if (fightActive) {
-        window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
+        window.dispatchEvent(new CustomEvent('smf_gameplay_pause', {
           detail: { paused: true, reason: 'help_modal' }
         }));
       }
@@ -4280,13 +4280,11 @@
       }
     };
 
-    window.closeHelpModal = (options = {}) => {
+    window.closeHelpModal = () => {
       if (window.sfx && typeof window.sfx.playHeavyWhipImpact === 'function') window.sfx.playHeavyWhipImpact();
-      if (options.resumeFight !== false) {
-        window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
-          detail: { paused: false, reason: 'help_modal' }
-        }));
-      }
+      window.dispatchEvent(new CustomEvent('smf_gameplay_pause', {
+        detail: { paused: false, reason: 'help_modal' }
+      }));
       const modal = document.getElementById('help-modal');
       if (modal) {
         modal.classList.add('hidden');

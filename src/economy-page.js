@@ -1,6 +1,9 @@
+import { dispatchGameplayPause } from './gameplay-pause.js';
+
 const POLICY_ENDPOINT = '/api/economy/policy';
 
 let openedFromHelp = false;
+let fightPauseHeld = false;
 let policyLoadPromise = null;
 
 function getElement(id) {
@@ -11,10 +14,15 @@ function fightIsActive() {
   return getElement('game')?.classList.contains('active') === true;
 }
 
-function setFightPause(paused, reason) {
-  window.dispatchEvent(new CustomEvent('smf_wallet_action_pause', {
-    detail: { paused, reason },
-  }));
+function holdFightPause() {
+  if (fightPauseHeld || !fightIsActive()) return;
+  fightPauseHeld = dispatchGameplayPause(true, 'economy_page');
+}
+
+function releaseFightPause() {
+  if (!fightPauseHeld) return;
+  dispatchGameplayPause(false, 'economy_page');
+  fightPauseHeld = false;
 }
 
 function renderRuntimePolicy(policy) {
@@ -74,11 +82,13 @@ export function openEconomyPage({ fromHelp = false } = {}) {
   openedFromHelp = fromHelp;
   const backButton = getElement('btn-economy-back');
   if (backButton) backButton.textContent = fromHelp ? 'BACK TO GUIDE' : 'BACK TO GAME';
+  holdFightPause();
   if (fromHelp && typeof window.closeHelpModal === 'function') {
-    window.closeHelpModal({ resumeFight: false });
+    // The economy pause is acquired first, so releasing Help never advances
+    // the fight between these two informational overlays.
+    window.closeHelpModal();
   }
 
-  if (fightIsActive()) setFightPause(true, 'economy_page');
   page.classList.remove('hidden');
   page.querySelector('.economy-page-scroll')?.scrollTo({ top: 0, behavior: 'auto' });
   getElement('btn-economy-close')?.focus();
@@ -94,11 +104,14 @@ export function closeEconomyPage() {
 
   if (openedFromHelp && typeof window.openHelpModal === 'function') {
     openedFromHelp = false;
+    // Acquire Help before releasing this page to keep the fight continuously
+    // paused while the user returns to the guide.
     window.openHelpModal();
+    releaseFightPause();
     return true;
   }
 
-  if (fightIsActive()) setFightPause(false, 'economy_page');
+  releaseFightPause();
   if (window.location.pathname === '/economy' || window.location.pathname === '/economy/') {
     window.history.replaceState({}, '', '/');
   }

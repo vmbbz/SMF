@@ -4,6 +4,11 @@ import { Fighter, HADOUKEN_DATA } from "./fighter.js";
 import { DG } from "./ui.js";
 import { LiveBoostSystem } from "./live-boost-system.js";
 import { loadGameImage } from "./image-utils.js";
+import {
+  GAMEPLAY_PAUSE_EVENT,
+  WALLET_ACTION_PAUSE_EVENT,
+  getGameplayPauseCopy,
+} from "./gameplay-pause.js";
 
 // ─────────────────────────────────────────────
 // Projectile constants
@@ -173,14 +178,16 @@ export class Game {
     // queued: consume approved; inject hadouken on next frame
     this._hadoukenConsumePending = false;
     this._hadoukenConsumeQueued = false;
-    this.walletActionPaused = false;
-    this.walletActionPauseReason = "";
-    this.walletActionPauseReasons = new Set();
+    this.gameplayPaused = false;
+    this.gameplayPauseReason = "";
+    this.gameplayPauseReasons = new Set();
 
-    window.addEventListener('smf_wallet_action_pause', (e) => {
+    const applyGameplayPause = (e) => {
       const detail = e && e.detail ? e.detail : {};
-      this._setWalletActionPause(detail);
-    });
+      this._setGameplayPause(detail);
+    };
+    window.addEventListener(GAMEPLAY_PAUSE_EVENT, applyGameplayPause);
+    window.addEventListener(WALLET_ACTION_PAUSE_EVENT, applyGameplayPause);
   }
 
   /** Logical (CSS pixel) dimensions */
@@ -216,23 +223,23 @@ export class Game {
     this._loop(this.lastTime);
   }
 
-  _setWalletActionPause(detail = {}) {
-    const wasPaused = this.walletActionPaused;
+  _setGameplayPause(detail = {}) {
+    const wasPaused = this.gameplayPaused;
     const reason = String(detail.reason || 'wallet_action');
 
     if (detail.paused) {
-      this.walletActionPauseReasons.add(reason);
+      this.gameplayPauseReasons.add(reason);
     } else if (detail.clearAll || reason === '*') {
-      this.walletActionPauseReasons.clear();
+      this.gameplayPauseReasons.clear();
     } else {
-      this.walletActionPauseReasons.delete(reason);
+      this.gameplayPauseReasons.delete(reason);
     }
 
-    const reasons = Array.from(this.walletActionPauseReasons);
-    this.walletActionPaused = reasons.length > 0;
-    this.walletActionPauseReason = reasons[reasons.length - 1] || '';
+    const reasons = Array.from(this.gameplayPauseReasons);
+    this.gameplayPaused = reasons.length > 0;
+    this.gameplayPauseReason = reasons[reasons.length - 1] || '';
 
-    if (wasPaused && !this.walletActionPaused) {
+    if (wasPaused && !this.gameplayPaused) {
       this._resumeAfterUiPause();
     }
   }
@@ -284,7 +291,7 @@ export class Game {
     this.p1.floorY = this.floorY;
     this.p2.floorY = this.floorY;
 
-    if (this.walletActionPaused) {
+    if (this.gameplayPaused) {
       this._dt = 0;
       this._draw();
       this.p1Input.endFrame();
@@ -442,7 +449,7 @@ export class Game {
     }
 
     if (this.roundOver) return;
-    if (this.walletActionPaused) return;
+    if (this.gameplayPaused) return;
 
     this.roundTimer -= dt;
     if (this.roundTimer <= 0) {
@@ -1671,13 +1678,9 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.restore();
     }
 
-    if (this.walletActionPaused) {
-      const reason = this.walletActionPauseReason || 'wallet_action';
-      const statusCopy = reason === 'boost_refill_required'
-        ? 'REFILL BOOSTS TO RESUME'
-        : reason === 'help_modal'
-          ? 'CLOSE HELP TO RESUME'
-          : 'COMPLETE WALLET ACTION';
+    if (this.gameplayPaused) {
+      const reason = this.gameplayPauseReason || 'wallet_action';
+      const pauseCopy = getGameplayPauseCopy(reason);
       ctx.save();
       ctx.fillStyle = 'rgba(5, 8, 12, 0.78)';
       ctx.fillRect(0, 0, w, h);
@@ -1688,10 +1691,10 @@ Distance: ${Math.round(dist)}px | Timer: ${Math.ceil(this.roundTimer)}s`;
       ctx.fillText('PAUSED', w / 2, h / 2 - 28);
       ctx.font = 'bold 13px monospace';
       ctx.fillStyle = '#e8eef5';
-      ctx.fillText(statusCopy, w / 2, h / 2 + 4);
+      ctx.fillText(pauseCopy.status, w / 2, h / 2 + 4);
       ctx.font = '11px monospace';
       ctx.fillStyle = '#9fb1c2';
-      ctx.fillText(reason === 'help_modal' ? 'Your fight state is held safely.' : 'Open Profile/Wallet modal and complete the flow.', w / 2, h / 2 + 28);
+      ctx.fillText(pauseCopy.detail, w / 2, h / 2 + 28);
       ctx.restore();
     }
   }
