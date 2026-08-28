@@ -79,8 +79,9 @@ separate from eligibility and production blockers.
 - Commit `bfec907` is deployed from `main`. Production `/health` returned HTTP 200, `/api/arena/status` reported schema `2026-08-28.v9` with durable PostgreSQL persistence, and the restarted process restored its durable Alchemy cursor at slot `442434693`.
 - The first two recovered v9 cycles used 16 active candidates, advanced the cursor from the restored slot through `442436791` to `442437355`, and both completed with exact-window semantics and zero candidate failures or truncations. Their rolling-window counts changed naturally from 96 to 63 distinct confirmed observations as old signatures aged out; those observations are not trades, users, or USD volume.
 - One controlled Director request moved only `decisionsReturned` and `selectedDecisions` from 23 to 24. Authoritative matches, shares, and wallet sessions remained zero; the fresh durable decision identified `alchemy_solana_http_candidate_activity` as an input source.
+- Documentation commit `ea9bc9d` then triggered a controlled production restart. The new process retained all 24 durable Director decisions, restored the prior cursor at `442437355`, requested from `442437323`—the configured 32-slot rewind—and advanced to `442437835` in one fresh exact-window cycle with 16 active candidates and zero failures or truncations.
 - Cold-start candidate acquisition is still memory-dependent. A Birdeye HTTP 429 left the restarted worker at `waiting_for_candidates` until the market cache recovered and the next 180-second refresh ran. Persisting the last valid candidate set, or adding a bounded startup retry independent of the normal cadence, remains a production-resilience gap.
-- A controlled restart/rewind exercise, explicit duplicate-stability evidence, and a controlled Birdeye-failover exercise still need to be captured. Unit and integration tests cover these policies, but the readiness file must distinguish test proof from production proof.
+- Explicit duplicate-stability evidence and a controlled Birdeye-failover exercise still need to be captured. Unit and integration tests cover these policies, but the readiness file must distinguish test proof from production proof.
 - The deployed Alchemy app did not support the tested WebSocket heartbeat methods. Production may claim bounded Alchemy HTTP candidate-activity evidence only—not PubSub, a live WebSocket stream, Yellowstone, or native replay.
 
 ### Traction and judge-facing evidence gap
@@ -259,12 +260,12 @@ Completed foundations:
 4. Privacy-safe insert-only Arena Director, authoritative-match, and share telemetry is implemented with durable/fallback disclosure.
 5. The Help-linked `/arena` status page exposes honest judge-facing counters and verified-transaction links without leaking wallet or room identities.
 6. The free-tier Alchemy HTTP adapter, optional PubSub/Yellowstone transports, durable cursor schema, bounded recovery/dedupe logic, freshness and coverage gates, public cost/health contract, and Birdeye failover tests are implemented.
-7. Commit `bfec907` is deployed with production schema v9; two consecutive fresh exact-window Alchemy cycles, durable cursor advancement, and one isolated Director telemetry delta are publicly evidenced.
+7. Commit `bfec907` is deployed with production schema v9; consecutive fresh exact-window Alchemy cycles, a controlled durable restart with exact 32-slot rewind, cursor advancement, and one isolated Director telemetry delta are publicly evidenced.
 
 Next work, in order:
 
 1. Submit the in-progress Alchemy credit application, then register StickLash on the official AnsemHack page under ClawPump x pump.fun; do not claim Inference Markets unless UsePod becomes load-bearing. Apply for Helius credits through the official team flow after registration.
-2. Harden cold-start candidate recovery, then capture controlled restart/rewind, explicit duplicate stability, and controlled Birdeye-failover evidence. The v9 deployment, durable cursor restoration, two fresh score-complete cycles, exact semantics, and Director counter delta are already proven.
+2. Harden cold-start candidate recovery, then capture explicit duplicate stability and controlled Birdeye-failover evidence. The v9 deployment, fresh score-complete cycles, exact semantics, controlled restart/rewind, durable cursoring, and Director counter delta are already proven.
 3. Rehearse the `/arena` evidence page in a stream-ready 15-minute demo without seeding counters.
 4. Finalize both token identities and reserve accounts, then replace the retired burn path with the documented 100% game-token reward-vault transfer.
 5. Add the creator-fee SOL allocation ledger and execute one operator-approved `$ANSEM` market purchase before considering automation.
