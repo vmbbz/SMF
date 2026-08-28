@@ -48,12 +48,25 @@ def _token_mint(token: dict[str, Any]) -> str:
     return str(token.get("mint") or token.get("address") or "").strip()
 
 
-def _alchemy_activity(token: dict[str, Any]) -> tuple[float, bool]:
-    """Return bounded activity and whether a fresh stream made it scoreable."""
+ALCHEMY_ACTIVITY_INPUT_SOURCES = {
+    "solana_pubsub": "alchemy_solana_pubsub_candidate_activity",
+    "yellowstone_grpc": "alchemy_yellowstone_candidate_activity",
+}
+
+
+def _alchemy_activity(token: dict[str, Any]) -> tuple[float, bool, str | None]:
+    """Return bounded activity, eligibility, and verified transport provenance."""
     activity = token.get("alchemyActivity")
-    if not isinstance(activity, dict) or activity.get("scoreEligible") is not True:
-        return 0.0, False
-    return _number(activity.get("observedConfirmedTransactions")), True
+    if (
+        not isinstance(activity, dict)
+        or activity.get("provider") != "alchemy"
+        or activity.get("scoreEligible") is not True
+    ):
+        return 0.0, False, None
+    source = ALCHEMY_ACTIVITY_INPUT_SOURCES.get(str(activity.get("transport") or ""))
+    if source is None:
+        return 0.0, False, None
+    return _number(activity.get("observedConfirmedTransactions")), True, source
 
 
 def _merge_candidate(
@@ -90,7 +103,7 @@ def _reason_codes(token: dict[str, Any]) -> list[str]:
     volume = _number(token.get("volume24h"))
     movement = _signed_number(token.get("priceChange24h"))
     liquidity = _number(token.get("liquidity"))
-    confirmed_activity, activity_eligible = _alchemy_activity(token)
+    confirmed_activity, activity_eligible, _ = _alchemy_activity(token)
     sources = set(token.get("arenaSourceLists") or [])
     reasons: list[str] = []
 
@@ -126,7 +139,7 @@ def _score_candidate(token: dict[str, Any]) -> float:
     volume = _number(token.get("volume24h"))
     movement = abs(_signed_number(token.get("priceChange24h")))
     liquidity = _number(token.get("liquidity"))
-    confirmed_activity, activity_eligible = _alchemy_activity(token)
+    confirmed_activity, activity_eligible, _ = _alchemy_activity(token)
     sources = set(token.get("arenaSourceLists") or [])
 
     volume_score = min(math.log10(1 + volume) / 8, 1) * POLICY["volume24h"]
@@ -208,11 +221,12 @@ class ArenaDirector:
                 merged[mint] = _merge_candidate(merged.get(mint), raw_token, source_list)
 
         scored: list[dict[str, Any]] = []
-        alchemy_activity_used = False
+        alchemy_activity_sources: set[str] = set()
         for mint, token in merged.items():
             reasons = _reason_codes(token)
-            confirmed_activity, activity_eligible = _alchemy_activity(token)
-            alchemy_activity_used = alchemy_activity_used or activity_eligible
+            confirmed_activity, activity_eligible, activity_source = _alchemy_activity(token)
+            if activity_eligible and activity_source:
+                alchemy_activity_sources.add(activity_source)
             scored.append(
                 {
                     "mint": mint,
@@ -280,7 +294,7 @@ class ArenaDirector:
             "inputSources": [
                 "birdeye_trending",
                 "birdeye_graduated",
-                *(["alchemy_yellowstone_candidate_activity"] if alchemy_activity_used else []),
+                *sorted(alchemy_activity_sources),
             ],
             "candidateCount": len(scored),
             "opponent": opponent,

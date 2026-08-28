@@ -24,6 +24,7 @@ def configured_stream(*, freshness_seconds: int = 20) -> AlchemyYellowstoneStrea
         AlchemyStreamConfig(
             enabled=True,
             api_key="test-only-secret",
+            transport="yellowstone_grpc",
             freshness_seconds=freshness_seconds,
         )
     )
@@ -139,6 +140,7 @@ async def test_transaction_update_records_only_matching_candidate_mint() -> None
 async def test_fresh_stream_enrichment_is_explicit_and_bounded() -> None:
     stream = configured_stream()
     now = datetime.now(timezone.utc)
+    await stream.set_candidates([MINT_B])
     await stream.store.record_activity("b" * 64, 888, now, [MINT_B])
     stream._connected = True
     stream._last_received_at = now
@@ -156,6 +158,7 @@ async def test_fresh_stream_enrichment_is_explicit_and_bounded() -> None:
 async def test_disabled_or_misconfigured_health_never_leaks_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ALCHEMY_STREAM_ENABLED", "1")
     monkeypatch.setenv("ALCHEMY_API_KEY", "never-print-this-key")
+    monkeypatch.setenv("ALCHEMY_STREAM_TRANSPORT", "yellowstone_grpc")
     monkeypatch.setenv(
         "ALCHEMY_YELLOWSTONE_ENDPOINT",
         "https://solana-mainnet.g.alchemy.com/v2/never-print-this-key",

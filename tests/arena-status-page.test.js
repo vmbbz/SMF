@@ -14,8 +14,10 @@ describe('Public Arena Status evidence page', () => {
     expect(html).toContain('LIVE ARENA STATUS →');
     expect(html).toContain('id="arena-status-page"');
     expect(html).toContain('ARENA STATUS');
-    expect(html).toContain('ALCHEMY YELLOWSTONE STREAM');
+    expect(html).toContain('ALCHEMY SOLANA STREAM');
     expect(html).toContain('id="arena-stream-status"');
+    expect(readFileSync(resolve(__dirname, '../src/arena-status-page.js'), 'utf-8'))
+      .toContain('coverage complete via');
   });
 
   test('separates responses, server rounds, shares, wallets, and onchain evidence', () => {
@@ -40,6 +42,7 @@ describe('Public Arena Status evidence page', () => {
   test('ships all telemetry dependencies in the production container', () => {
     expect(dockerfile).toContain('COPY arena_telemetry.py .');
     expect(dockerfile).toContain('COPY alchemy_stream.py .');
+    expect(dockerfile).toContain('COPY alchemy_pubsub.py .');
     expect(dockerfile).toContain('COPY yellowstone_proto/ yellowstone_proto/');
     expect(dockerfile).toContain('COPY competition.py .');
     expect(dockerfile).toContain('COPY economy.py .');

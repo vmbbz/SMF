@@ -1,59 +1,176 @@
-# Alchemy Yellowstone Candidate Activity Stream
+# Alchemy Solana Candidate Activity Stream
 
-Status: the adapter, persistence model, Director integration, tests, and public
-health contract are implemented. Production must still be configured with an
-Alchemy key that has Yellowstone access before StickLash may describe the
-stream as live.
+Status: the free-tier Solana PubSub transport is the production default. The
+paid Yellowstone implementation remains available only through an explicit
+transport setting for a later sponsored-credit evaluation.
 
-## Why this integration exists
+## Purpose and evidence boundary
 
-Birdeye is good at answering **which tokens should be considered** and at
-providing the market measurements that define a fighter: 24-hour volume,
-price movement, liquidity, and listing state. It is a snapshot API, not a
-continuous transaction stream.
+Birdeye answers **which tokens should be considered** and supplies the market
+measurements that shape their fighters: volume, price movement, liquidity, and
+listing state. Alchemy supplies a separate, deliberately narrow fact:
 
-Alchemy Yellowstone adds a different and deliberately narrower fact:
+> During a recent bounded window, how many confirmed Solana transactions
+> observed by this backend mentioned a currently monitored candidate mint?
 
-> During a recent bounded window, how many confirmed Solana transactions seen
-> by this backend mentioned a currently subscribed candidate mint?
+That can make the Arena Director more responsive between discovery refreshes.
+It does not prove that an observation was a swap, buy, sale, unique trader,
+StickLash user, token amount, USD amount, revenue event, or StickLash-generated
+volume. No stream observation affects ELO, leaderboards, boost settlement, or
+reward eligibility.
 
-That signal makes the Arena Director more responsive between Birdeye list
-refreshes without inventing financial meaning. The adapter does not parse swap
-instructions or establish direction, token amount, USD value, trader identity,
-or economic ownership. Therefore StickLash calls the signal a **confirmed
-candidate transaction observation**, never a trade, buy, sale, user, or unit of
-volume.
-
-## Data and control flow
+## Production data flow
 
 ```text
 Birdeye trending + graduated discovery
                  |
-                 | candidate mints, refreshed every 180s
+                 | at most 32 candidate mints
                  v
-Alchemy Yellowstone gRPC
-  confirmed slots + successful non-vote transactions
+Alchemy Solana PubSub on one backend WebSocket
+  rootSubscribe (finalized freshness heartbeat)
+  logsSubscribe (one confirmed mentions filter per mint)
                  |
-                 | bounded queue, replay, dedupe
+                 | bounded queue + signature dedupe
                  v
-PostgreSQL cursor + recent signature-hash cache
+PostgreSQL slot cursor + recent signature-hash cache
+                 ^
+                 | bounded getSignaturesForAddress gap backfill
                  |
-                 | fresh per-mint observation count
+Alchemy Solana HTTP JSON-RPC
+                 |
                  v
 Arena Director v0.2
   Birdeye base score + optional max-8 activity bonus
                  |
                  +----> provider provenance on each decision
-                 |
                  +----> /api/arena/status -> /arena
 ```
 
-The browser and Android bundle never connect to Yellowstone and never receive
-the Alchemy API key.
+The browser and Android WebView never connect to Alchemy and never receive the
+API key. The backend constructs authenticated `/v2/<key>` endpoints only in
+memory. Public responses expose the sanitized Alchemy hostname, never a path,
+query, credential, provider payload, or raw signature.
 
-## Director scoring boundary
+## Why PubSub is the default
 
-Arena Director v0.2 preserves the established Birdeye policy:
+Alchemy Yellowstone gRPC requires paid or sponsored access. Standard Solana
+JSON-RPC and PubSub are available on Alchemy's free plan and are sufficient for
+StickLash's current bounded candidate set. Paying before public demand exists
+would add cost without changing the game loop or core market discovery.
+
+The default therefore uses `ALCHEMY_STREAM_TRANSPORT=solana_pubsub`. Operators
+may later select `yellowstone_grpc` after credits or paid access are confirmed.
+This is a transport change only: persistence, dedupe, scoring, failover, and
+public evidence boundaries remain shared.
+
+Free does not mean unlimited. PubSub bandwidth and HTTP calls consume account
+capacity. Keep the filters and caps in this document, configure Alchemy usage
+alerts, and inspect the dashboard before raising any limit.
+
+## PubSub subscription contract
+
+One authenticated WebSocket connects to:
+
+```text
+wss://solana-mainnet.g.alchemy.com/v2/<server-only-key>
+```
+
+It owns these subscriptions:
+
+- one `rootSubscribe` heartbeat; root notifications represent finalized slots;
+- one `logsSubscribe` per candidate mint;
+- each log filter contains exactly one `{ "mentions": ["<mint>"] }` value,
+  because Solana permits only one pubkey in a `mentions` filter;
+- each log subscription requests `commitment: "confirmed"`;
+- only successful notifications (`err == null`) become observations; and
+- candidate filters are capped at 32 by default and refreshed from Birdeye.
+
+Only the server lifecycle's timed Birdeye refresh loop may replace this filter
+set. Public Director and market request parameters can choose how many results
+to return, but enrichment is read-only: a client cannot mutate subscriptions,
+force filter churn, or trigger HTTP recovery work.
+
+The worker tracks request IDs, acknowledged subscription IDs, pending filters,
+failed filters, and removals. A candidate receives no Alchemy score until every
+candidate filter in the current set is acknowledged and recovery coverage is
+complete. This all-or-nothing gate prevents a token with a working subscription
+from receiving an unfair bonus while another token's filter is unavailable.
+
+## Freshness, queueing, and reconnects
+
+The root heartbeat proves that the WebSocket is receiving current Solana data;
+it does not prove that candidate transactions occurred. Transport freshness is
+the age of the latest accepted root or log notification.
+
+Ingress passes through a bounded queue. If processing cannot accept an update
+within five seconds, the connection fails closed, increments `droppedUpdates`,
+and reconnects with exponential backoff. Reconnect delays start at one second
+and cap at 30 seconds by default. WebSocket and HTTP errors are reduced to safe
+codes such as `websocket_http_401` or `http_rpc_timeout`.
+
+The app reports a zero observation count only when all of these are true:
+
+1. the WebSocket is connected and fresh;
+2. at least one candidate exists;
+3. every current candidate has an acknowledged log subscription;
+4. reconnect recovery covers the active observation window; and
+5. the queried activity cache actually contains zero matching signatures.
+
+Otherwise the count is `null`, not a misleading zero, and the Alchemy bonus is
+disabled.
+
+## HTTP reconnect recovery: not native replay
+
+Solana PubSub does not replay missed notifications. StickLash therefore performs
+a bounded recovery pass through Alchemy HTTP JSON-RPC:
+
+1. load the latest processed slot from PostgreSQL;
+2. fetch the current confirmed slot with `getSlot`;
+3. rewind the cursor by 32 slots;
+4. clamp the floor to at most 512 slots behind the current slot;
+5. call `getSignaturesForAddress` once per candidate with a default limit of 25;
+6. retain only successful signatures inside the slot range;
+7. hash each signature with SHA-256 and merge duplicate mint attribution; and
+8. expose failures or truncation publicly.
+
+This is **bounded HTTP signature backfill**, not Yellowstone replay. If a result
+hits its per-candidate limit before reaching the requested floor, health reports
+`truncatedCandidates > 0`, marks coverage incomplete, returns a `null` activity
+count, and applies no Alchemy score. Repeated reconnects serialize backfills and
+defer them to the configured minimum interval to protect free-tier usage.
+
+If no cursor exists on first activation, or a candidate is newly added, the
+worker requests the full bounded candidate window instead of pretending that a
+new global cursor represents that mint's history. If this initial backfill is
+unavailable or truncated, the activity count remains `null` until every current
+candidate filter and the finalized-root heartbeat are acknowledged and one full
+activity window has subsequently been observed continuously. At that point the
+failed historical gap is outside the scored window, `coverageBasis` changes to
+`continuous_live_window`, and the old failure/truncation remains visible as
+reliability evidence rather than permanently disabling current observations.
+
+## Dedupe and persistence
+
+When `DATABASE_URL` is healthy, startup creates two operational tables:
+
+- `alchemy_stream_cursor`: singleton latest processed slot and timestamp;
+- `alchemy_stream_transactions`: recent signature hash, slot, observation time,
+  and matching candidate mints.
+
+The same signature may arrive from two mint subscriptions. The store merges the
+mint set while counting the signature once globally and once for each mentioned
+candidate. Raw signatures, logs, transaction bodies, account lists, wallet
+addresses, instructions, and provider responses are not stored.
+
+Rows older than the configured dedupe-retention window are pruned. These tables
+are operational recovery state, not permanent analytics, public telemetry,
+financial ledgers, or reward sources. If PostgreSQL fails, bounded process
+memory remains available but public status becomes `degraded` and explicitly
+reports a non-durable cursor.
+
+## Director scoring
+
+Arena Director v0.2 preserves Birdeye as the dominant policy:
 
 | Signal | Maximum points |
 |---|---:|
@@ -63,209 +180,134 @@ Arena Director v0.2 preserves the established Birdeye policy:
 | Graduated-discovery bonus | 10 |
 | Confirmed Alchemy candidate activity | 8 |
 
-Existing thin-liquidity and missing-volume penalties remain in force, and the
-final score remains capped at 100.
-
-For `n` observed confirmed transactions in the configured activity window, the
-optional bonus is:
+For `n` observed confirmed transactions in the configured activity window:
 
 ```text
 min(log2(1 + n) / 5, 1) * 8
 ```
 
-The logarithm matters. One observation is useful evidence of current activity,
-but a noisy token cannot overwhelm liquidity, volume, and movement simply by
-generating many transactions. The maximum eight-point weight can influence a
-close choice while leaving Birdeye market quality as the dominant policy.
+The logarithm and eight-point cap prevent noisy activity from overwhelming
+market quality. PubSub decisions identify the optional source as
+`alchemy_solana_pubsub_candidate_activity`; paid Yellowstone decisions identify
+`alchemy_yellowstone_candidate_activity`. Unknown or stale transport labels are
+not score-eligible.
 
-The bonus is score-eligible only while all of these are true:
-
-1. the gRPC connection is active;
-2. confirmed slot updates are within `ALCHEMY_STREAM_FRESHNESS_SECONDS`;
-3. the token is inside the current bounded candidate subscription; and
-4. the observation falls inside `ALCHEMY_STREAM_ACTIVITY_WINDOW_SECONDS`.
-
-If any condition fails, the Director applies zero Alchemy bonus and omits
-`alchemy_yellowstone_candidate_activity` from `inputSources`. Birdeye discovery
-and base scoring continue, so an Alchemy outage cannot block opponent selection.
-
-## Subscription contract
-
-The backend uses the official Alchemy Solana mainnet Yellowstone endpoint by
-default:
-
-```text
-https://solana-mainnet.g.alchemy.com
-```
-
-Authentication is the server-only `X-Token` metadata header. Configuration
-rejects credentials embedded in endpoint paths and rejects non-Alchemy hosts,
-preventing an alternate provider from being mislabeled as Alchemy in public
-provenance.
-
-Every active subscription contains:
-
-- confirmed commitment;
-- confirmed slot updates with `filter_by_commitment` enabled;
-- at most 32 currently discovered candidate mints by default;
-- a transaction `account_include` filter, whose values are OR-matched;
-- `vote = false`;
-- `failed = false`.
-
-The stream observes full confirmed transactions because candidate attribution
-requires intersecting static and address-table-loaded account keys with the
-subscribed mints. It stores no transaction body, wallet address, instruction,
-provider response body, or raw signature.
-
-## Replay, reconnect, and backpressure
-
-The lifecycle worker implements these recovery rules:
-
-1. persist the latest processed confirmed slot;
-2. reconnect with exponential backoff from 1 to 30 seconds;
-3. rewind the saved slot by 32 slots to cover overlap and ordinary reorg risk;
-4. clamp the request to the provider-reported first available slot when that
-   unary method is supported;
-5. also clamp to a conservative configured maximum of 6,000 slots;
-6. deduplicate replay overlap by SHA-256 hash of the transaction signature;
-7. respond to Yellowstone ping messages through the bidirectional request
-   stream; and
-8. put ingress behind a bounded queue.
-
-If the processing queue remains full for five seconds, the connection is
-closed and re-established from the rewound durable cursor. The affected update
-is counted in `droppedUpdates`; replay is the recovery mechanism. No unbounded
-memory growth is allowed.
-
-Alchemy's overview currently advertises 6,000 replayable slots, while its
-historical-replay guide describes a much larger approximate window. StickLash
-uses 6,000 as the conservative default and additionally honors
-`SubscribeReplayInfo.first_available`. Operators must not increase the local
-limit merely to make a stronger public claim; first verify the actual account
-entitlement and observed server behavior.
-
-## Persistence model
-
-When `DATABASE_URL` is healthy, startup creates two operational tables:
-
-- `alchemy_stream_cursor`: singleton latest processed slot and timestamp;
-- `alchemy_stream_transactions`: recent signature hash, slot, observation
-  timestamp, and matching candidate mints.
-
-The second table is a bounded replay-dedupe/activity cache. Rows older than the
-configured retention window are deleted. These tables are intentionally not
-the insert-only arena telemetry tables, a financial ledger, a leaderboard
-source, or a reward eligibility source.
-
-If PostgreSQL fails, the stream may continue with bounded process memory, but
-public health reports `cursorDurable: false` and status `degraded`. Production
-acceptance requires a durable PostgreSQL cursor.
+Birdeye discovery and base scoring continue through every Alchemy failure.
 
 ## Public health contract
 
-`GET /api/arena/status` includes `marketStream` with these evidence classes:
+`GET /api/arena/status` returns `marketStream` with:
 
-- configuration: enabled, configured, sanitized endpoint host, protocol;
-- transport: status, freshness threshold, last connection/update, age, slot;
-- subscription: candidate count, cap, filters, refresh and activity windows;
-- replay: saved cursor, durability, rewind, requested replay slot and clamp
-  reason;
-- reliability: reconnects, received/processed/dropped updates and sanitized
-  error code;
-- activity: observation count for the current candidate set and window;
-- failover: explicit Birdeye base-selection behavior.
+- `transport`: `solana_pubsub` or `yellowstone_grpc`;
+- configuration and sanitized endpoint host;
+- connection state, freshness, latest update, and latest slot;
+- requested, active, pending, and failed candidate filter counts;
+- recovery mode, durable cursor, floor slot, limits, failures, truncation,
+  coverage completeness, and whether completeness came from bounded backfill or
+  a subsequently observed continuous live window;
+- reconnect, receive, process, drop, and sanitized-error counters; and
+- an activity count only when the evidence gate is complete.
 
-Important status meanings:
-
-| Status | Meaning | Alchemy score allowed? |
+| Status | Meaning | Activity score allowed? |
 |---|---|---:|
-| `disabled` | Operator has not requested the stream | No |
-| `misconfigured` | Enabled, but key or safe endpoint is missing/invalid | No |
-| `connecting` | Initial connection has not produced a fresh update | No |
-| `live` | Fresh transport and durable cursor | Yes |
-| `degraded` | Fresh transport but process-memory cursor | Yes, disclosed as non-durable |
-| `stale` | Last transport update exceeded freshness threshold | No |
-| `reconnecting` | Connection failed/closed and backoff is active | No |
+| `disabled` | Operator has not enabled the worker | No |
+| `misconfigured` | Key, transport, or safe endpoint is missing/invalid | No |
+| `connecting` | Connection has not produced fresh evidence | No |
+| `live` | Fresh, complete candidate coverage and durable cursor | Yes |
+| `degraded` | Fresh but non-durable or recovery/filter coverage is incomplete | Only when `activity.scoreEligible` is explicitly true |
+| `stale` | Latest transport update exceeded the threshold | No |
+| `reconnecting` | Connection failed and backoff is active | No |
 | `stopped` | Configured worker is not running | No |
 
-A zero observation count is returned only while the stream is fresh and at
-least one candidate is subscribed. Otherwise the value is `null`, not a
-misleading zero.
+Always use `activity.scoreEligible`, not status text alone, when interpreting a
+Director decision.
 
 ## Configuration
 
 | Variable | Default | Purpose |
 |---|---:|---|
 | `ALCHEMY_STREAM_ENABLED` | `0` | Explicit activation gate |
-| `ALCHEMY_API_KEY` | empty | Private `X-Token` credential |
-| `ALCHEMY_YELLOWSTONE_ENDPOINT` | mainnet Alchemy host | Server endpoint; HTTPS Alchemy hosts only |
-| `ALCHEMY_STREAM_FRESHNESS_SECONDS` | `20` | Maximum age for score eligibility |
-| `ALCHEMY_STREAM_ACTIVITY_WINDOW_SECONDS` | `180` | Per-candidate observation window |
-| `ALCHEMY_STREAM_MAX_CANDIDATES` | `32` | Bounded account filter size |
-| `ALCHEMY_STREAM_CANDIDATE_REFRESH_SECONDS` | `180` | Birdeye-to-stream filter refresh |
-| `ALCHEMY_STREAM_REWIND_SLOTS` | `32` | Reconnect overlap |
-| `ALCHEMY_STREAM_MAX_REPLAY_SLOTS` | `6000` | Conservative local replay clamp |
+| `ALCHEMY_API_KEY` | empty | Server-only Alchemy app key |
+| `ALCHEMY_STREAM_TRANSPORT` | `solana_pubsub` | Free PubSub default or explicit paid Yellowstone |
+| `ALCHEMY_SOLANA_WS_ENDPOINT` | mainnet Alchemy WSS host | PubSub host without `/v2/key` |
+| `ALCHEMY_SOLANA_HTTP_ENDPOINT` | mainnet Alchemy HTTPS host | Recovery RPC host without `/v2/key` |
+| `ALCHEMY_YELLOWSTONE_ENDPOINT` | mainnet Alchemy HTTPS host | Paid transport only; no key in path |
+| `ALCHEMY_STREAM_FRESHNESS_SECONDS` | `20` | Maximum transport age |
+| `ALCHEMY_STREAM_ACTIVITY_WINDOW_SECONDS` | `180` | Per-candidate count window |
+| `ALCHEMY_STREAM_MAX_CANDIDATES` | `32` | Bounded log-subscription count |
+| `ALCHEMY_STREAM_CANDIDATE_REFRESH_SECONDS` | `180` | Birdeye filter refresh |
+| `ALCHEMY_STREAM_REWIND_SLOTS` | `32` | Recovery overlap |
+| `ALCHEMY_STREAM_BACKFILL_MAX_SLOTS` | `512` | Free-path slot gap cap |
+| `ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE` | `25` | Free-path history cap |
+| `ALCHEMY_STREAM_BACKFILL_MIN_INTERVAL_SECONDS` | `60` | Reconnect cost guard |
 | `ALCHEMY_STREAM_QUEUE_SIZE` | `2048` | Bounded ingress capacity |
-| `ALCHEMY_STREAM_DEDUPE_RETENTION_SECONDS` | `21600` | Operational signature-hash retention |
-| `ALCHEMY_STREAM_RECONNECT_MIN_SECONDS` | `1` | Initial backoff |
-| `ALCHEMY_STREAM_RECONNECT_MAX_SECONDS` | `30` | Maximum backoff |
-| `ALCHEMY_STREAM_RPC_TIMEOUT_SECONDS` | `12` | Unary setup timeout |
+| `ALCHEMY_STREAM_DEDUPE_RETENTION_SECONDS` | `21600` | Signature-hash retention |
+| `ALCHEMY_STREAM_RECONNECT_MIN_SECONDS` | `1` | Initial reconnect delay |
+| `ALCHEMY_STREAM_RECONNECT_MAX_SECONDS` | `30` | Maximum reconnect delay |
+| `ALCHEMY_STREAM_RPC_TIMEOUT_SECONDS` | `12` | Connection/RPC timeout |
+| `ALCHEMY_STREAM_MAX_REPLAY_SLOTS` | `6000` | Yellowstone-only replay clamp |
 
-`SOLANA_RPC` remains a separate JSON-RPC endpoint. StickLash does not scrape a
-key out of that URL or silently activate Yellowstone.
+Endpoint settings accept only credential-free Alchemy hosts with the expected
+scheme. `SOLANA_RPC` remains a separate backend RPC setting and never silently
+enables activity streaming.
 
 ## Production activation and proof gate
 
-1. Confirm Yellowstone access for the intended Alchemy app/account.
-2. Add `ALCHEMY_API_KEY` as a secret environment value in Render.
-3. Keep `ALCHEMY_YELLOWSTONE_ENDPOINT` on the correct Solana network.
-4. Set `ALCHEMY_STREAM_ENABLED=1` and deploy.
-5. Confirm startup reports both the durable cursor and worker startup without
-   printing a credential.
-6. Request `/api/arena/status` and require:
-   - `marketStream.status == "live"`;
-   - `marketStream.freshness == "fresh"`;
-   - `marketStream.replay.cursorDurable == true`;
-   - a recent `lastUpdateAt` and advancing `lastSlot`;
-   - `droppedUpdates == 0` during the acceptance window.
-7. Request `/api/arena/director/next`. Confirm the Alchemy input source appears
-   only while fresh and its provider snapshot is marked score-eligible.
-8. Restart once and verify the saved cursor is reused with a rewound
-   `requestedFromSlot`, while replay duplicates do not inflate observations.
-9. Let the stream become unavailable in a controlled non-production test and
-   verify Birdeye still returns a Director selection with no Alchemy bonus.
+1. Create an Alchemy Solana Mainnet app on the free plan.
+2. Store `ALCHEMY_API_KEY` as a secret Render environment value.
+3. Set `ALCHEMY_STREAM_TRANSPORT=solana_pubsub` and
+   `ALCHEMY_STREAM_ENABLED=1`.
+4. Keep the endpoint variables on their credential-free defaults and deploy.
+5. Require `/health` HTTP 200 and durable PostgreSQL persistence.
+6. Inspect `/api/arena/status` and require:
+   - `transport == "solana_pubsub"`;
+   - `status == "live"`;
+   - `freshness == "fresh"`;
+   - active candidate count equals requested candidate count;
+   - `replay.cursorDurable == true`;
+   - `replay.coverageComplete == true`;
+   - zero backfill failures and truncations;
+   - a recent update and advancing slot; and
+   - no credential anywhere in the response or logs.
+7. Request one Director decision. The PubSub input source may appear only while
+   `activity.scoreEligible` is true.
+8. Restart once and verify bounded backfill occurs without duplicate inflation.
+9. Disable or interrupt Alchemy in a controlled environment and verify Birdeye
+   still selects an opponent with no Alchemy bonus.
 
-Until those checks pass on the deployed service, public copy must say the
-Alchemy adapter is implemented but not live. Do not use an API key in a URL,
-browser bundle, screenshot, log, commit, or issue.
+Do not seed or simulate public counters for a demo.
+
+## Optional Yellowstone evaluation later
+
+After Alchemy credits or paid access are approved, set
+`ALCHEMY_STREAM_TRANSPORT=yellowstone_grpc` in a controlled evaluation service.
+That path retains confirmed slot/transaction filters, native replay cursoring,
+ping responses, backpressure, dedupe, and public provenance. Do not call the
+production path Yellowstone unless live telemetry reports that exact transport.
 
 ## Allowed and prohibited claims
 
 Allowed after the production proof gate:
 
-- "Alchemy Yellowstone streams confirmed Solana candidate activity into the
-  Arena Director."
-- "StickLash persists a replay cursor and exposes stream freshness/failover."
-- "Recent confirmed candidate activity contributes a bounded optional score."
+- "Alchemy Solana PubSub supplies confirmed candidate-activity observations."
+- "StickLash exposes stream freshness, candidate coverage, bounded recovery,
+  dedupe, and Birdeye failover."
+- "Recent confirmed candidate activity contributes a capped optional score."
 
-Not supported by this adapter:
+Not supported:
 
+- "Every observation is a trade or unique trader."
 - "Alchemy supplies StickLash prices or USD volume."
-- "Every observation is a trade or a unique trader."
-- "Observed activity is StickLash-generated onchain volume."
-- "The stream proves revenue, leaderboard eligibility, or reward entitlement."
-- "No updates were ever missed" solely because `droppedUpdates` is zero.
+- "The stream proves StickLash revenue or generated onchain volume."
+- "The stream creates leaderboard points or reward entitlement."
+- "PubSub has native replay" or "no event can be missed."
 
-## Protocol provenance and references
+## References
 
-The Python bindings are generated from the signed
-`rpcpool/yellowstone-grpc` release `v15.1.2+solana.4.2.0`. Exact asset hashes
-and the Apache-2.0 protocol license are retained under
-`vendor/yellowstone/v15.1.2/`.
-
-- [Alchemy Yellowstone overview](https://www.alchemy.com/docs/reference/yellowstone-grpc-overview)
-- [Alchemy SubscribeRequest reference](https://www.alchemy.com/docs/reference/yellowstone-grpc-subscribe-request)
-- [Alchemy transaction filters](https://www.alchemy.com/docs/reference/yellowstone-grpc-subscribe-transactions)
-- [Alchemy best practices](https://www.alchemy.com/docs/reference/yellowstone-grpc-best-practices)
-- [Alchemy historical replay](https://www.alchemy.com/docs/reference/yellowstone-grpc-historical-replay)
-- [Pinned Yellowstone release](https://github.com/rpcpool/yellowstone-grpc/releases/tag/v15.1.2%2Bsolana.4.2.0)
+- [Alchemy Solana subscription endpoints](https://www.alchemy.com/docs/reference/solana-subscription-api-endpoints)
+- [Alchemy `logsSubscribe`](https://www.alchemy.com/docs/reference/logs-subscribe)
+- [Alchemy pricing plans](https://www.alchemy.com/docs/reference/pricing-plans)
+- [Alchemy compute-unit costs](https://www.alchemy.com/docs/reference/compute-unit-costs)
+- [Alchemy Yellowstone quickstart](https://www.alchemy.com/docs/reference/yellowstone-grpc-quickstart)
+- [Solana `logsSubscribe`](https://solana.com/docs/rpc/websocket/logssubscribe)
+- [Solana `getSignaturesForAddress`](https://solana.com/docs/rpc/http/getsignaturesforaddress)

@@ -27,9 +27,9 @@ from arena_telemetry import ArenaTelemetryStore, ensure_telemetry_schema
 from alchemy_stream import (
     AlchemyStreamConfig,
     AlchemyStreamStore,
-    AlchemyYellowstoneStream,
     ensure_alchemy_stream_schema,
 )
+from alchemy_pubsub import create_alchemy_stream
 from birdeye_service import birdeye_service
 from dexscreener_service import dexscreener_service
 from economy import build_public_economy_policy
@@ -105,7 +105,7 @@ boost_pg_pool: asyncpg.Pool | None = None
 cleanup_task: RoomCleanupTask | None = None
 matchmaking_task: MatchmakingTask | None = None
 arena_telemetry = ArenaTelemetryStore()
-alchemy_stream = AlchemyYellowstoneStream(AlchemyStreamConfig.from_env())
+alchemy_stream = create_alchemy_stream(AlchemyStreamConfig.from_env())
 alchemy_candidate_refresh_task: asyncio.Task[None] | None = None
 
 # ─────────────────────────────────────────────
@@ -661,15 +661,18 @@ async def lifespan(app: Litestar) -> AsyncGenerator[None, None]:
         else:
             print("[auth] OIDC not configured")
 
-        alchemy_stream = AlchemyYellowstoneStream(AlchemyStreamConfig.from_env(), alchemy_store)
+        alchemy_stream = create_alchemy_stream(AlchemyStreamConfig.from_env(), alchemy_store)
         if await alchemy_stream.start():
             alchemy_candidate_refresh_task = asyncio.create_task(
                 _alchemy_candidate_refresh_loop(),
                 name="alchemy-candidate-refresh",
             )
-            print("[alchemy-stream] Yellowstone worker started")
+            print(f"[alchemy-stream] {alchemy_stream.transport_name} worker started")
         elif alchemy_stream.config.enabled:
-            print("[alchemy-stream] Enabled but not configured; ALCHEMY_API_KEY and a valid HTTPS endpoint are required")
+            print(
+                "[alchemy-stream] Enabled but not configured; a supported transport, "
+                "ALCHEMY_API_KEY, and valid Alchemy endpoints are required"
+            )
         else:
             print("[alchemy-stream] Disabled by configuration")
 

@@ -1,4 +1,4 @@
-"""Bounded Alchemy Yellowstone stream for Arena Director activity evidence.
+"""Bounded Alchemy stream for Arena Director activity evidence.
 
 Birdeye remains the candidate-discovery and base market-data provider. This
 module watches confirmed transactions that mention those candidate mint
@@ -18,7 +18,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Iterable, Sequence
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import asyncpg  # type: ignore[import-untyped]
 import grpc
@@ -36,6 +36,10 @@ geyser_pb2_grpc: Any = _geyser_pb2_grpc
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_ALCHEMY_YELLOWSTONE_ENDPOINT = "https://solana-mainnet.g.alchemy.com"
+DEFAULT_ALCHEMY_SOLANA_WS_ENDPOINT = "wss://solana-mainnet.g.alchemy.com"
+DEFAULT_ALCHEMY_SOLANA_HTTP_ENDPOINT = "https://solana-mainnet.g.alchemy.com"
+DEFAULT_ALCHEMY_STREAM_TRANSPORT = "solana_pubsub"
+SUPPORTED_ALCHEMY_STREAM_TRANSPORTS = {"solana_pubsub", "yellowstone_grpc"}
 YELLOWSTONE_PROTOCOL_VERSION = "v15.1.2+solana.4.2.0"
 BASE58_ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 SOLANA_ADDRESS_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
@@ -130,7 +134,10 @@ def calculate_replay_start(
 class AlchemyStreamConfig:
     enabled: bool
     api_key: str = field(repr=False)
+    transport: str = DEFAULT_ALCHEMY_STREAM_TRANSPORT
     endpoint: str = field(default=DEFAULT_ALCHEMY_YELLOWSTONE_ENDPOINT, repr=False)
+    websocket_endpoint: str = field(default=DEFAULT_ALCHEMY_SOLANA_WS_ENDPOINT, repr=False)
+    http_endpoint: str = field(default=DEFAULT_ALCHEMY_SOLANA_HTTP_ENDPOINT, repr=False)
     freshness_seconds: int = 20
     activity_window_seconds: int = 180
     max_candidates: int = 32
@@ -142,6 +149,9 @@ class AlchemyStreamConfig:
     candidate_refresh_seconds: int = 180
     dedupe_retention_seconds: int = 21_600
     rpc_timeout_seconds: int = 12
+    backfill_max_slots: int = 512
+    backfill_limit_per_candidate: int = 25
+    backfill_min_interval_seconds: int = 60
 
     @classmethod
     def from_env(cls) -> "AlchemyStreamConfig":
@@ -169,9 +179,21 @@ class AlchemyStreamConfig:
         return cls(
             enabled=_env_bool("ALCHEMY_STREAM_ENABLED"),
             api_key=os.environ.get("ALCHEMY_API_KEY", "").strip(),
+            transport=os.environ.get(
+                "ALCHEMY_STREAM_TRANSPORT",
+                DEFAULT_ALCHEMY_STREAM_TRANSPORT,
+            ).strip().lower(),
             endpoint=os.environ.get(
                 "ALCHEMY_YELLOWSTONE_ENDPOINT",
                 DEFAULT_ALCHEMY_YELLOWSTONE_ENDPOINT,
+            ).strip(),
+            websocket_endpoint=os.environ.get(
+                "ALCHEMY_SOLANA_WS_ENDPOINT",
+                DEFAULT_ALCHEMY_SOLANA_WS_ENDPOINT,
+            ).strip(),
+            http_endpoint=os.environ.get(
+                "ALCHEMY_SOLANA_HTTP_ENDPOINT",
+                DEFAULT_ALCHEMY_SOLANA_HTTP_ENDPOINT,
             ).strip(),
             freshness_seconds=_env_int(
                 "ALCHEMY_STREAM_FRESHNESS_SECONDS",
@@ -227,15 +249,33 @@ class AlchemyStreamConfig:
                 minimum=3,
                 maximum=60,
             ),
+            backfill_max_slots=_env_int(
+                "ALCHEMY_STREAM_BACKFILL_MAX_SLOTS",
+                512,
+                minimum=32,
+                maximum=6_000,
+            ),
+            backfill_limit_per_candidate=_env_int(
+                "ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE",
+                25,
+                minimum=1,
+                maximum=100,
+            ),
+            backfill_min_interval_seconds=_env_int(
+                "ALCHEMY_STREAM_BACKFILL_MIN_INTERVAL_SECONDS",
+                60,
+                minimum=30,
+                maximum=1_800,
+            ),
         )
 
     @property
     def endpoint_parts(self):
         return urlparse(self.endpoint)
 
-    @property
-    def endpoint_valid(self) -> bool:
-        parsed = self.endpoint_parts
+    @staticmethod
+    def _safe_alchemy_endpoint(endpoint: str, *, scheme: str) -> bool:
+        parsed = urlparse(endpoint)
         try:
             port_valid = parsed.port is None or 1 <= parsed.port <= 65_535
         except ValueError:
@@ -243,7 +283,7 @@ class AlchemyStreamConfig:
         hostname = parsed.hostname or ""
         alchemy_host = hostname == "alchemy.com" or hostname.endswith(".alchemy.com")
         return bool(
-            parsed.scheme == "https"
+            parsed.scheme == scheme
             and alchemy_host
             and port_valid
             and not parsed.username
@@ -254,7 +294,26 @@ class AlchemyStreamConfig:
         )
 
     @property
+    def endpoint_valid(self) -> bool:
+        return self._safe_alchemy_endpoint(self.endpoint, scheme="https")
+
+    @property
+    def websocket_endpoint_valid(self) -> bool:
+        return self._safe_alchemy_endpoint(self.websocket_endpoint, scheme="wss")
+
+    @property
+    def http_endpoint_valid(self) -> bool:
+        return self._safe_alchemy_endpoint(self.http_endpoint, scheme="https")
+
+    @property
+    def transport_supported(self) -> bool:
+        return self.transport in SUPPORTED_ALCHEMY_STREAM_TRANSPORTS
+
+    @property
     def endpoint_host(self) -> str | None:
+        if self.transport == "solana_pubsub":
+            parsed = urlparse(self.websocket_endpoint)
+            return parsed.hostname if self.websocket_endpoint_valid and self.http_endpoint_valid else None
         return self.endpoint_parts.hostname if self.endpoint_valid else None
 
     @property
@@ -264,8 +323,20 @@ class AlchemyStreamConfig:
         return f"{host}:{parsed.port or 443}"
 
     @property
+    def websocket_uri(self) -> str:
+        return f"{self.websocket_endpoint.rstrip('/')}/v2/{quote(self.api_key, safe='')}"
+
+    @property
+    def http_rpc_url(self) -> str:
+        return f"{self.http_endpoint.rstrip('/')}/v2/{quote(self.api_key, safe='')}"
+
+    @property
     def configured(self) -> bool:
-        return bool(self.api_key and self.endpoint_valid)
+        if not self.api_key or not self.transport_supported:
+            return False
+        if self.transport == "yellowstone_grpc":
+            return self.endpoint_valid
+        return self.websocket_endpoint_valid and self.http_endpoint_valid
 
 
 async def ensure_alchemy_stream_schema(pool: asyncpg.Pool) -> None:  # type: ignore[type-arg]
@@ -395,6 +466,24 @@ class AlchemyStreamStore:
                     )
                 self._database_healthy = True
                 inserted = result.endswith("1")
+                if not inserted:
+                    async with self._pool.acquire() as conn:
+                        await conn.execute(
+                            """
+                            UPDATE alchemy_stream_transactions
+                            SET slot = GREATEST(slot, $2),
+                                observed_at = GREATEST(observed_at, $3),
+                                mints = (
+                                    SELECT ARRAY_AGG(DISTINCT value ORDER BY value)
+                                    FROM UNNEST(mints || $4::TEXT[]) AS mint_value(value)
+                                )
+                            WHERE signature_hash = $1
+                            """,
+                            event.signature_hash,
+                            event.slot,
+                            event.observed_at,
+                            list(event.mints),
+                        )
                 remembered = await self._remember(event)
                 return inserted and remembered
             except Exception as exc:
@@ -405,7 +494,15 @@ class AlchemyStreamStore:
 
     async def _remember(self, event: _ActivityEvent) -> bool:
         async with self._lock:
-            if event.signature_hash in self._events:
+            existing = self._events.get(event.signature_hash)
+            if existing is not None:
+                self._events[event.signature_hash] = _ActivityEvent(
+                    signature_hash=event.signature_hash,
+                    slot=max(existing.slot, event.slot),
+                    observed_at=max(existing.observed_at, event.observed_at),
+                    mints=tuple(sorted(set(existing.mints).union(event.mints))),
+                )
+                self._events.move_to_end(event.signature_hash)
                 return False
             self._events[event.signature_hash] = event
             while len(self._events) > self._memory_event_limit:
@@ -531,6 +628,11 @@ class _ProcessingBackpressure(RuntimeError):
 class AlchemyYellowstoneStream:
     """Lifecycle-managed Yellowstone connection with replay and health evidence."""
 
+    transport_name = "yellowstone_grpc"
+    protocol_version = YELLOWSTONE_PROTOCOL_VERSION
+    provider_channel = "yellowstone_candidate_activity"
+    task_name = "alchemy-yellowstone-stream"
+
     def __init__(self, config: AlchemyStreamConfig, store: AlchemyStreamStore | None = None) -> None:
         self.config = config
         self.store = store or AlchemyStreamStore()
@@ -581,7 +683,7 @@ class AlchemyYellowstoneStream:
         self._stop_event.clear()
         self._state = "connecting"
         self._processor_task = asyncio.create_task(self._processor_loop(), name="alchemy-stream-processor")
-        self._run_task = asyncio.create_task(self._run(), name="alchemy-yellowstone-stream")
+        self._run_task = asyncio.create_task(self._run(), name=self.task_name)
         return True
 
     async def stop(self) -> None:
@@ -616,11 +718,80 @@ class AlchemyYellowstoneStream:
         normalized = tuple(sorted(selected))
         if normalized == self._candidate_mints:
             return normalized
+        previous = self._candidate_mints
         self._candidate_mints = normalized
         self._subscription_updates += 1
+        await self._on_candidates_changed(previous, normalized)
+        return normalized
+
+    async def _on_candidates_changed(
+        self,
+        previous: tuple[str, ...],
+        current: tuple[str, ...],
+    ) -> None:
+        del previous, current
         if self._connected and self._request_queue is not None:
             await self._enqueue_request(self._build_subscription_request(from_slot=None))
-        return normalized
+
+    def _active_candidate_mints(self) -> tuple[str, ...]:
+        return self._candidate_mints
+
+    def _public_endpoint_host(self) -> str | None:
+        return self.config.endpoint_host
+
+    def _subscription_health(self) -> dict[str, Any]:
+        return {
+            "candidateCount": len(self._candidate_mints),
+            "activeCandidateCount": len(self._active_candidate_mints()),
+            "maxCandidates": self.config.max_candidates,
+            "transactionFilter": "account_include_any",
+            "voteTransactions": False,
+            "failedTransactions": False,
+            "activityWindowSeconds": self.config.activity_window_seconds,
+            "refreshSeconds": self.config.candidate_refresh_seconds,
+        }
+
+    def _recovery_health(self, cursor: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "mode": "yellowstone_native_replay",
+            "nativeProviderReplay": True,
+            "cursorSlot": cursor["slot"],
+            "cursorUpdatedAt": cursor["updatedAt"],
+            "cursorPersistence": cursor["persistence"],
+            "cursorDurable": cursor["durable"],
+            "rewindSlots": self.config.replay_rewind_slots,
+            "maxReplaySlots": self.config.replay_max_slots,
+            "requestedFromSlot": self._replay_from_slot,
+            "providerFirstAvailableSlot": self._provider_first_available,
+            "reason": self._replay_reason,
+        }
+
+    def _reliability_health(self) -> dict[str, Any]:
+        return {
+            "reconnects": self._reconnects,
+            "receivedUpdates": self._received_updates,
+            "processedUpdates": self._processed_updates,
+            "droppedUpdates": self._dropped_updates,
+            "candidateTransactionsThisProcess": self._candidate_transactions,
+            "subscriptionUpdates": self._subscription_updates,
+            "lastErrorCode": self._last_error_code,
+            "lastDedupePruneAt": _public_time(self._last_pruned_at),
+        }
+
+    def _transport_degraded(self) -> bool:
+        return False
+
+    def _observation_coverage_complete(self, now: datetime | None = None) -> bool:
+        del now
+        return True
+
+    def _sanitize_transport_error(self, exc: Exception) -> str:
+        if isinstance(exc, grpc.aio.AioRpcError):
+            return f"grpc_{exc.code().name.lower()}"
+        return type(exc).__name__
+
+    def _connection_closed(self) -> None:
+        self._request_queue = None
 
     def _build_subscription_request(self, *, from_slot: int | None) -> Any:
         transactions: dict[str, Any] = {}
@@ -670,13 +841,11 @@ class AlchemyYellowstoneStream:
                     self._last_error_code = "stream_closed"
             except asyncio.CancelledError:
                 raise
-            except grpc.aio.AioRpcError as exc:
-                self._last_error_code = f"grpc_{exc.code().name.lower()}"
             except Exception as exc:
-                self._last_error_code = type(exc).__name__
+                self._last_error_code = self._sanitize_transport_error(exc)
             finally:
                 self._connected = False
-                self._request_queue = None
+                self._connection_closed()
 
             if self._stop_event.is_set():
                 break
@@ -848,21 +1017,20 @@ class AlchemyYellowstoneStream:
         self,
         *candidate_lists: Sequence[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], ...]:
-        """Attach score-eligible activity only while the slot stream is fresh."""
-        ordered_mints: list[str] = []
-        for candidate_list in candidate_lists:
-            for token in candidate_list:
-                mint = str(token.get("mint") or token.get("address") or "").strip()
-                if mint:
-                    ordered_mints.append(mint)
-        await self.set_candidates(ordered_mints)
-
+        """Attach activity for lifecycle-managed filters without mutating them."""
         freshness, _ = self._transport_freshness()
-        score_eligible = self._connected and freshness == "fresh" and bool(self._candidate_mints)
+        active_mints = self._active_candidate_mints()
+        active_mint_set = set(active_mints)
+        score_eligible = (
+            self._connected
+            and freshness == "fresh"
+            and bool(active_mints)
+            and self._observation_coverage_complete()
+        )
         snapshot: dict[str, Any] | None = None
         if score_eligible:
             snapshot = await self.store.activity_snapshot(
-                list(self._candidate_mints),
+                list(active_mints),
                 since=_utc_now() - timedelta(seconds=self.config.activity_window_seconds),
             )
 
@@ -873,10 +1041,10 @@ class AlchemyYellowstoneStream:
                 copied = dict(token)
                 mint = str(copied.get("mint") or copied.get("address") or "").strip()
                 metric = (snapshot or {}).get("byMint", {}).get(mint)
-                if score_eligible and metric is not None:
+                if score_eligible and mint in active_mint_set and metric is not None:
                     copied["alchemyActivity"] = {
                         "provider": "alchemy",
-                        "transport": "yellowstone_grpc",
+                        "transport": self.transport_name,
                         "freshness": freshness,
                         "scoreEligible": True,
                         "windowSeconds": self.config.activity_window_seconds,
@@ -894,10 +1062,12 @@ class AlchemyYellowstoneStream:
         freshness, age_seconds = self._transport_freshness(now)
         cursor = await self.store.cursor_status()
 
+        active_mints = self._active_candidate_mints()
         activity: dict[str, Any]
-        if self._connected and freshness == "fresh" and self._candidate_mints:
+        coverage_complete = self._observation_coverage_complete(now)
+        if self._connected and freshness == "fresh" and active_mints and coverage_complete:
             snapshot = await self.store.activity_snapshot(
-                list(self._candidate_mints),
+                list(active_mints),
                 since=now - timedelta(seconds=self.config.activity_window_seconds),
             )
             activity = {
@@ -928,7 +1098,26 @@ class AlchemyYellowstoneStream:
                 "scoreEligible": False,
             }
         elif self._connected and freshness == "unavailable":
-            status = "connecting"
+            activity = {
+                "availability": "waiting_for_transport_update",
+                "observedConfirmedTransactions": None,
+                "latestObservedAt": None,
+                "scoreEligible": False,
+            }
+        elif self._connected and not active_mints:
+            activity = {
+                "availability": "waiting_for_subscriptions",
+                "observedConfirmedTransactions": None,
+                "latestObservedAt": None,
+                "scoreEligible": False,
+            }
+        elif self._connected and freshness == "fresh" and not coverage_complete:
+            activity = {
+                "availability": "stream_coverage_incomplete",
+                "observedConfirmedTransactions": None,
+                "latestObservedAt": None,
+                "scoreEligible": False,
+            }
         else:
             activity = {
                 "availability": "stream_not_fresh",
@@ -943,7 +1132,9 @@ class AlchemyYellowstoneStream:
             status = "misconfigured"
         elif self._connected and freshness == "stale":
             status = "stale"
-        elif self._connected and freshness == "fresh" and not cursor["durable"]:
+        elif self._connected and freshness == "fresh" and (
+            not cursor["durable"] or self._transport_degraded()
+        ):
             status = "degraded"
         elif self._connected and freshness == "fresh":
             status = "live"
@@ -952,49 +1143,22 @@ class AlchemyYellowstoneStream:
 
         return {
             "provider": "alchemy",
-            "transport": "yellowstone_grpc",
-            "protocolVersion": YELLOWSTONE_PROTOCOL_VERSION,
+            "transport": self.transport_name,
+            "protocolVersion": self.protocol_version,
             "enabled": self.config.enabled,
             "configured": self.config.configured,
             "status": status,
             "freshness": freshness,
             "freshnessThresholdSeconds": self.config.freshness_seconds,
-            "endpointHost": self.config.endpoint_host,
+            "endpointHost": self._public_endpoint_host(),
             "commitment": "confirmed",
             "lastConnectedAt": _public_time(self._last_connected_at),
             "lastUpdateAt": _public_time(self._last_received_at),
             "ageSeconds": age_seconds,
             "lastSlot": self._last_slot or cursor["slot"],
-            "subscription": {
-                "candidateCount": len(self._candidate_mints),
-                "maxCandidates": self.config.max_candidates,
-                "transactionFilter": "account_include_any",
-                "voteTransactions": False,
-                "failedTransactions": False,
-                "activityWindowSeconds": self.config.activity_window_seconds,
-                "refreshSeconds": self.config.candidate_refresh_seconds,
-            },
-            "replay": {
-                "cursorSlot": cursor["slot"],
-                "cursorUpdatedAt": cursor["updatedAt"],
-                "cursorPersistence": cursor["persistence"],
-                "cursorDurable": cursor["durable"],
-                "rewindSlots": self.config.replay_rewind_slots,
-                "maxReplaySlots": self.config.replay_max_slots,
-                "requestedFromSlot": self._replay_from_slot,
-                "providerFirstAvailableSlot": self._provider_first_available,
-                "reason": self._replay_reason,
-            },
-            "reliability": {
-                "reconnects": self._reconnects,
-                "receivedUpdates": self._received_updates,
-                "processedUpdates": self._processed_updates,
-                "droppedUpdates": self._dropped_updates,
-                "candidateTransactionsThisProcess": self._candidate_transactions,
-                "subscriptionUpdates": self._subscription_updates,
-                "lastErrorCode": self._last_error_code,
-                "lastDedupePruneAt": _public_time(self._last_pruned_at),
-            },
+            "subscription": self._subscription_health(),
+            "replay": self._recovery_health(cursor),
+            "reliability": self._reliability_health(),
             "activity": {
                 **activity,
                 "windowSeconds": self.config.activity_window_seconds,
@@ -1010,7 +1174,7 @@ class AlchemyYellowstoneStream:
         health = await self.public_health()
         return {
             "provider": "alchemy",
-            "channel": "yellowstone_candidate_activity",
+            "channel": self.provider_channel,
             "state": health["status"],
             "freshness": health["freshness"],
             "snapshotAt": health["lastUpdateAt"],

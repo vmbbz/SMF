@@ -264,8 +264,9 @@ CREATE TABLE IF NOT EXISTS arena_share_events (
     recorded_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Operational Alchemy Yellowstone replay state. These tables are a bounded
--- ingestion cursor/dedupe cache, not gameplay telemetry or a reward ledger.
+-- Operational Alchemy stream recovery state shared by free PubSub and the
+-- optional Yellowstone transport. These tables are a bounded ingestion
+-- cursor/dedupe cache, not gameplay telemetry or a reward ledger.
 CREATE TABLE IF NOT EXISTS alchemy_stream_cursor (
     singleton       SMALLINT PRIMARY KEY CHECK (singleton = 1),
     last_slot       BIGINT NOT NULL CHECK (last_slot >= 0),

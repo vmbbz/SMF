@@ -112,6 +112,8 @@ def test_fresh_alchemy_activity_adds_only_the_bounded_optional_bonus() -> None:
     enriched = {
         **base,
         "alchemyActivity": {
+            "provider": "alchemy",
+            "transport": "solana_pubsub",
             "scoreEligible": True,
             "observedConfirmedTransactions": 31,
         },
@@ -122,7 +124,7 @@ def test_fresh_alchemy_activity_adds_only_the_bounded_optional_bonus() -> None:
     delta = with_activity["candidates"][0]["score"] - baseline["candidates"][0]["score"]
 
     assert 0 < delta <= with_activity["policy"]["confirmedActivityBonus"]
-    assert "alchemy_yellowstone_candidate_activity" in with_activity["inputSources"]
+    assert "alchemy_solana_pubsub_candidate_activity" in with_activity["inputSources"]
     assert "recent_confirmed_onchain_activity" in with_activity["candidates"][0]["reasons"]
     assert with_activity["candidates"][0]["metrics"]["alchemyConfirmedTransactions"] == 31
 
@@ -133,6 +135,8 @@ def test_stale_alchemy_activity_cannot_change_selection_or_score() -> None:
     stale = {
         **base,
         "alchemyActivity": {
+            "provider": "alchemy",
+            "transport": "solana_pubsub",
             "scoreEligible": False,
             "observedConfirmedTransactions": 999_999,
         },
@@ -143,5 +147,5 @@ def test_stale_alchemy_activity_cannot_change_selection_or_score() -> None:
 
     assert stale_decision["candidates"][0]["score"] == baseline["candidates"][0]["score"]
     assert stale_decision["decisionId"] == baseline["decisionId"]
-    assert "alchemy_yellowstone_candidate_activity" not in stale_decision["inputSources"]
+    assert "alchemy_solana_pubsub_candidate_activity" not in stale_decision["inputSources"]
     assert stale_decision["candidates"][0]["metrics"]["alchemyConfirmedTransactions"] is None

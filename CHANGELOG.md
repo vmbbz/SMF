@@ -2,6 +2,29 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Free-Tier Alchemy Solana Stream
+
+### Added
+
+- Added a server-only Alchemy Solana PubSub transport that works with the existing free-tier app key: one finalized root heartbeat and one confirmed `logsSubscribe` filter per candidate mint.
+- Added bounded `getSignaturesForAddress` reconnect backfill with a durable slot cursor, 32-slot overlap, per-candidate history caps, serialized cooldowns, truncation evidence, and signature-hash deduplication.
+- Added active, pending, and failed subscription counts plus explicit recovery mode and coverage completeness to public arena health.
+- Added explicit coverage provenance so judges can distinguish a complete bounded backfill from a complete continuously observed live window.
+
+### Changed
+
+- Made `solana_pubsub` the default Alchemy transport. Paid Yellowstone remains available only through `ALCHEMY_STREAM_TRANSPORT=yellowstone_grpc` for a later credit-funded evaluation.
+- Arena Director provenance now distinguishes `alchemy_solana_pubsub_candidate_activity` from Yellowstone and rejects unknown transport labels.
+- Public Director requests now consume matching stream evidence read-only; only the timed server lifecycle may mutate candidate filters or trigger candidate backfill.
+- Public Help and `/arena` copy now describe PubSub and bounded HTTP recovery rather than claiming Yellowstone or native replay.
+- Public arena evidence schema advanced to `2026-08-28.v3` for transport-specific subscription and recovery evidence.
+
+### Safety and Cost Gates
+
+- No candidate receives an Alchemy bonus until every current filter is acknowledged, transport freshness is current, and observation-window coverage is complete.
+- Backfill failures or truncation produce `null` activity evidence instead of a misleading zero; eligibility returns only after every filter and the root heartbeat remain active for one complete scoring window, while the old recovery fault stays visible.
+- The Alchemy key remains backend-only, endpoint configuration rejects embedded credentials, and free-tier usage remains bounded to at most 32 candidate filters and 25 backfill signatures per candidate by default.
+
 ## 2026-08-28 - Autonomous Token Exhibition
 
 ### Added

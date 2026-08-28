@@ -40,14 +40,14 @@ StickLash already has a credible foundation:
 - Solana wallet ownership is verified server-side, existing boost balances are server-authoritative, and new boost purchases are disabled while the retired burn path is replaced by game-token reward-vault transfers.
 - Public ranked now has wallet-bound random matchmaking, immutable Skill/Boosted room policies, separate league/input ELO, server-owned results, idempotent settlement, a Skill paid-special block, and a three-charge Boosted cap.
 - Arena Director responses, authoritative multiplayer outcomes, and generated share cards now enter privacy-safe insert-only telemetry. `/api/arena/status` and the Help-linked `/arena` page separate these counters from aggregate wallet sessions and server-verified Solana transaction signatures.
-- The backend can use an Alchemy Solana RPC through `SOLANA_RPC`. A separate server-only Yellowstone adapter now implements candidate filters, confirmed-slot freshness, replay cursor persistence, overlap dedupe, reconnect/backpressure handling, Birdeye fallback, and public health evidence.
+- The backend can use an Alchemy Solana RPC through `SOLANA_RPC`. A separate server-only, free-tier-compatible PubSub adapter implements narrow confirmed candidate filters, finalized-root freshness, bounded HTTP gap backfill, durable cursor persistence, overlap dedupe, reconnect/backpressure handling, Birdeye fallback, and public health evidence. Paid Yellowstone remains an explicit later transport.
 - The JavaScript test runner is declared and repeatable; the current browser suite exercises the restored landing paths, wallet/session boundaries, AI fallback, WebRTC, and public economy copy.
 
 ## Material gaps
 
-- Production Alchemy streaming is not yet proven active: it still requires a server-only key with Yellowstone access, explicit Render activation, and the live/restart/failover proof gate. A Solana DAS metadata adapter is also not implemented.
+- Production Alchemy PubSub is not yet proven active: it requires the existing server-only free-tier key, explicit Render activation, and the live/restart/failover proof gate. A Solana DAS metadata adapter is also not implemented.
 - There is no registered AnsemHack project identity, verified project X handle, launched ClawPump token, canonical game-token mint, or confirmed $ANSEM mint in configuration.
-- The README correctly distinguishes the implemented adapter from a live production stream. The submission and demo must preserve that boundary until `/api/arena/status` proves fresh streaming and a durable replay cursor.
+- The README correctly distinguishes the implemented adapter from a live production stream. The submission and demo must preserve that boundary until `/api/arena/status` proves fresh streaming, complete candidate coverage, and a durable recovery cursor.
 - Browser-local AI and Endless outcomes are not server-attested, so the public page correctly reports Director responses rather than claiming completed "fights directed." Social impressions are also not instrumented; only generated share cards are counted.
 - Reward reserves, epoch eligibility, anti-collusion scoring, snapshots, and token claims remain deliberately disabled and unimplemented.
 - After all non-breaking npm fixes, the production audit still reports 8 transitive advisories in the Solana Web3/SPL chain; npm's suggested forced resolutions are breaking downgrades and were rejected. The development-only Capacitor 6 CLI also retains `tar` advisories. These require isolated SDK/Capacitor migration testing, not an unsafe `npm audit fix --force`; until then, the CLI must process only trusted project inputs.
@@ -81,7 +81,7 @@ Every response includes a decision ID, policy version, timestamp, selected oppon
 
 ```text
 Birdeye discovery + DexScreener detail
-                 |             Alchemy Yellowstone
+                 |            Alchemy Solana PubSub
                  |            confirmed candidate activity
                  |                    |
                  v                    v
@@ -108,8 +108,8 @@ The web app and Android bundle use the same director endpoint. If it is unavaila
 - The UI visibly identifies the Arena Director's pick without blocking the match.
 - Existing market endpoints remain backward compatible.
 - Each Director response includes public-safe provider snapshot time, observation time, freshness, fallback state, and telemetry persistence state.
-- The Alchemy worker uses confirmed, successful non-vote transaction filters for a bounded candidate set; its key never enters browser or Android assets.
-- Reconnects rewind a persisted slot, clamp to the provider/local replay window, deduplicate signature-hash overlap, and expose cursor durability and sanitized reliability counters.
+- The Alchemy worker uses one confirmed, successful `logsSubscribe` mentions filter per mint for a bounded candidate set; its key never enters browser or Android assets.
+- Reconnects rewind a persisted slot, run bounded HTTP signature backfill, deduplicate overlap, and expose cursor durability, coverage, truncation, and sanitized reliability counters without claiming native replay.
 - A stale or unavailable Alchemy stream contributes no score and cannot block Birdeye-based Director selection.
 - Authoritative multiplayer outcomes are idempotently recorded without wallet addresses or player names in telemetry tables.
 - `/api/arena/status` returns explicit durable or bounded-memory scope, and `/arena` renders missing durable evidence as not available instead of zero.
@@ -119,14 +119,15 @@ The web app and Android bundle use the same director endpoint. If it is unavaila
 
 ### Alchemy data plane
 
-The code supports Alchemy in two bounded roles after account approval:
+The code supports Alchemy in three bounded roles:
 
 - `SOLANA_RPC` for private server-side transaction verification and standard Solana JSON-RPC.
-- A narrow Yellowstone gRPC worker for current candidate activity, with confirmed filters, reconnect backoff, a durable rewound replay cursor, bounded ingress, signature-hash dedupe, and no browser-exposed API key.
+- A free-tier Solana PubSub worker for current candidate activity, with one confirmed mint filter per subscription, finalized-root freshness, reconnect backoff, bounded HTTP recovery, durable cursoring, signature-hash dedupe, and no browser-exposed API key.
+- An optional Yellowstone gRPC transport retained for a later sponsored-credit or paid evaluation, not as a current release dependency.
 
-Alchemy's generic Token API documentation is EVM-oriented. For Solana metadata and fungible assets, use the Solana DAS endpoints or standard Solana RPC methods instead. Alchemy documentation currently differs on Yellowstone plan prerequisites, so account entitlement must be confirmed before gRPC becomes a release dependency.
+Alchemy's generic Token API documentation is EVM-oriented. For Solana metadata and fungible assets, use the Solana DAS endpoints or standard Solana RPC methods instead. Yellowstone account entitlement must be confirmed before gRPC becomes a release dependency.
 
-The adapter now follows that boundary: it enriches the Director with at most eight points and becomes score-ineligible when stale. Birdeye/DexScreener remain the base path. Production still must pass the activation and restart/failover proof gate before the project claims Alchemy-powered live streaming. See [Alchemy Yellowstone Candidate Activity Stream](docs/ALCHEMY_STREAM.md).
+The adapter now follows that boundary: it enriches the Director with at most eight points and becomes score-ineligible when stale or coverage is incomplete. Birdeye/DexScreener remain the base path. Production still must pass the activation and restart/failover proof gate before the project claims Alchemy-powered live streaming. See [Alchemy Solana Candidate Activity Stream](docs/ALCHEMY_STREAM.md).
 
 ### Judge-facing evidence
 
@@ -151,12 +152,12 @@ Completed foundations:
 3. Wallet-bound, server-authoritative Skill and Boosted ranked settlement is implemented; token rewards remain off.
 4. Privacy-safe insert-only Arena Director, authoritative-match, and share telemetry is implemented with durable/fallback disclosure.
 5. The Help-linked `/arena` status page exposes honest judge-facing counters and verified-transaction links without leaking wallet or room identities.
-6. The Alchemy Yellowstone adapter, durable cursor schema, replay/dedupe logic, freshness gating, public health contract, and Birdeye failover tests are implemented.
+6. The free-tier Alchemy PubSub adapter, optional Yellowstone transport, durable cursor schema, bounded backfill/dedupe logic, freshness and coverage gates, public health contract, and Birdeye failover tests are implemented.
 
 Next work, in order:
 
-1. Register the project and apply for Alchemy and Helius credits through the official flows; these are human account actions.
-2. Configure the Alchemy key/access in Render and prove live freshness, durable restart replay, dedupe, fallback, and public stream health on production.
+1. Submit the in-progress Alchemy credit application, then register StickLash on the official AnsemHack page under ClawPump x pump.fun; do not claim Inference Markets unless UsePod becomes load-bearing. Apply for Helius credits through the official team flow after registration.
+2. Deploy the free-tier PubSub default and prove live freshness, complete filter coverage, bounded restart backfill, dedupe, Birdeye fallback, durable cursoring, and public stream health on production.
 3. Rehearse the `/arena` evidence page in a stream-ready 15-minute demo without seeding counters.
 4. Finalize both token identities and reserve accounts, then replace the retired burn path with the documented 100% game-token reward-vault transfer.
 5. Add the creator-fee SOL allocation ledger and execute one operator-approved `$ANSEM` market purchase before considering automation.

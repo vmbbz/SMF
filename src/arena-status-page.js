@@ -190,11 +190,16 @@ function renderMarketStream(stream) {
       'arena-stream-candidates',
       'arena-stream-observations',
     ]) setText(id, 'NOT AVAILABLE');
-    setText('arena-stream-cursor', 'Replay cursor evidence is not available.');
+    setText('arena-stream-cursor', 'Recovery cursor evidence is not available.');
     setText('arena-stream-reliability', 'Reconnect and queue evidence is not available.');
     return;
   }
 
+  const transportLabels = {
+    solana_pubsub: 'ALCHEMY SOLANA PUBSUB',
+    yellowstone_grpc: 'ALCHEMY YELLOWSTONE GRPC',
+  };
+  setText('arena-stream-title', transportLabels[stream.transport] || 'ALCHEMY SOLANA STREAM');
   const status = String(stream.status || 'unavailable').replaceAll('_', ' ').toUpperCase();
   const isFresh = stream.freshness === 'fresh' && ['live', 'degraded'].includes(stream.status);
   setStreamStatus(status, isFresh);
@@ -211,15 +216,34 @@ function renderMarketStream(stream) {
 
   const replay = stream.replay || {};
   const cursorLabel = replay.cursorDurable === true ? 'durable PostgreSQL cursor' : 'process-memory cursor';
+  const recoveryMode = replay.mode === 'http_signature_backfill'
+    ? 'bounded HTTP signature backfill; not native replay'
+    : replay.mode === 'yellowstone_native_replay'
+      ? 'native Yellowstone replay'
+      : 'recovery mode unavailable';
+  const requestedSlotLabel = replay.mode === 'http_signature_backfill'
+    ? 'backfill floor slot'
+    : 'requested replay slot';
+  const coverageBasis = String(replay.coverageBasis || 'incomplete').replaceAll('_', ' ');
+  const coverageLabel = replay.coverageComplete === true
+    ? `coverage complete via ${coverageBasis}`
+    : 'coverage incomplete';
   setText(
     'arena-stream-cursor',
-    `${cursorLabel} · saved slot ${formatArenaCount(replay.cursorSlot)} · requested replay slot ${formatArenaCount(replay.requestedFromSlot)} · ${String(replay.reason || 'not available').replaceAll('_', ' ')}.`
+    `${cursorLabel} · ${recoveryMode} · ${coverageLabel} · saved slot ${formatArenaCount(replay.cursorSlot)} · ${requestedSlotLabel} ${formatArenaCount(replay.requestedFromSlot)} · ${String(replay.reason || 'not available').replaceAll('_', ' ')}.`
   );
 
   const reliability = stream.reliability || {};
+  const activeCandidates = stream.subscription?.activeCandidateCount;
+  const candidateCoverage = activeCandidates === null || activeCandidates === undefined
+    ? ''
+    : ` · active candidate filters ${formatArenaCount(activeCandidates)}/${formatArenaCount(stream.subscription?.candidateCount)}`;
+  const backfillEvidence = replay.mode === 'http_signature_backfill'
+    ? ` · backfill failures ${formatArenaCount(replay.failures)} · truncated candidates ${formatArenaCount(replay.truncatedCandidates)}`
+    : '';
   setText(
     'arena-stream-reliability',
-    `Reconnects ${formatArenaCount(reliability.reconnects)} · dropped updates ${formatArenaCount(reliability.droppedUpdates)} · last sanitized error ${reliability.lastErrorCode || 'NONE'}.`
+    `Reconnects ${formatArenaCount(reliability.reconnects)} · dropped updates ${formatArenaCount(reliability.droppedUpdates)}${candidateCoverage}${backfillEvidence} · last sanitized error ${reliability.lastErrorCode || 'NONE'}.`
   );
 }
 

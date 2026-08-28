@@ -14,6 +14,7 @@ COPY server.py .
 COPY arena_director.py .
 COPY arena_telemetry.py .
 COPY alchemy_stream.py .
+COPY alchemy_pubsub.py .
 COPY auth.py .
 COPY birdeye_service.py .
 COPY dexscreener_service.py .
