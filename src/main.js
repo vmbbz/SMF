@@ -2698,8 +2698,8 @@ let characterList = [];
 /** Fetch characters from server and show the character select screen */
 async function showCharacterSelect() {
   showScreen('characterSelect');
-  const fightBtn = document.getElementById('btn-char-fight');
-  fightBtn.disabled = true;
+  const watchBtn = document.getElementById('btn-char-watch');
+  if (watchBtn) watchBtn.disabled = true;
   selectedCharacter = null;
 
   try {
@@ -2731,7 +2731,8 @@ function renderCharacterCards() {
       selectedCharacter = card.dataset.char;
       container.querySelectorAll('.char-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
-      document.getElementById('btn-char-fight').disabled = false;
+      const watchBtn = document.getElementById('btn-char-watch');
+      if (watchBtn) watchBtn.disabled = false;
     });
   });
 }
@@ -2755,8 +2756,10 @@ async function startCharacterFight() {
   const fightStripEl = document.getElementById('fight-trending-strip');
   if (fightStripEl) fightStripEl.style.display = 'block';
 
-  // P1 uses keyboard, P2 is the selected LLM character
-  p1Input = createInput(1, 0, 0); // keyboard
+  // Agent Lab is deliberately spectator-only: the local simulation adapter is
+  // a stable benchmark for the selected LLM fighter and does not incur a
+  // second provider stream.
+  p1Input = createInput(1, 3, 0);
   const p2Manager = new InputManager();
   const adapter = new LLMAdapter(2, char.provider, char.id);
   p2Manager.addAdapter(adapter);
@@ -2770,23 +2773,27 @@ async function startCharacterFight() {
   }
 
   // Start game loop
-  const p1Label = 'Keyboard';
+  const p1Label = 'SIM Benchmark';
   const p2Label = char.name;
   game = new Game(canvas, p1Input, p2Input, sfx, { p1Label, p2Label, stageMusic });
   game.start();
+  window.game = game;
+  window._game = game;
+  window.currentGame = game;
+
+  const mobileControls = document.getElementById('mobile-controls');
+  if (mobileControls) mobileControls.style.display = 'none';
 
   // Wire adapter game ref
   for (const a of activeAdapters) {
     if (a.setGameRef) a.setGameRef(game);
   }
 
-  window._game = game;
-
   await Promise.all(readyPromises);
   game.showFightAlert();
 }
 
-safeListener('btn-char-fight', 'click', () => startCharacterFight());
+safeListener('btn-char-watch', 'click', () => startCharacterFight());
 safeListener('btn-char-classic', 'click', () => {
   selectedCharacter = null;
   showScreen('onboarding');
@@ -3163,7 +3170,7 @@ window.addEventListener('keydown', e => {
         cards[nextIdx]?.click();
       } else if (e.code === 'Enter') {
         if (selectedCharacter) {
-          document.getElementById('btn-char-fight')?.click();
+          document.getElementById('btn-char-watch')?.click();
         }
       }
     }

@@ -2606,6 +2606,48 @@
       gap: 24px;
     }
 
+    .character-select {
+      max-width: 760px;
+      width: min(94vw, 760px);
+      max-height: 86vh;
+      overflow-y: auto;
+      box-sizing: border-box;
+    }
+
+    .character-select .join-hint {
+      max-width: 620px;
+      color: #e8eef5;
+      font-size: 12px;
+      line-height: 1.65;
+      margin: -8px auto 0;
+    }
+
+    .practice-actions {
+      display: flex;
+      justify-content: center;
+      width: min(100%, 620px);
+    }
+
+    .practice-actions .premium-btn {
+      min-height: 56px;
+      margin: 0;
+      padding: 12px 14px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .landing-primary-modes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 10px 0;
+    }
+
+    .landing-primary-modes .premium-btn {
+      min-width: 0;
+      margin: 0;
+    }
+
     .char-card {
       font-family: monospace;
       background: #111;
@@ -2775,6 +2817,130 @@
     }
 
     @media (max-width: 760px) {
+      #help-modal {
+        left: 2vw !important;
+        width: 96vw !important;
+        max-width: 96vw !important;
+        height: 94dvh !important;
+        max-height: 94dvh !important;
+        padding: 18px 16px 16px !important;
+        border-radius: 18px !important;
+        transform: translate(0, -50%) scale(1) !important;
+      }
+      #help-modal > div:first-child {
+        gap: 12px;
+        margin-bottom: 14px !important;
+      }
+      #help-modal h2 {
+        font-size: clamp(19px, 5.6vw, 24px) !important;
+        line-height: 1.25;
+        text-align: left;
+      }
+      #help-modal > .print-font {
+        padding-right: 6px !important;
+        font-size: 15px !important;
+        line-height: 1.72 !important;
+      }
+      #help-modal h3 {
+        font-size: 16px !important;
+        line-height: 1.45;
+      }
+      #help-modal li {
+        margin-bottom: 8px;
+      }
+      #help-modal video {
+        margin-bottom: 16px !important;
+      }
+      #help-modal .premium-btn {
+        min-height: 46px;
+        font-size: 11px !important;
+        line-height: 1.35;
+      }
+      #landing {
+        left: 2vw !important;
+        top: 48% !important;
+        width: 96vw !important;
+        max-width: min(96vw, 470px) !important;
+        max-height: calc(100dvh - 104px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding: 14px 16px;
+        transform: translate(0, -50%) scale(1) !important;
+      }
+      #landing > div:first-child {
+        margin-bottom: 14px !important;
+      }
+      #landing-logo {
+        height: 86px !important;
+        margin-bottom: 8px !important;
+      }
+      #landing .shojumaru-title {
+        font-size: 27px !important;
+      }
+      #landing .landing-tagline {
+        margin: 0 0 8px;
+        font-size: 11px;
+        line-height: 1.5;
+      }
+      #landing > .premium-btn,
+      .landing-primary-modes .premium-btn {
+        min-height: 44px;
+        margin: 5px 0;
+        padding: 10px 8px;
+        font-size: 11px;
+        line-height: 1.25;
+        border-radius: 12px;
+        overflow-wrap: anywhere;
+      }
+      .landing-primary-modes {
+        gap: 8px;
+        margin: 6px 0;
+      }
+      #landing #mint-input {
+        min-width: 0;
+      }
+      .character-select:not(.hidden) {
+        top: 50% !important;
+        width: 96vw !important;
+        max-width: 96vw !important;
+        max-height: 92dvh;
+        gap: 14px;
+        padding: 18px 14px;
+        transform: translate(-50%, -50%) scale(1) !important;
+      }
+      .character-select h2 {
+        margin: 0;
+        font-size: clamp(20px, 6vw, 28px);
+        line-height: 1.25;
+      }
+      .character-select .join-hint {
+        font-size: 13px;
+        line-height: 1.65;
+      }
+      .char-cards {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        width: 100%;
+      }
+      .char-card {
+        min-width: 0;
+        margin: 0;
+        padding: 14px 10px;
+        font-size: 12px;
+      }
+      .char-icon { font-size: 36px; }
+      .char-name { font-size: 15px; line-height: 1.3; }
+      .char-provider { font-size: 9px; line-height: 1.4; }
+      .char-desc { font-size: 11px; line-height: 1.6; }
+      .practice-actions {
+        gap: 8px;
+      }
+      .practice-actions .premium-btn {
+        min-height: 50px;
+        padding: 10px 8px;
+        font-size: 10px;
+      }
       #economy-page,
       #arena-status-page {
         left: 2vw !important;
@@ -2908,21 +3074,6 @@
         <span style="color: var(--neon-blue); font-weight: bold;">[@]</span>
         <div style="margin-top: 6px; color: #c7c7c7; font-size: 10px;">
           Follow for live updates, match clips, and alpha drops.
-        </div>
-      </div>
-      <div class="print-font" style="margin-top: 10px; background: linear-gradient(135deg, rgba(0,255,157,0.08), rgba(255,0,255,0.08)); border: 1px solid rgba(0,255,157,0.28); border-radius: 12px; padding: 12px; text-align: left; box-shadow: inset 0 0 18px rgba(0,255,157,0.04);">
-        <div class="shojumaru-title" style="color: var(--neon-green); font-size: 13px; margin-bottom: 8px; text-shadow: 0 0 8px rgba(0,255,157,0.55);">
-          Timeline: Past 7 Days To Launch
-        </div>
-        <ul style="margin: 0 0 8px 18px; padding: 0; color: #e9fff7; font-size: 9px; line-height: 1.65;">
-          <li>Detox app, stress reliever.</li>
-          <li>Became a meme utility.</li>
-          <li>APK release.</li>
-          <li>Token launch.</li>
-          <li>Dreams of Seeker Store.</li>
-        </ul>
-        <div style="color: #c7c7c7; font-size: 9px; line-height: 1.55;">
-          Approved plan: 50% of confirmed creator-fee SOL supports operations; 50% is reserved for market buys of $ANSEM for rewards. These flows are not live yet.
         </div>
       </div>
       <audio id="help-socials-audio" src="assets/help-socials-hype.mp3" preload="auto"></audio>
@@ -3417,14 +3568,16 @@
       </script>
     </div>
     <p class="landing-tagline">Fight live Solana token AI for practice, or enter wallet-verified human competition.</p>
-    <button class="premium-btn" onclick="startTrendingMode()">TRENDING ARENA <span class="cartoon-icon">🔥</span></button>
-    <button class="premium-btn" onclick="startEndlessMode()">ENDLESS STREAM <span class="cartoon-icon">🌀</span></button>
+    <div class="landing-primary-modes" aria-label="Token fight modes">
+      <button class="premium-btn" onclick="startTrendingMode()">TRENDING <span class="cartoon-icon">🔥</span></button>
+      <button class="premium-btn" onclick="startEndlessMode()">ENDLESS <span class="cartoon-icon">🌀</span></button>
+    </div>
     <div style="display:flex;gap:10px;margin:10px 0;">
       <input id="mint-input" placeholder="TOKEN MINT..." style="margin:0;flex:1;">
       <button class="premium-btn" onclick="startCustomFight()"
         style="width:auto;margin:0;padding:10px 20px;">FIGHT <span class="cartoon-icon">👊</span></button>
     </div>
-    <button id="btn-singleplayer" class="premium-btn">AI FIGHTERS · PRACTICE ONLY <span class="cartoon-icon">🤖</span></button>
+    <button id="btn-singleplayer" class="premium-btn">AGENT LAB · WATCH AI FIGHT <span class="cartoon-icon">🤖</span></button>
     <button id="btn-multiplayer" class="premium-btn pink">HUMAN MULTIPLAYER <span class="cartoon-icon">🌐</span></button>
     <button id="btn-leaderboard" class="premium-btn">RANKED STANDINGS <span class="cartoon-icon">🏆</span></button>
     <div id="status"></div>
@@ -3615,11 +3768,13 @@
   <!-- Character select screen (single-player opponent) -->
   <div class="screen character-select hidden" id="character-select">
     <h2>CHOOSE YOUR OPPONENT</h2>
-    <p class="join-hint">AI practice/showcase · no ELO · no token rewards</p>
+    <p class="join-hint">Choose an LLM agent and watch it fight the local simulation benchmark. This spectator lab has no touch controls, ELO, or token rewards.</p>
     <div class="char-cards" id="char-cards">
       <!-- Populated by JS from /api/characters -->
     </div>
-    <button class="premium-btn" id="btn-char-fight" disabled>FIGHT</button>
+    <div class="practice-actions">
+      <button class="premium-btn pink" id="btn-char-watch" disabled>START AGENT EXHIBITION</button>
+    </div>
     <button class="lb-link" id="btn-char-classic">or choose classic mode &rarr;</button>
     <button class="back-btn" id="btn-char-back">&larr; BACK</button>
   </div>

@@ -22,6 +22,7 @@ const { INPUT_MODES } = await import('../src/ui.js');
 // Load index.html for static content assertions
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
+const mainJs = readFileSync(resolve(__dirname, '../src/main.js'), 'utf-8');
 
 describe('Landing page', () => {
   test('has tagline explaining game modes', () => {
@@ -30,6 +31,26 @@ describe('Landing page', () => {
 
   test('tagline has proper CSS class', () => {
     expect(html).toContain('landing-tagline');
+  });
+});
+
+describe('Mobile readability and practice contract', () => {
+  test('obsolete launch timeline is removed from Help', () => {
+    expect(html).not.toContain('Timeline: Past 7 Days To Launch');
+  });
+
+  test('primary token modes use compact labels in one layout group', () => {
+    expect(html).toContain('class="landing-primary-modes"');
+    expect(html).toContain('>TRENDING <span');
+    expect(html).toContain('>ENDLESS <span');
+  });
+
+  test('Agent Lab is explicitly spectator-only', () => {
+    expect(html).not.toContain('id="btn-char-fight"');
+    expect(html).toContain('id="btn-char-watch" disabled>START AGENT EXHIBITION');
+    expect(html).toContain('spectator lab has no touch controls');
+    expect(mainJs).toContain('p1Input = createInput(1, 3, 0)');
+    expect(mainJs).toContain("mobileControls.style.display = 'none'");
   });
 });
 

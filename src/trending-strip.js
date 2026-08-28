@@ -334,6 +334,12 @@ export class TrendingStrip {
     // Update button text just in case
     const btn = this.container.querySelector('.toggle-btn');
     if (btn) btn.textContent = this.isGraduatesOnly ? 'ALL TRENDING' : 'PUMP.FUN GRADS';
+    const title = this.container.querySelector('.strip-title');
+    if (title) {
+      const mode = this.isGraduatesOnly ? 'GRADUATES' : 'LIVE MARKET';
+      title.textContent = this.tokens.length > 0 ? `${mode} · ${this.tokens.length}` : mode;
+      title.title = this.tokens.length > 0 ? `${this.tokens.length} tokens loaded` : 'Market feed';
+    }
 
     if (this.tokens.length === 0) {
       inner.innerHTML = `<span class="market-loading-text">Market feed unavailable - tap button to retry</span>`;

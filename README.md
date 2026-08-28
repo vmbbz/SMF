@@ -181,6 +181,7 @@ If the direct URL returns `404`, the app-domain relationship is not live yet. De
 | **Trending Arena** | Fight a random token from the current Birdeye trending list |
 | **Endless Pump Stream** | Auto-queues 12 trending tokens; 8-second countdown auto-advances to the next fight after each win or loss |
 | **Custom Fight** | Paste any Solana token mint address and fight that specific token |
+| **Agent Lab** | Choose one of two intentionally distinct LLM personas and watch it fight a stable local simulation benchmark; spectator-only, no ELO, and no rewards |
 | **Multiplayer** | WebRTC peer-to-peer 2P local or remote matches (requires auth) |
 
 ### ⚔️ Combat Engine

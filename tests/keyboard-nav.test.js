@@ -163,8 +163,8 @@ describe('Character select keyboard navigation', () => {
     expect(html).toContain('id="char-cards"');
   });
 
-  test('fight button exists', () => {
-    expect(html).toContain('id="btn-char-fight"');
+  test('spectator exhibition button exists', () => {
+    expect(html).toContain('id="btn-char-watch"');
   });
 });
 

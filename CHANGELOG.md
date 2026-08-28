@@ -2,6 +2,16 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Mobile Menu and Practice Clarity
+
+### Changed
+
+- Removed the obsolete seven-day launch timeline from Help and expanded the mobile guide to a readable 96vw/94dvh surface with larger type, spacing, and controls.
+- Compacted the mobile home panel and placed Trending and Endless side by side so Help and the live-market footer remain reachable.
+- Expanded the AI opponent picker on mobile and clarified that its two cards are distinct LLM personas rather than market tokens.
+- Reframed AI practice as a spectator-only Agent Lab: the chosen LLM fights a stable local simulation benchmark with touch controls hidden, outside ELO and rewards.
+- Added the loaded-token count to the scrolling market strip so its narrow mobile viewport is not mistaken for a two-token feed.
+
 ## 2026-08-28 - Alchemy Yellowstone Evidence Gate
 
 ### Added
