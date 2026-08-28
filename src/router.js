@@ -20,6 +20,9 @@ export function parseRoute(pathname) {
   if (pathname === '/economy' || pathname === '/economy/') {
     return { type: 'economy' };
   }
+  if (pathname === '/arena' || pathname === '/arena/') {
+    return { type: 'arena-status' };
+  }
   if (pathname === '/multiplayer' || pathname === '/multiplayer/') {
     return { type: 'multiplayer' };
   }

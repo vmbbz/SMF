@@ -161,6 +161,13 @@ class BirdeyeService:
     async def fetch_trending_tokens(self, limit: int = 12) -> list:
         cached = self.list_cache.get("trending")
         if cached and time.time() - cached[1] < self.LIST_TTL:
+            existing = self.list_provenance.get("trending") or {}
+            self._set_list_provenance(
+                "trending",
+                "cached_snapshot",
+                snapshot_timestamp=cached[1],
+                source_channel=existing.get("sourceChannel") or "trending",
+            )
             return cached[0][:limit]
 
         if "trending" in self._inflight_lists:
@@ -232,6 +239,13 @@ class BirdeyeService:
     async def fetch_graduated_tokens(self, limit: int = 8) -> list:
         cached = self.list_cache.get("graduated")
         if cached and time.time() - cached[1] < self.LIST_TTL:
+            existing = self.list_provenance.get("graduated") or {}
+            self._set_list_provenance(
+                "graduated",
+                "cached_snapshot",
+                snapshot_timestamp=cached[1],
+                source_channel=existing.get("sourceChannel") or "graduated",
+            )
             return cached[0][:limit]
 
         if "graduated" in self._inflight_lists:

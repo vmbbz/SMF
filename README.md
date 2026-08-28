@@ -41,7 +41,9 @@ Built with vanilla Canvas2D, a custom combat engine, and a Litestar/Python backe
 
 The server-side **StickLash Arena Director** merges live trending and graduated-token candidates, scores them using volume, volatility, liquidity, and discovery signals, and selects the next opponent for Trending and Endless modes. Each decision includes a deterministic decision ID, policy version, ranked candidates, reason codes, and provider errors so the autonomous choice can be explained and audited. If the director is unavailable, gameplay falls back to the existing local market queue.
 
-See [AnsemHack Readiness](ANSEMHACK_READINESS.md) for the verified competition scope and [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md) for the approved token flows, separated leagues, ranked-integrity rules, and rollout gates. The same plain-language policy is available in the app through **Help → Economy & Rewards** and at <https://sticklash.fun/economy>.
+See [AnsemHack Readiness](ANSEMHACK_READINESS.md), [Arena Telemetry and Public Evidence](docs/ARENA_TELEMETRY.md), and [Economy, Leagues, Leaderboards, and Rewards](docs/ECONOMY_AND_REWARDS.md). The app exposes the same boundaries through **Help → Live Arena Status** at <https://sticklash.fun/arena> and **Help → Economy & Rewards** at <https://sticklash.fun/economy>.
+
+The Arena Status page reports separate evidence classes: Director API responses, server-authoritative multiplayer rounds, generated share cards, aggregate wallet sessions, and server-verified Solana ledger transactions. It never calls Director responses completed fights, share cards impressions, wallet sessions paying users, or gameplay events onchain volume. Without durable PostgreSQL evidence, unavailable wallet/onchain metrics remain unavailable rather than becoming a misleading zero.
 
 ### Ranked Competition and Reward Status
 
@@ -249,10 +251,12 @@ stick-fighter/
 ├── index.html              # Main shell — game canvas, UI panels, mobile joystick, scripts
 ├── server.py               # Litestar routes, wallet verification, multiplayer, voice, and static app
 ├── arena_director.py       # Explainable autonomous market-opponent policy
+├── arena_telemetry.py      # Insert-only public evidence store and privacy-safe aggregates
 ├── birdeye_service.py      # Birdeye discovery-list proxy and caching
 ├── src/
 │   ├── main.js             # Orchestration layer — game lifecycle, loadOpponent, resetAndFight, nextFight
 │   ├── arena-director-client.js # Director API client, UI announcement, decision event
+│   ├── arena-status-page.js # Help-linked public evidence page for /arena
 │   ├── game.js             # Core combat engine — RAF loop, hitbox, projectiles, round management
 │   ├── fighter.js          # Fighter class — animations, move execution, applyMarketStats
 │   ├── input.js            # InputManager — adapter pattern, merges keyboard/joystick/voice/LLM actions
@@ -300,6 +304,8 @@ stick-fighter/
 
 ```env
 BIRDEYE_API_KEY=your_key_here
+# Enables durable ranked, wallet, boost, and arena telemetry persistence
+DATABASE_URL=postgresql://user:password@host/database
 # Server-only/private endpoint used by backend workers
 SOLANA_RPC=https://solana-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
 # Client-safe endpoint exposed to browser/mobile web client

@@ -87,7 +87,8 @@
       border-width: 1px !important;
     }
 
-    #economy-page {
+    #economy-page,
+    #arena-status-page {
       top: 50%;
       width: min(96vw, 980px);
       max-width: 980px;
@@ -99,6 +100,11 @@
       background: rgba(5, 7, 11, 0.98);
       box-shadow: 0 0 40px rgba(0, 255, 157, 0.22), 0 24px 80px rgba(0, 0, 0, 0.8);
       z-index: 2200;
+    }
+
+    #arena-status-page {
+      border-color: rgba(0, 212, 255, 0.75);
+      box-shadow: 0 0 40px rgba(0, 212, 255, 0.22), 0 24px 80px rgba(0, 0, 0, 0.8);
     }
 
     .economy-page-header {
@@ -391,6 +397,208 @@
       margin-top: 22px;
       padding: 13px 18px;
       font-size: 10px;
+    }
+
+    .arena-status-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .arena-metric {
+      min-width: 0;
+      padding: 16px 14px;
+      border: 1px solid rgba(0, 212, 255, 0.22);
+      border-radius: 14px;
+      background: linear-gradient(145deg, rgba(0, 212, 255, 0.065), rgba(255, 0, 255, 0.035));
+    }
+
+    .arena-metric-value {
+      display: block;
+      margin-bottom: 8px;
+      color: #fff;
+      font-family: var(--font-display);
+      font-size: clamp(18px, 3vw, 28px);
+      line-height: 1.15;
+      text-shadow: 0 0 12px rgba(0, 212, 255, 0.55);
+      overflow-wrap: anywhere;
+    }
+
+    .arena-metric-label {
+      display: block;
+      color: var(--neon-blue);
+      font-size: 8px;
+      line-height: 1.5;
+    }
+
+    .arena-metric-note {
+      display: block;
+      margin-top: 7px;
+      color: #8e9aa3;
+      font-size: 7px;
+      line-height: 1.55;
+    }
+
+    .arena-breakdown-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .arena-breakdown {
+      min-width: 0;
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.11);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .arena-breakdown strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--neon-green);
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .arena-breakdown span {
+      color: #b8c0c7;
+      font-size: 7px;
+      line-height: 1.5;
+    }
+
+    .arena-selection-list,
+    .arena-transaction-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .arena-selection {
+      display: grid;
+      grid-template-columns: minmax(90px, 0.8fr) minmax(0, 1.6fr) auto;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .arena-selection-symbol {
+      color: #fff;
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .arena-selection-detail {
+      min-width: 0;
+      color: #9ca7af;
+      font-size: 7px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+
+    .arena-selection a,
+    .arena-transaction-list a {
+      color: var(--neon-blue);
+      text-decoration: none;
+    }
+
+    .arena-evidence-tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 8px;
+      border: 1px solid rgba(255, 204, 0, 0.4);
+      border-radius: 999px;
+      color: #ffdd55;
+      background: rgba(255, 204, 0, 0.06);
+      font-size: 7px;
+      white-space: nowrap;
+    }
+
+    .arena-evidence-tag.fresh {
+      border-color: rgba(0, 255, 157, 0.42);
+      color: var(--neon-green);
+      background: rgba(0, 255, 157, 0.06);
+    }
+
+    .arena-onchain-box {
+      display: grid;
+      grid-template-columns: minmax(180px, 0.7fr) minmax(0, 1.5fr);
+      gap: 16px;
+      padding: 17px;
+      border: 1px solid rgba(0, 255, 157, 0.25);
+      border-radius: 14px;
+      background: rgba(0, 255, 157, 0.035);
+    }
+
+    .arena-onchain-count {
+      color: var(--neon-green);
+      font-family: var(--font-display);
+      font-size: 24px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .arena-onchain-detail {
+      margin-top: 8px;
+      color: #aeb8be;
+      font-size: 7px;
+      line-height: 1.65;
+    }
+
+    .arena-transaction {
+      padding: 9px 11px;
+      border-left: 2px solid var(--neon-blue);
+      background: rgba(0, 212, 255, 0.04);
+      color: #b8c4ca;
+      font-size: 7px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+
+    .arena-status-empty {
+      padding: 14px;
+      border: 1px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      color: #89949b;
+      font-size: 8px;
+      line-height: 1.6;
+    }
+
+    .arena-status-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .arena-status-actions .premium-btn {
+      margin: 0;
+      padding: 13px 16px;
+      font-size: 9px;
+    }
+
+    .economy-status.is-durable {
+      border-color: var(--neon-green);
+      color: var(--neon-green);
+      background: rgba(0, 255, 157, 0.08);
+    }
+
+    .economy-status.is-durable::before {
+      background: var(--neon-green);
+      box-shadow: 0 0 9px var(--neon-green);
+    }
+
+    .economy-status.is-unavailable {
+      border-color: var(--neon-pink);
+      color: #ff8aff;
+      background: rgba(255, 0, 255, 0.08);
+    }
+
+    .economy-status.is-unavailable::before {
+      background: var(--neon-pink);
+      box-shadow: 0 0 9px var(--neon-pink);
     }
 
     #game-container {
@@ -2545,7 +2753,8 @@
     }
 
     @media (max-width: 760px) {
-      #economy-page {
+      #economy-page,
+      #arena-status-page {
         left: 2vw !important;
         width: 96vw !important;
         max-width: 96vw !important;
@@ -2571,8 +2780,19 @@
         padding: 18px 16px 28px;
       }
       .economy-grid,
-      .economy-checks {
+      .economy-checks,
+      .arena-status-grid {
         grid-template-columns: 1fr;
+      }
+      .arena-breakdown-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .arena-selection,
+      .arena-onchain-box {
+        grid-template-columns: 1fr;
+      }
+      .arena-status-actions {
+        flex-direction: column;
       }
       .economy-card h3 {
         min-height: 0;
@@ -2587,7 +2807,8 @@
     }
 
     @media (max-height: 820px) {
-      #economy-page:not(.hidden) {
+      #economy-page:not(.hidden),
+      #arena-status-page:not(.hidden) {
         top: 50% !important;
         height: 94vh;
         transform: translate(-50%, -50%) scale(1) !important;
@@ -2595,7 +2816,8 @@
     }
 
     @media (max-width: 760px) and (max-height: 820px) {
-      #economy-page:not(.hidden) {
+      #economy-page:not(.hidden),
+      #arena-status-page:not(.hidden) {
         transform: translate(0, -50%) scale(1) !important;
       }
     }
@@ -2652,6 +2874,9 @@
     <div style="margin-top: 12px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 10px;">
       <button id="btn-help-economy" class="premium-btn print-font" style="font-size: 10px; padding: 11px 14px; margin: 0 0 8px; letter-spacing: 1px; border-color: rgba(0,212,255,0.55); color: var(--neon-blue);">
         ECONOMY &amp; REWARDS →
+      </button>
+      <button id="btn-help-arena-status" class="premium-btn print-font" style="font-size: 10px; padding: 11px 14px; margin: 0 0 8px; letter-spacing: 1px; border-color: rgba(0,255,157,0.55); color: var(--neon-green);">
+        LIVE ARENA STATUS →
       </button>
       <button id="btn-help-socials" class="premium-btn print-font" onclick="toggleHelpSocials()" style="font-size: 10px; padding: 10px 14px; margin: 0; letter-spacing: 1px;">
         SOCIALS ▾
@@ -2900,6 +3125,136 @@
       </div>
 
       <button id="btn-economy-back" class="premium-btn pink economy-footer-button" type="button">BACK TO GUIDE</button>
+    </div>
+  </section>
+
+  <!-- PUBLIC ARENA EVIDENCE PAGE -->
+  <section id="arena-status-page" class="screen hidden" aria-labelledby="arena-status-page-title">
+    <header class="economy-page-header">
+      <div>
+        <div class="economy-eyebrow">STICKLASH PUBLIC EVIDENCE · SERVER COUNTERS</div>
+        <h1 id="arena-status-page-title">ARENA STATUS</h1>
+        <div id="arena-status-persistence" class="economy-status">LOADING EVIDENCE</div>
+      </div>
+      <button id="btn-arena-status-close" class="economy-close" type="button" aria-label="Close Arena Status page">&times;</button>
+    </header>
+
+    <div class="economy-page-scroll">
+      <p class="economy-lead">
+        This page reports what the backend can actually prove. Arena Director responses, server-finalized multiplayer rounds, generated share cards, aggregate wallet sessions, and verified Solana ledger transactions remain separate evidence classes.
+      </p>
+
+      <div class="economy-runtime">
+        <strong>EVIDENCE SCOPE</strong>
+        <span id="arena-status-scope">Loading retention and persistence status. No missing value will be inferred.</span>
+      </div>
+
+      <section class="economy-section" aria-labelledby="arena-overview-title">
+        <h2 id="arena-overview-title">WHAT THE ARENA HAS OBSERVED</h2>
+        <div class="arena-status-grid">
+          <article class="arena-metric">
+            <strong id="arena-count-director" class="arena-metric-value">—</strong>
+            <span class="arena-metric-label">DIRECTOR RESPONSES</span>
+            <span class="arena-metric-note">API decisions returned; not fights or unique people.</span>
+          </article>
+          <article class="arena-metric">
+            <strong id="arena-count-matches" class="arena-metric-value">—</strong>
+            <span class="arena-metric-label">AUTHORITATIVE ROUNDS</span>
+            <span class="arena-metric-note">Only multiplayer rounds finalized by the server game loop.</span>
+          </article>
+          <article class="arena-metric">
+            <strong id="arena-count-tokens" class="arena-metric-value">—</strong>
+            <span class="arena-metric-label">UNIQUE TOKENS FEATURED</span>
+            <span class="arena-metric-note">Distinct selected mints in recorded Director responses.</span>
+          </article>
+          <article class="arena-metric">
+            <strong id="arena-count-shares" class="arena-metric-value">—</strong>
+            <span class="arena-metric-label">SHARE CARDS GENERATED</span>
+            <span class="arena-metric-note">Generated cards, not confirmed social impressions.</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="economy-section" aria-labelledby="arena-matches-title">
+        <h2 id="arena-matches-title">SERVER-FINALIZED MATCH BREAKDOWN</h2>
+        <div class="arena-breakdown-grid">
+          <article class="arena-breakdown"><strong id="arena-match-ranked">—</strong><span>ALL RANKED</span></article>
+          <article class="arena-breakdown"><strong id="arena-match-skill">—</strong><span>SKILL LEAGUE</span></article>
+          <article class="arena-breakdown"><strong id="arena-match-boosted">—</strong><span>BOOSTED LEAGUE</span></article>
+          <article class="arena-breakdown"><strong id="arena-match-casual">—</strong><span>PRIVATE CASUAL</span></article>
+          <article class="arena-breakdown"><strong id="arena-match-boost-charges">—</strong><span>PAID CHARGES IN RECORDED ROUNDS</span></article>
+        </div>
+        <div class="economy-note">
+          Browser-local AI, LLM, token, Endless, and practice fights are intentionally excluded. These counters do not create leaderboard points or reward eligibility.
+        </div>
+      </section>
+
+      <section class="economy-section" aria-labelledby="arena-engagement-title">
+        <h2 id="arena-engagement-title">PRIVACY-SAFE WALLET SIGNALS</h2>
+        <div class="arena-status-grid">
+          <article class="arena-metric">
+            <strong id="arena-wallet-sessions" class="arena-metric-value">—</strong>
+            <span class="arena-metric-label">SESSIONS CREATED</span>
+          </article>
+          <article class="arena-metric">
+            <strong id="arena-wallet-active" class="arena-metric-value">—</strong>
+            <span class="arena-metric-label">ACTIVE SESSIONS</span>
+          </article>
+          <article class="arena-metric">
+            <strong id="arena-wallet-unique" class="arena-metric-value">—</strong>
+            <span class="arena-metric-label">UNIQUE AUTHENTICATED WALLETS</span>
+          </article>
+          <article class="arena-metric">
+            <strong id="arena-market-fresh" class="arena-metric-value">—</strong>
+            <span class="arena-metric-label">FRESH MARKET SELECTIONS</span>
+          </article>
+        </div>
+        <div class="economy-note">Only aggregate counts are public. Wallet addresses, player names, room codes, session tokens, and authentication challenges never appear here.</div>
+      </section>
+
+      <section class="economy-section" aria-labelledby="arena-recent-title">
+        <h2 id="arena-recent-title">RECENT DIRECTOR SELECTIONS</h2>
+        <div id="arena-recent-selections" class="arena-selection-list">
+          <div class="arena-status-empty">Waiting for recorded Director evidence.</div>
+        </div>
+      </section>
+
+      <section class="economy-section" aria-labelledby="arena-onchain-title">
+        <h2 id="arena-onchain-title">VERIFIED ONCHAIN ACTIVITY</h2>
+        <div class="arena-onchain-box">
+          <div>
+            <div id="arena-onchain-count" class="arena-onchain-count">—</div>
+            <div id="arena-onchain-status" class="arena-onchain-detail">Loading the server-verified Solana transaction ledger.</div>
+          </div>
+          <div id="arena-recent-transactions" class="arena-transaction-list">
+            <div class="arena-status-empty">No transaction claim is shown until the durable verification ledger responds.</div>
+          </div>
+        </div>
+        <div class="economy-note">
+          Gameplay events are never labeled onchain volume. A transaction appears only after the backend verifies the Solana boost-burn transaction and records its signature; token purchases are currently gated off by the economy policy.
+        </div>
+      </section>
+
+      <section class="economy-section" aria-labelledby="arena-boundaries-title">
+        <h2 id="arena-boundaries-title">READ THE COUNTERS CORRECTLY</h2>
+        <ul id="arena-status-boundaries" class="economy-checks">
+          <li>Gameplay telemetry is not proof of onchain volume.</li>
+          <li>Director responses are not completed fights.</li>
+          <li>Generated share cards are not social impressions.</li>
+          <li>Wallet sessions are not paying users.</li>
+          <li>No counter calculates leaderboard rank or rewards.</li>
+          <li>Unavailable durable evidence is shown as not available, not zero.</li>
+        </ul>
+      </section>
+
+      <div class="economy-sources">
+        Last API refresh: <span id="arena-status-generated-at">NOT LOADED</span>. Public endpoint: <code>/api/arena/status</code>.
+      </div>
+
+      <div class="arena-status-actions">
+        <button id="btn-arena-status-refresh" class="premium-btn" type="button">REFRESH EVIDENCE</button>
+        <button id="btn-arena-status-back" class="premium-btn pink" type="button">BACK TO GUIDE</button>
+      </div>
     </div>
   </section>
 

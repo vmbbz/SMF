@@ -155,7 +155,7 @@ The leaderboard answers **who placed where**. The two reward reserves answer **w
 
 ### Casual and token analytics
 
-Casual wins, browser-local token fights, token appearances, Arena Director selections, transaction volume, and social shares can be displayed as entertainment or hackathon analytics. They do not create reward eligibility.
+Casual wins, browser-local token fights, token appearances, Arena Director selections, verified transactions, and generated share cards can be displayed as entertainment or hackathon analytics. They do not create reward eligibility. The public `/arena` page currently persists Director responses, server-authoritative multiplayer rounds, and generated share cards; it intentionally excludes browser-local AI outcomes and never equates generated cards with social impressions. See [Arena Telemetry and Public Evidence](ARENA_TELEMETRY.md).
 
 ## Exactly how a player earns
 
@@ -275,7 +275,7 @@ Automation can be considered only after the manual, auditable process has run sa
 
 ## Current implementation state
 
-| Component | State on 27 August 2026 |
+| Component | State on 28 August 2026 |
 |---|---|
 | Solana game and wallet network | Live |
 | Existing boost balance and consumption ledger | Implemented |
@@ -296,6 +296,7 @@ Automation can be considered only after the manual, auditable process has run sa
 | `$ANSEM` Arena Director spend | Not implemented |
 | Token reward claims | Not implemented |
 | Public economy policy endpoint and Help-linked site page | Implemented |
+| Insert-only arena telemetry and Help-linked public status page | Implemented; evidence only, never a reward ledger |
 
 No public copy may describe an unimplemented row as active.
 

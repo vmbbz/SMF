@@ -40,4 +40,9 @@ describe('parseRoute', () => {
     expect(parseRoute('/economy')).toEqual({ type: 'economy' });
     expect(parseRoute('/economy/')).toEqual({ type: 'economy' });
   });
+
+  it('parses public arena status route', () => {
+    expect(parseRoute('/arena')).toEqual({ type: 'arena-status' });
+    expect(parseRoute('/arena/')).toEqual({ type: 'arena-status' });
+  });
 });

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from unittest.mock import AsyncMock
 
 import pytest
@@ -14,6 +15,29 @@ def disable_external_lifespan_services(monkeypatch: pytest.MonkeyPatch):
     """Endpoint tests must never inherit deployed Redis/Postgres credentials."""
     monkeypatch.delenv("REDIS_URL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
+
+
+@pytest.mark.asyncio
+async def test_cached_discovery_reports_original_snapshot_age(monkeypatch: pytest.MonkeyPatch) -> None:
+    snapshot_at = time.time() - 12
+    monkeypatch.setattr(
+        server.birdeye_service,
+        "list_cache",
+        {"trending": ([{"mint": "cached-mint"}], snapshot_at)},
+    )
+    monkeypatch.setattr(
+        server.birdeye_service,
+        "list_provenance",
+        {"trending": {"state": "birdeye_fetch", "snapshotTimestamp": snapshot_at}},
+    )
+
+    tokens = await server.birdeye_service.fetch_trending_tokens(1)
+    provenance = server.birdeye_service.get_list_provenance("trending")
+
+    assert tokens == [{"mint": "cached-mint"}]
+    assert provenance["state"] == "cached_snapshot"
+    assert provenance["freshness"] == "fresh"
+    assert provenance["ageSeconds"] >= 12
 
 
 def test_arena_director_endpoint_selects_and_explains(monkeypatch) -> None:

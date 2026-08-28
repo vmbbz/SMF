@@ -4,7 +4,7 @@
   "description": "Solana Meme Fighter - Beat trending tokens with karate moves",
   "main": "index.html",
   "scripts": {
-    "check:js": "node --check src/main.js && node --check wallet-connect.js && node --check src/webrtc.js",
+    "check:js": "node --check src/main.js && node --check src/arena-status-page.js && node --check src/api-endpoints.js && node --check src/router.js && node --check wallet-connect.js && node --check src/webrtc.js",
     "sync:web": "node scripts/sync-web-assets.mjs",
     "build": "npm run check:js && npm run sync:web",
     "android:sync": "npm run build && cap sync android",

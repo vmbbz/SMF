@@ -94,6 +94,7 @@ export async function fetchApiJson(paths, init) {
 
 export const API_ROUTES = Object.freeze({
   ARENA_DIRECTOR_NEXT: '/api/arena/director/next',
+  ARENA_STATUS: '/api/arena/status',
   TRENDING: '/api/marketfeed/v2/trending-scan',
   GRADUATES: '/api/marketfeed/v2/graduate-scan',
   TOKEN_DETAILS: '/api/marketfeed/v2/token-scan',

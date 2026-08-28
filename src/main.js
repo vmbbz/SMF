@@ -17,6 +17,7 @@ import { API_ROUTES, fetchApiJson } from './api-endpoints.js';
 import { announceArenaDirectorDecision, fetchArenaDirectorDecision } from './arena-director-client.js';
 import { getTokenCoverSource, getTokenImageSource, loadGameImage } from './image-utils.js';
 import { initializeEconomyPage, openEconomyPage } from './economy-page.js';
+import { initializeArenaStatusPage, openArenaStatusPage } from './arena-status-page.js';
 import { getProfile, getStoredWalletAuthHeaders } from '../wallet-connect.js';
 
 window.generatePersonality = generatePersonality;
@@ -130,6 +131,7 @@ const screens = {
 };
 
 initializeEconomyPage();
+initializeArenaStatusPage();
 
 // Restored Name Extraction Engine (Commit 90323e43b1)
 function extractNameFromUrl(url) {
@@ -3426,6 +3428,12 @@ async function applyResolvedRoute(route, { replaceToRoot = false } = {}) {
   if (route.type === 'economy') {
     showScreen('landing');
     openEconomyPage();
+    lastHandledRouteKey = resolvedKey;
+    return true;
+  }
+  if (route.type === 'arena-status') {
+    showScreen('landing');
+    openArenaStatusPage();
     lastHandledRouteKey = resolvedKey;
     return true;
   }

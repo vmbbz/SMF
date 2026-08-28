@@ -373,6 +373,7 @@ def test_arena_route_returns_public_status_shell() -> None:
         resp = client.get("/arena")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
+        assert "ARENA STATUS" in resp.text
 
 
 # ─── Room creation endpoint ───────────────────────
