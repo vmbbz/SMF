@@ -2,7 +2,11 @@ import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { API_ROUTES } from '../src/api-endpoints.js';
-import { formatArenaCount, formatArenaTime } from '../src/arena-status-page.js';
+import {
+  formatArenaCount,
+  formatArenaObservationCount,
+  formatArenaTime,
+} from '../src/arena-status-page.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(resolve(__dirname, '../index.html'), 'utf-8');
@@ -20,6 +24,8 @@ describe('Public Arena Status evidence page', () => {
       .toContain('coverage complete via');
     expect(readFileSync(resolve(__dirname, '../src/arena-status-page.js'), 'utf-8'))
       .toContain('ALCHEMY SOLANA HTTP POLLING');
+    expect(readFileSync(resolve(__dirname, '../src/arena-status-page.js'), 'utf-8'))
+      .toContain('full-window enumeration intentionally bounded after score saturation');
     expect(html).toContain('it is not a live WebSocket subscription');
   });
 
@@ -56,6 +62,11 @@ describe('Public Arena Status evidence page', () => {
     expect(formatArenaCount(undefined)).toBe('NOT AVAILABLE');
     expect(formatArenaCount(0)).toBe('0');
     expect(formatArenaCount(1234)).toBe('1,234');
+    expect(formatArenaObservationCount(null, 'bounded_lower_bound_saturated'))
+      .toBe('NOT AVAILABLE');
+    expect(formatArenaObservationCount(31, 'exact_window_count')).toBe('31');
+    expect(formatArenaObservationCount(31, 'bounded_lower_bound_saturated'))
+      .toBe('AT LEAST 31');
   });
 
   test('does not invent invalid timestamps', () => {

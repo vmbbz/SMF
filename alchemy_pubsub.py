@@ -15,13 +15,14 @@ import logging
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 import httpx
 import websockets
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
+from arena_director import ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS
 from alchemy_stream import (
     AlchemyStreamConfig,
     AlchemyStreamStore,
@@ -111,6 +112,7 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
         self._backfill_truncated_candidates = 0
         self._backfill_failures = 0
         self._backfill_failure_codes: dict[str, int] = {}
+        self._backfill_saturated_mints: set[str] = set()
         self._backfill_coverage_complete = False
         self._backfill_basis = "not_started"
         self._live_coverage_started_at: datetime | None = None
@@ -129,6 +131,14 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
 
     def _active_candidate_mints(self) -> tuple[str, ...]:
         return tuple(sorted(self._mint_subscriptions))
+
+    def _saturated_candidate_mints(self) -> tuple[str, ...]:
+        if self._continuous_live_window_complete():
+            return ()
+        return tuple(sorted(self._backfill_saturated_mints))
+
+    def _activity_saturation_threshold(self) -> int:
+        return ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS
 
     async def _on_candidates_changed(
         self,
@@ -184,6 +194,14 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             return
         if self._live_coverage_started_at is None:
             self._live_coverage_started_at = observed_at or _utc_now()
+
+    def _continuous_live_window_complete(self, now: datetime | None = None) -> bool:
+        if not self._subscriptions_complete() or self._live_coverage_started_at is None:
+            return False
+        observed_now = now or _utc_now()
+        return (
+            observed_now - self._live_coverage_started_at
+        ).total_seconds() >= self.config.activity_window_seconds
 
     def _schedule_backfill(
         self,
@@ -590,6 +608,10 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             self._backfill_truncated_candidates = 0
             self._backfill_failures = 0
             self._backfill_failure_codes = {}
+            self._backfill_saturated_mints = set()
+            activity_floor_time = now - timedelta(
+                seconds=self.config.activity_window_seconds
+            )
 
             last_slot = cursor_slot
             if last_slot is None and not full_window:
@@ -627,6 +649,7 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                     self._backfill_candidates_attempted += 1
                     candidate_complete = False
                     candidate_failed = False
+                    candidate_observation_hashes: set[str] = set()
                     before_signature: str | None = None
                     pages_for_candidate = 0
 
@@ -701,15 +724,23 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                             page_activities.append(
                                 (signature_hash, slot, observed_at, (mint,))
                             )
+                            if observed_at >= activity_floor_time:
+                                candidate_observation_hashes.add(signature_hash)
                         self._candidate_transactions += await self.store.record_activities(
                             page_activities
                         )
-
                         if len(result) < self.config.backfill_limit_per_candidate:
                             candidate_complete = True
                             break
                         if result_slots and min(result_slots) < replay_from:
                             candidate_complete = True
+                            break
+                        if (
+                            len(candidate_observation_hashes)
+                            >= ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS
+                        ):
+                            candidate_complete = True
+                            self._backfill_saturated_mints.add(mint)
                             break
 
                         last_item = result[-1] if result else None
@@ -780,10 +811,14 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
 
     def _recovery_health(self, cursor: dict[str, Any]) -> dict[str, Any]:
         coverage_complete = self._observation_coverage_complete()
-        if self._backfill_coverage_complete:
-            coverage_basis = "bounded_http_backfill"
-        elif coverage_complete:
+        continuous_window_complete = self._continuous_live_window_complete()
+        saturated_count = len(self._saturated_candidate_mints())
+        if continuous_window_complete:
             coverage_basis = "continuous_live_window"
+        elif self._backfill_coverage_complete and saturated_count:
+            coverage_basis = "bounded_http_score_saturation"
+        elif self._backfill_coverage_complete:
+            coverage_basis = "bounded_http_backfill"
         else:
             coverage_basis = "incomplete"
         return {
@@ -809,6 +844,9 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             "truncatedCandidates": self._backfill_truncated_candidates,
             "failures": self._backfill_failures,
             "failureCodes": dict(sorted(self._backfill_failure_codes.items())),
+            "saturatedCandidates": saturated_count,
+            "scoreSaturationThreshold": ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS,
+            "windowEnumerationComplete": coverage_complete and saturated_count == 0,
             "lastBackfillAt": _public_time(self._last_backfill_at),
             "pending": self._backfill_pending,
             "coverageComplete": coverage_complete,
@@ -843,12 +881,7 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             return False
         if self._backfill_coverage_complete:
             return True
-        if self._live_coverage_started_at is None:
-            return False
-        observed_now = now or _utc_now()
-        return (
-            observed_now - self._live_coverage_started_at
-        ).total_seconds() >= self.config.activity_window_seconds
+        return self._continuous_live_window_complete(now)
 
     def _sanitize_transport_error(self, exc: Exception) -> str:
         if isinstance(exc, _PubSubProtocolError):
@@ -887,6 +920,7 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
         super().__init__(config, store)
         self._poll_wake_event = asyncio.Event()
         self._polled_candidate_mints: tuple[str, ...] = ()
+        self._polled_saturated_mints: tuple[str, ...] = ()
         self._poll_cycles_attempted = 0
         self._poll_cycles_completed = 0
         self._poll_cycles_failed = 0
@@ -906,6 +940,7 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
         del previous
         self._backfill_coverage_complete = False
         self._polled_candidate_mints = ()
+        self._polled_saturated_mints = ()
         self._connected = False
         self._state = "waiting_for_poll" if current else "waiting_for_candidates"
         self._poll_wake_event.set()
@@ -914,6 +949,11 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
         if not self._observation_coverage_complete():
             return ()
         return self._polled_candidate_mints
+
+    def _saturated_candidate_mints(self) -> tuple[str, ...]:
+        if not self._observation_coverage_complete():
+            return ()
+        return self._polled_saturated_mints
 
     def _freshness_threshold_seconds(self) -> int:
         jitter_allowance = max(30, self.config.poll_interval_seconds // 2)
@@ -1016,6 +1056,7 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
             if not complete or polled_slot is None:
                 self._poll_cycles_failed += 1
                 self._polled_candidate_mints = ()
+                self._polled_saturated_mints = ()
                 self._state = "degraded"
                 if self._last_error_code is None:
                     self._last_error_code = "http_poll_incomplete"
@@ -1029,6 +1070,7 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
             self._last_connected_at = completed_at
             self._last_poll_completed_at = completed_at
             self._polled_candidate_mints = candidates
+            self._polled_saturated_mints = tuple(sorted(self._backfill_saturated_mints))
             self._received_updates += 1
             self._processed_updates += 1
             self._poll_cycles_completed += 1
@@ -1189,6 +1231,7 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
 
     def _recovery_health(self, cursor: dict[str, Any]) -> dict[str, Any]:
         coverage_complete = self._observation_coverage_complete()
+        saturated_count = len(self._saturated_candidate_mints())
         return {
             "mode": "http_signature_polling",
             "nativeProviderReplay": False,
@@ -1217,10 +1260,19 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
             "truncatedCandidates": self._backfill_truncated_candidates,
             "failures": self._backfill_failures,
             "failureCodes": dict(sorted(self._backfill_failure_codes.items())),
+            "saturatedCandidates": saturated_count,
+            "scoreSaturationThreshold": ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS,
+            "windowEnumerationComplete": coverage_complete and saturated_count == 0,
             "lastPollAt": _public_time(self._last_backfill_at),
             "pending": self._backfill_pending,
             "coverageComplete": coverage_complete,
-            "coverageBasis": "bounded_http_poll_cycle" if coverage_complete else "incomplete",
+            "coverageBasis": (
+                "bounded_http_score_saturation"
+                if coverage_complete and saturated_count
+                else "bounded_http_poll_cycle"
+                if coverage_complete
+                else "incomplete"
+            ),
             "basis": self._backfill_basis,
             "reason": self._replay_reason,
         }

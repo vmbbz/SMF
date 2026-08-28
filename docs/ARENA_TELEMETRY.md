@@ -13,7 +13,7 @@ The design answers six questions without inflating the answer:
 3. How many share cards and aggregate wallet sessions were recorded?
 4. Which Solana transactions passed the existing server verification path?
 5. Is the evidence durable, or will it disappear when the current process restarts?
-6. Is the optional Alchemy Solana evidence path configured, fresh, fully covered, cost-bounded, and durably cursor-backed?
+6. Is the optional Alchemy Solana evidence path configured, fresh, score-complete, honestly labelled, cost-bounded, and durably cursor-backed?
 
 The public page is available through **Help -> Live Arena Status** and the `/arena` route. Its read-only JSON source is `/api/arena/status`.
 
@@ -24,7 +24,7 @@ Birdeye discovery snapshot -----> candidate mint filter
           |                              |
           |                              v
           |                 Alchemy Solana HTTP polling
-          |                 | complete cycle + cursor
+          |                 | score-complete cycle + cursor
           v                       v
 Arena Director response -----> arena_director_events
           |
@@ -57,12 +57,12 @@ Provider observation time and provider snapshot time are separate. StickLash nev
 ### Alchemy candidate activity evidence
 
 - **Evidence freshness**: age of the most recently completed Alchemy HTTP poll. It is not the age of Birdeye's market snapshot and does not imply a live subscription.
-- **Monitored candidates**: requested, covered, pending, and failed counts for the bounded Birdeye-discovered mint set. Mint values themselves are not exposed in the health object. `activeCandidateCount` is retained for API compatibility and means complete-cycle coverage in HTTP mode.
-- **Confirmed candidate transaction observations**: distinct signature hashes inside the configured window whose transactions mention at least one subscribed mint. This is not a trade, buy, sell, USD-volume, revenue, or unique-user count.
-- **Recovery cursor**: latest fully covered confirmed slot. The free path rewinds and clamps a bounded `getSignaturesForAddress` cycle; this is not native replay. Public health exposes limits, failures, truncation, and complete-cycle coverage.
-- **Reliability and cost**: attempted, completed, and failed poll cycles, sanitized errors, and current/maximum 30-day compute-unit estimates. Estimates exclude retries and other Alchemy traffic.
+- **Monitored candidates**: requested, covered, pending, and failed counts for the bounded Birdeye-discovered mint set. Mint values themselves are not exposed in the health object. `activeCandidateCount` is retained for API compatibility and means score-complete-cycle coverage in HTTP mode.
+- **Confirmed candidate transaction observations**: distinct signature hashes inside the configured window whose transactions mention at least one subscribed mint. Counts are exact when all windows are enumerated and explicitly labelled lower bounds when a dense candidate proves score saturation. This is not a trade, buy, sell, USD-volume, revenue, or unique-user count.
+- **Recovery cursor**: latest score-complete confirmed slot. The free path rewinds and clamps a bounded `getSignaturesForAddress` cycle; this is not native replay. Public health separately exposes score coverage, full-window enumeration state, saturation, limits, failures, and truncation.
+- **Reliability and cost**: attempted, completed, and failed poll cycles, bounded retries, sanitized errors, and current/maximum 30-day compute-unit estimates. The maximum estimate includes the configured retry ceiling but excludes all other Alchemy account traffic.
 
-Only a fresh complete cycle can add the bounded Alchemy activity bonus to Director v0.2. `disabled`, `misconfigured`, `waiting_for_candidates`, `polling`, `stale`, `stopped`, and incomplete-coverage states add no score. Birdeye remains the required discovery/base-scoring provider, so Alchemy availability does not determine whether a selection can be returned.
+Only a fresh score-complete cycle can add the bounded Alchemy activity bonus to Director v0.2.1. A candidate is score-complete only when its window is enumerated or at least 31 distinct observations prove the already-capped eight-point bonus. `disabled`, `misconfigured`, `waiting_for_candidates`, `polling`, `stale`, `stopped`, failed, truncated, and incomplete-coverage states add no score. Birdeye remains the required discovery/base-scoring provider, so Alchemy availability does not determine whether a selection can be returned.
 
 See [Alchemy Solana Candidate Activity Evidence](ALCHEMY_STREAM.md) for the exact polling, scoring, recovery, cost, failure, and optional transport contracts.
 
@@ -123,7 +123,7 @@ Alchemy ingestion state uses two separate operational tables:
 - `alchemy_stream_cursor`
 - `alchemy_stream_transactions`
 
-The free default updates its cursor only after every candidate request in a bounded HTTP cycle completes without failure or truncation. Each returned provider page is persisted as one PostgreSQL insert-and-merge batch rather than one connection acquisition per signature. Optional PubSub/Yellowstone transports update the cursor from accepted transport observations. Recent signature-hash rows are deleted after the bounded dedupe-retention window. Duplicate signatures returned for more than one mint merge their attribution. These rows are neither insert-only public telemetry nor a permanent transaction ledger, and they must never feed rewards or leaderboard eligibility.
+The free default updates its cursor only after every candidate in a bounded HTTP cycle is score-complete without request failure or truncation. Full enumeration and score saturation remain separate public states. Each returned provider page is persisted as one PostgreSQL insert-and-merge batch rather than one connection acquisition per signature. Optional PubSub/Yellowstone transports update the cursor from accepted transport observations. Recent signature-hash rows are deleted after the bounded dedupe-retention window. Duplicate signatures returned for more than one mint merge their attribution. These rows are neither insert-only public telemetry nor a permanent transaction ledger, and they must never feed rewards or leaderboard eligibility.
 
 ## Public API contract
 
@@ -131,7 +131,7 @@ The endpoint returns these top-level evidence classes:
 
 ```json
 {
-  "schemaVersion": "2026-08-28.v8",
+  "schemaVersion": "2026-08-28.v9",
   "generatedAt": "2026-08-28T00:00:00+00:00",
   "persistence": {
     "mode": "postgres",
@@ -158,7 +158,7 @@ The endpoint returns these top-level evidence classes:
 
 The page treats a missing or `null` durable metric as **NOT AVAILABLE**. It does not coerce missing evidence to zero. Every metric group includes a plain-language definition so labels cannot quietly drift into stronger claims.
 
-For Alchemy activity specifically, zero is evidence-backed only when the latest cycle is fresh, every current candidate is covered, and no request failed or truncated. All other states return a `null` observation count.
+For Alchemy activity specifically, zero is evidence-backed only when the latest cycle is fresh, no request failed or truncated, and the current rolling window is exact. A saturated count begins as a positive lower bound; once fewer than 31 retained observations remain, omitted provider pages are older than the active window and the current count is labelled exact again. Zero is never labelled as a lower bound. All incomplete states return a `null` observation count.
 
 ## Security and privacy properties
 
@@ -185,7 +185,7 @@ Before calling the page durable:
 7. Confirm the JSON contains no wallet address, room code, player name, auth token, or challenge.
 8. Confirm the `/arena` page renders zero only for connected durable ledgers and renders unavailable metrics as **NOT AVAILABLE**.
 9. If Alchemy is intentionally disabled, confirm `marketStream.status` is `disabled` and its observation count is `null`.
-10. If Alchemy is enabled on the free default, require `transport: "solana_http_polling"`, `status: "live"`, `freshness: "fresh"`, complete active-candidate coverage, zero active subscriptions, `replay.cursorDurable: true`, `replay.coverageComplete: true`, an advancing slot, no final poll failure/truncation, bounded retry evidence and poll duration, page-batched persistence, and no credential in the response or logs.
+10. If Alchemy is enabled on the free default, require `transport: "solana_http_polling"`, `status: "live"`, `freshness: "fresh"`, complete active-candidate coverage, zero active subscriptions, `replay.cursorDurable: true`, `replay.coverageComplete: true`, an advancing slot, no final poll failure/truncation, bounded retry evidence and poll duration, page-batched persistence, and no credential in the response or logs. If `windowEnumerationComplete` is false, also require positive saturated-candidate evidence and `bounded_lower_bound_saturated` count semantics.
 11. Restart the service and confirm it requests a rewound bounded floor without duplicate signatures inflating the current observation window. Do not describe HTTP polling as a live subscription or native replay.
 
 Do not seed, backfill, or simulate public counters for a demo. A small real number is stronger evidence than an inflated number with ambiguous provenance.

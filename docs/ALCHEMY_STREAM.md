@@ -29,14 +29,14 @@ Birdeye trending + graduated discovery
                  v
 Alchemy Solana HTTP polling every 180 seconds
   getSlot(commitment=confirmed) once
-  getSignaturesForAddress once per candidate
+  getSignaturesForAddress with bounded pagination
                  |
-                 | slot clamp + complete-cycle gate
+                 | slot clamp + score-complete-cycle gate
                  v
 PostgreSQL completed-cycle cursor + signature-hash dedupe
                  |
                  v
-Arena Director v0.2
+Arena Director v0.2.1
   Birdeye base score + optional max-8 activity bonus
                  |
                  +----> provider provenance on each decision
@@ -74,24 +74,36 @@ Each cycle snapshots the current lifecycle-managed candidate set and then:
 2. requests the current confirmed slot with `getSlot`;
 3. rewinds the cursor by 32 slots;
 4. clamps work to at most 512 slots behind the current slot;
-5. calls `getSignaturesForAddress` once per candidate, sequentially, with up to
-   1,000 signatures in the first page;
-6. for a candidate that still has not crossed the slot floor, requests at most
-   one additional page, with at most eight extra pages shared by the cycle;
+5. calls `getSignaturesForAddress` sequentially with up to 1,000 signatures in
+   each page;
+6. for a candidate that has neither crossed the slot floor nor proved score
+   saturation, requests up to four additional pages, with at most eight extra
+   pages shared by the cycle;
 7. retains only successful signatures inside the bounded slot range;
-8. hashes each signature with SHA-256 and merges duplicate mint attribution;
-9. accepts the cycle only if every candidate request completed without failure
-   or truncation and the candidate set did not change during the cycle; and
-10. saves the current slot as the new cursor only after that complete cycle.
+8. hashes each signature with SHA-256, counts distinct hashes for saturation,
+   and merges duplicate mint attribution;
+9. marks a candidate score-complete when its window is fully enumerated or at
+   least 31 distinct valid in-window signatures prove the maximum activity
+   bonus;
+10. accepts the cycle only if every candidate is score-complete, no request
+    failed or truncated, and the candidate set did not change; and
+11. saves the current slot as the new cursor only after that accepted cycle.
 
 Requests are spaced by 200 ms to remain conservative against free-tier
 throughput. A candidate change wakes the worker, but the existing minimum
 backfill interval still prevents rapid repeated work.
 
-If no cursor exists, the first cycle scans the full bounded 512-slot window. A
-candidate that exhausts its second page or the shared extra-page budget before
-crossing the requested floor is reported as truncated. There is no unbounded
-catch-up.
+If no cursor exists, the first cycle starts at the bounded 512-slot floor. A
+candidate that exhausts its five-page cap or the shared extra-page budget before
+either crossing that floor or proving score saturation is reported as
+truncated. There is no unbounded catch-up.
+
+`coverageComplete` is retained for API compatibility and means **score-complete
+candidate coverage**. It does not necessarily mean every dense candidate window
+was exhaustively enumerated. `windowEnumerationComplete` is true only when no
+candidate used score saturation. When saturation is used, `countSemantics` is
+`bounded_lower_bound_saturated`, `saturatedCandidates` is positive, and the UI
+renders the count as **AT LEAST N**.
 
 ## Freshness and zero-count rule
 
@@ -104,12 +116,17 @@ A zero is returned only when all of these are true:
 
 1. at least one candidate exists;
 2. the latest poll completed within the freshness threshold;
-3. every current candidate was covered by that same complete cycle;
-4. no request failed or hit the per-candidate limit; and
+3. every current candidate window was fully enumerated by that same cycle;
+4. no request failed or hit a pagination limit; and
 5. the activity cache contains zero matching signatures in the active window.
 
-Otherwise the observation count is `null`, `activity.scoreEligible` is false,
-and the Director receives no Alchemy bonus. Birdeye selection remains available.
+Score saturation initially requires at least 31 distinct observations, so its
+count begins as a positive disclosed lower bound. As the rolling window moves,
+the omitted pages are older than the retained first page; once fewer than 31
+retained observations remain, the active-window count is labelled exact again.
+A zero is therefore never labelled as a lower bound. Any incomplete observation
+state is `null`, `activity.scoreEligible` is false, and the Director receives no
+Alchemy bonus. Birdeye selection remains available.
 
 ## Cost guard
 
@@ -156,7 +173,7 @@ status becomes `degraded` and reports `cursorDurable: false`.
 
 ## Director scoring
 
-Arena Director v0.2 preserves Birdeye as the dominant policy:
+Arena Director v0.2.1 preserves Birdeye as the dominant policy:
 
 | Signal | Maximum points |
 |---|---:|
@@ -173,7 +190,10 @@ min(log2(1 + n) / 5, 1) * 8
 ```
 
 The logarithm and eight-point cap prevent noisy activity from overwhelming
-market quality. HTTP-poll decisions identify the optional source as
+market quality. The formula reaches the full eight points at `n = 31`, so
+enumerating a dense candidate beyond 31 cannot alter its Director activity
+bonus. Stopping there reduces provider work without changing selection logic;
+the observed count remains a clearly labelled lower bound. HTTP-poll decisions identify the optional source as
 `alchemy_solana_http_candidate_activity`; PubSub and Yellowstone use distinct
 source labels. Unknown, stale, partial, or unverified transport labels are not
 score-eligible.
@@ -187,12 +207,14 @@ compatibility. Its transport-specific evidence includes:
 - sanitized endpoint host, state, freshness, last completed cycle, and slot;
 - monitored, covered, pending, and failed candidate counts;
 - confirmed HTTP method names and zero active WebSocket connections;
-- bounded floor, limits, failures, truncation, cursor durability, and coverage;
+- bounded floor, limits, failures, truncation, cursor durability, score coverage,
+  full-window enumeration state, and saturated-candidate count;
 - attempted, completed, and failed poll cycles, current start time, and last duration;
 - bounded retry attempts, recoveries, and sanitized request/final failure codes;
 - one bounded PostgreSQL activity batch per returned provider page;
 - current and maximum 30-day compute-unit estimates; and
-- an activity count only after the complete-cycle freshness gate passes.
+- an exact or explicitly lower-bound activity count only after the
+  score-complete-cycle freshness gate passes.
 
 `activeCandidateCount` means candidates covered by the latest complete HTTP
 cycle. It does not mean active WebSocket subscriptions.
@@ -202,9 +224,9 @@ cycle. It does not mean active WebSocket subscriptions.
 | `disabled` | Operator has not enabled the worker | No |
 | `misconfigured` | Key, transport, or safe endpoint is invalid | No |
 | `waiting_for_candidates` | No lifecycle candidate set exists | No |
-| `waiting_for_poll` | Candidate set changed and awaits a complete cycle | No |
+| `waiting_for_poll` | Candidate set changed and awaits a score-complete cycle | No |
 | `polling` | A bounded cycle is in progress | No |
-| `live` | Fresh complete cycle and durable cursor | Yes |
+| `live` | Fresh score-complete cycle and durable cursor | Yes |
 | `degraded` | Incomplete cycle or non-durable cursor | Only if `activity.scoreEligible` is explicitly true |
 | `stale` | Latest completed cycle exceeded its threshold | No |
 | `stopped` | Configured worker is not running | No |
@@ -255,6 +277,8 @@ candidate activity evidence.
    - active candidate coverage equals candidate count;
    - `subscription.connectionCount == 0`;
    - `replay.cursorDurable == true` and `coverageComplete == true`;
+   - either `windowEnumerationComplete == true`, or a positive
+     `saturatedCandidates` count with lower-bound count semantics;
    - zero failures and truncations;
    - bounded retry counts and only sanitized failure-code keys;
    - a recent completed poll and advancing slot; and
@@ -297,9 +321,12 @@ Allowed after HTTP production proof:
 
 - "Alchemy Solana HTTP polling supplies bounded confirmed candidate-activity
   observations."
-- "StickLash exposes freshness, complete-cycle coverage, durable recovery,
-  dedupe, cost estimates, and Birdeye failover."
+- "StickLash exposes freshness, score-complete coverage, full-window
+  enumeration state, durable recovery, dedupe, cost estimates, and Birdeye
+  failover."
 - "Recent confirmed candidate activity contributes a capped optional score."
+- "Sparse-window counts are exact; score-saturated dense-window counts are
+  explicitly labelled lower bounds."
 
 Not supported:
 

@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from arena_director import ArenaDirector, DIRECTOR_VERSION
+from arena_director import (
+    ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS,
+    ArenaDirector,
+    DIRECTOR_VERSION,
+)
 
 
 FIXED_TIME = datetime(2026, 8, 27, 12, 0, tzinfo=timezone.utc)
@@ -116,17 +120,41 @@ def test_fresh_alchemy_activity_adds_only_the_bounded_optional_bonus() -> None:
             "transport": "solana_http_polling",
             "scoreEligible": True,
             "observedConfirmedTransactions": 31,
+            "countSemantics": "bounded_lower_bound_saturated",
+        },
+    }
+    much_higher_activity = {
+        **base,
+        "alchemyActivity": {
+            **enriched["alchemyActivity"],
+            "observedConfirmedTransactions": 999_999,
         },
     }
 
     baseline = director.decide([base], [], generated_at=FIXED_TIME)
     with_activity = director.decide([enriched], [], generated_at=FIXED_TIME)
+    with_much_higher_activity = director.decide(
+        [much_higher_activity], [], generated_at=FIXED_TIME
+    )
     delta = with_activity["candidates"][0]["score"] - baseline["candidates"][0]["score"]
 
-    assert 0 < delta <= with_activity["policy"]["confirmedActivityBonus"]
+    assert delta == with_activity["policy"]["confirmedActivityBonus"]
+    assert (
+        with_activity["policy"]["confirmedActivitySaturationTransactions"]
+        == ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS
+        == 31
+    )
+    assert (
+        with_much_higher_activity["candidates"][0]["score"]
+        == with_activity["candidates"][0]["score"]
+    )
     assert "alchemy_solana_http_candidate_activity" in with_activity["inputSources"]
     assert "recent_confirmed_onchain_activity" in with_activity["candidates"][0]["reasons"]
     assert with_activity["candidates"][0]["metrics"]["alchemyConfirmedTransactions"] == 31
+    assert (
+        with_activity["candidates"][0]["metrics"]["alchemyActivityCountSemantics"]
+        == "bounded_lower_bound_saturated"
+    )
 
 
 def test_stale_alchemy_activity_cannot_change_selection_or_score() -> None:

@@ -857,6 +857,31 @@ class AlchemyYellowstoneStream:
     def _active_candidate_mints(self) -> tuple[str, ...]:
         return self._candidate_mints
 
+    def _saturated_candidate_mints(self) -> tuple[str, ...]:
+        return ()
+
+    def _activity_saturation_threshold(self) -> int | None:
+        return None
+
+    def _activity_count_semantics(
+        self,
+        mint: str | None = None,
+        observed_count: int | None = None,
+    ) -> str:
+        saturated = set(self._saturated_candidate_mints())
+        candidate_is_saturated = (
+            mint in saturated if mint is not None else bool(saturated)
+        )
+        threshold = self._activity_saturation_threshold()
+        count_still_saturated = (
+            observed_count is None
+            or threshold is None
+            or observed_count >= threshold
+        )
+        if candidate_is_saturated and count_still_saturated:
+            return "bounded_lower_bound_saturated"
+        return "exact_window_count"
+
     def _public_endpoint_host(self) -> str | None:
         return self.config.endpoint_host
 
@@ -1173,9 +1198,14 @@ class AlchemyYellowstoneStream:
                         "scoreEligible": True,
                         "windowSeconds": self.config.activity_window_seconds,
                         "observedConfirmedTransactions": metric["observedConfirmedTransactions"],
+                        "countSemantics": self._activity_count_semantics(
+                            mint,
+                            metric["observedConfirmedTransactions"],
+                        ),
+                        "scoreSaturationThreshold": self._activity_saturation_threshold(),
                         "lastObservedAt": metric["lastObservedAt"],
                         "lastSlot": metric["lastSlot"],
-                        "definition": "Confirmed transactions mentioning this candidate mint; not trades, volume, or unique users.",
+                        "definition": "Confirmed transactions mentioning this candidate mint; exact for an enumerated window or an explicitly labeled lower bound once the Director score is saturated; not trades, volume, or unique users.",
                     }
                 enriched.append(copied)
             enriched_lists.append(enriched)
@@ -1187,12 +1217,24 @@ class AlchemyYellowstoneStream:
         cursor = await self.store.cursor_status()
 
         active_mints = self._active_candidate_mints()
+        saturated_mints = self._saturated_candidate_mints()
         activity: dict[str, Any]
+        active_saturated_mints: tuple[str, ...] = ()
         coverage_complete = self._observation_coverage_complete(now)
         if self._connected and freshness == "fresh" and active_mints and coverage_complete:
             snapshot = await self.store.activity_snapshot(
                 list(active_mints),
                 since=now - timedelta(seconds=self.config.activity_window_seconds),
+            )
+            threshold = self._activity_saturation_threshold()
+            active_saturated_mints = tuple(
+                mint
+                for mint in saturated_mints
+                if threshold is None
+                or snapshot["byMint"].get(mint, {}).get(
+                    "observedConfirmedTransactions", 0
+                )
+                >= threshold
             )
             activity = {
                 "availability": "observed",
@@ -1286,7 +1328,20 @@ class AlchemyYellowstoneStream:
             "activity": {
                 **activity,
                 "windowSeconds": self.config.activity_window_seconds,
-                "definition": "Confirmed transactions mentioning subscribed candidate mints; not trades, USD volume, revenue, or unique users.",
+                "countSemantics": (
+                    (
+                        "bounded_lower_bound_saturated"
+                        if active_saturated_mints
+                        else "exact_window_count"
+                    )
+                    if activity["scoreEligible"]
+                    else "unavailable"
+                ),
+                "saturatedCandidateCount": (
+                    len(active_saturated_mints) if activity["scoreEligible"] else 0
+                ),
+                "scoreSaturationThreshold": self._activity_saturation_threshold(),
+                "definition": "Confirmed transactions mentioning subscribed candidate mints; exact for enumerated windows and an explicitly labeled lower bound for score-saturated dense candidates; not trades, USD volume, revenue, or unique users.",
             },
             "failover": {
                 "baseSelectionProvider": "birdeye",

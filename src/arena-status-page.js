@@ -36,6 +36,14 @@ export function formatArenaCount(value) {
   return Math.trunc(parsed).toLocaleString('en-US');
 }
 
+export function formatArenaObservationCount(value, semantics) {
+  const formatted = formatArenaCount(value);
+  if (formatted === 'NOT AVAILABLE') return formatted;
+  return semantics === 'bounded_lower_bound_saturated'
+    ? `AT LEAST ${formatted}`
+    : formatted;
+}
+
 export function formatArenaTime(value) {
   if (!value) return 'NOT RECORDED';
   const parsed = new Date(value);
@@ -207,7 +215,13 @@ function renderMarketStream(stream) {
   setText('arena-stream-freshness', String(stream.freshness || 'unavailable').toUpperCase());
   setText('arena-stream-slot', formatArenaCount(stream.lastSlot));
   setText('arena-stream-candidates', formatArenaCount(stream.subscription?.candidateCount));
-  setText('arena-stream-observations', formatArenaCount(stream.activity?.observedConfirmedTransactions));
+  setText(
+    'arena-stream-observations',
+    formatArenaObservationCount(
+      stream.activity?.observedConfirmedTransactions,
+      stream.activity?.countSemantics,
+    ),
+  );
   setText(
     'arena-stream-last-update',
     stream.lastUpdateAt
@@ -231,9 +245,16 @@ function renderMarketStream(stream) {
   const coverageLabel = replay.coverageComplete === true
     ? `coverage complete via ${coverageBasis}`
     : 'coverage incomplete';
+  const enumerationLabel = replay.coverageComplete !== true
+    ? ''
+    : replay.windowEnumerationComplete === false
+      ? ' · full-window enumeration intentionally bounded after score saturation'
+      : replay.windowEnumerationComplete === true
+        ? ' · full window enumerated'
+        : '';
   setText(
     'arena-stream-cursor',
-    `${cursorLabel} · ${recoveryMode} · ${coverageLabel} · saved slot ${formatArenaCount(replay.cursorSlot)} · ${requestedSlotLabel} ${formatArenaCount(replay.requestedFromSlot)} · ${String(replay.reason || 'not available').replaceAll('_', ' ')}.`
+    `${cursorLabel} · ${recoveryMode} · ${coverageLabel}${enumerationLabel} · saved slot ${formatArenaCount(replay.cursorSlot)} · ${requestedSlotLabel} ${formatArenaCount(replay.requestedFromSlot)} · ${String(replay.reason || 'not available').replaceAll('_', ' ')}.`
   );
 
   const reliability = stream.reliability || {};
@@ -242,7 +263,10 @@ function renderMarketStream(stream) {
     ? ''
     : ` · active candidate coverage ${formatArenaCount(activeCandidates)}/${formatArenaCount(stream.subscription?.candidateCount)}`;
   const backfillEvidence = ['http_signature_polling', 'http_signature_backfill'].includes(replay.mode)
-    ? ` · HTTP failures ${formatArenaCount(replay.failures)} · truncated candidates ${formatArenaCount(replay.truncatedCandidates)}`
+    ? ` · HTTP failures ${formatArenaCount(replay.failures)} · truncated candidates ${formatArenaCount(replay.truncatedCandidates)} · score-saturated candidates ${formatArenaCount(replay.saturatedCandidates)} at ${formatArenaCount(replay.scoreSaturationThreshold)} distinct observations`
+    : '';
+  const retryEvidence = stream.transport === 'solana_http_polling'
+    ? ` · retries attempted/recovered ${formatArenaCount(reliability.retriesAttempted)}/${formatArenaCount(reliability.retriesRecovered)}`
     : '';
   const costGuard = reliability.costGuard || {};
   const pollingEvidence = stream.transport === 'solana_http_polling'
@@ -250,7 +274,7 @@ function renderMarketStream(stream) {
     : `Reconnects ${formatArenaCount(reliability.reconnects)} · dropped updates ${formatArenaCount(reliability.droppedUpdates)}${candidateCoverage}${backfillEvidence}`;
   setText(
     'arena-stream-reliability',
-    `${pollingEvidence} · last sanitized error ${reliability.lastErrorCode || 'NONE'}.`
+    `${pollingEvidence}${retryEvidence} · last sanitized error ${reliability.lastErrorCode || 'NONE'}.`
   );
 }
 

@@ -10,8 +10,9 @@ from typing import Any, Iterable
 
 
 DIRECTOR_NAME = "StickLash Arena Director"
-DIRECTOR_VERSION = "0.2.0"
+DIRECTOR_VERSION = "0.2.1"
 MAX_PUBLIC_CANDIDATES = 8
+ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS = 31
 
 POLICY = {
     "volume24h": 42,
@@ -19,6 +20,9 @@ POLICY = {
     "liquidity": 25,
     "graduatedDiscoveryBonus": 10,
     "confirmedActivityBonus": 8,
+    "confirmedActivitySaturationTransactions": (
+        ALCHEMY_ACTIVITY_SCORE_SATURATION_TRANSACTIONS
+    ),
     "thinLiquidityPenalty": 15,
     "missingVolumePenalty": 10,
 }
@@ -68,6 +72,17 @@ def _alchemy_activity(token: dict[str, Any]) -> tuple[float, bool, str | None]:
     if source is None:
         return 0.0, False, None
     return _number(activity.get("observedConfirmedTransactions")), True, source
+
+
+def _alchemy_activity_count_semantics(token: dict[str, Any]) -> str:
+    """Normalize how a score-eligible activity count may be interpreted."""
+    activity = token.get("alchemyActivity")
+    if (
+        isinstance(activity, dict)
+        and activity.get("countSemantics") == "bounded_lower_bound_saturated"
+    ):
+        return "bounded_lower_bound_saturated"
+    return "exact_window_count"
 
 
 def _merge_candidate(
@@ -190,6 +205,9 @@ def _decision_id(current_mint: str, scored: Iterable[dict[str, Any]]) -> str:
                 "liquidity": item["metrics"]["liquidity"],
                 "alchemyConfirmedTransactions": item["metrics"]["alchemyConfirmedTransactions"],
                 "alchemyActivityScoreEligible": item["metrics"]["alchemyActivityScoreEligible"],
+                "alchemyActivityCountSemantics": item["metrics"][
+                    "alchemyActivityCountSemantics"
+                ],
             }
             for item in scored
         ],
@@ -226,6 +244,9 @@ class ArenaDirector:
         for mint, token in merged.items():
             reasons = _reason_codes(token)
             confirmed_activity, activity_eligible, activity_source = _alchemy_activity(token)
+            activity_count_semantics = (
+                _alchemy_activity_count_semantics(token) if activity_eligible else None
+            )
             if activity_eligible and activity_source:
                 alchemy_activity_sources.add(activity_source)
             scored.append(
@@ -243,6 +264,7 @@ class ArenaDirector:
                         "marketCap": token["marketCap"],
                         "alchemyConfirmedTransactions": confirmed_activity if activity_eligible else None,
                         "alchemyActivityScoreEligible": activity_eligible,
+                        "alchemyActivityCountSemantics": activity_count_semantics,
                     },
                     "token": token,
                 }

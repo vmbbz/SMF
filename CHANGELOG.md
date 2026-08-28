@@ -2,6 +2,22 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Score-Saturated Alchemy Evidence
+
+### Changed
+
+- Made dense candidate polling score-complete after 31 distinct valid in-window signatures, the exact point where the Director's logarithmic Alchemy bonus reaches its eight-point cap.
+- Preserved exact enumeration for sparse candidates and fail-closed behavior for request failures, candidate-set changes, duplicate-only pages, and page-budget truncation.
+- Added explicit exact-versus-lower-bound count semantics, saturated-candidate counts, score threshold, and full-window enumeration state to the API and public Arena Status page.
+- Added count semantics to Director candidate metrics and deterministic decision snapshots; Arena Director advanced to `0.2.1`.
+- Advanced the public arena evidence schema to `2026-08-28.v9`.
+
+### Evidence Boundary
+
+- `coverageComplete` now explicitly means score-complete candidate coverage, not exhaustive enumeration of every dense window.
+- A saturated positive observation is rendered as `AT LEAST N`; zero is never labelled as a lower bound and is shown only when the current rolling window is exact.
+- Alchemy observations remain neither trades nor volume and cannot affect ELO, leaderboard eligibility, or rewards.
+
 ## 2026-08-28 - Dense-Mint Page Allocation
 
 ### Changed

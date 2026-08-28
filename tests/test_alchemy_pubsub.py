@@ -21,6 +21,7 @@ MINT_B = "So11111111111111111111111111111111111111112"
 SIGNATURE_A = "2" * 88
 SIGNATURE_B = "3" * 88
 SIGNATURE_C = "4" * 88
+BASE58_SIGNATURE_CHARACTERS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 
 def pubsub_stream(**overrides) -> AlchemySolanaPubSubStream:
@@ -285,6 +286,114 @@ async def test_http_polling_fails_closed_on_truncated_candidate_window() -> None
     assert health["activity"]["scoreEligible"] is False
     assert health["activity"]["observedConfirmedTransactions"] is None
     assert health["reliability"]["lastErrorCode"] == "http_poll_incomplete"
+
+
+@pytest.mark.asyncio
+async def test_http_polling_accepts_distinct_activity_after_score_saturation() -> None:
+    now = datetime.now(timezone.utc)
+    signatures = [character * 88 for character in BASE58_SIGNATURE_CHARACTERS[:31]]
+    stream = polling_stream(
+        backfill_max_slots=64,
+        backfill_limit_per_candidate=31,
+        backfill_max_pages_per_candidate=1,
+    )
+    await stream.set_candidates([MINT_A])
+    stream._rpc_call = AsyncMock(
+        side_effect=[
+            120,
+            [
+                {
+                    "signature": signature,
+                    "slot": 120,
+                    "err": None,
+                    "blockTime": int(now.timestamp()),
+                }
+                for signature in signatures
+            ],
+        ]
+    )
+
+    assert await stream._poll_once() is True
+    health = await stream.public_health()
+    (enriched,) = await stream.enrich_candidate_lists([{"mint": MINT_A}])
+    activity = enriched[0]["alchemyActivity"]
+
+    assert health["replay"]["coverageComplete"] is True
+    assert health["replay"]["windowEnumerationComplete"] is False
+    assert health["replay"]["coverageBasis"] == "bounded_http_score_saturation"
+    assert health["replay"]["saturatedCandidates"] == 1
+    assert health["replay"]["scoreSaturationThreshold"] == 31
+    assert health["replay"]["truncatedCandidates"] == 0
+    assert health["activity"]["observedConfirmedTransactions"] == 31
+    assert health["activity"]["countSemantics"] == "bounded_lower_bound_saturated"
+    assert health["activity"]["saturatedCandidateCount"] == 1
+    assert activity["observedConfirmedTransactions"] == 31
+    assert activity["countSemantics"] == "bounded_lower_bound_saturated"
+    assert activity["scoreSaturationThreshold"] == 31
+    assert stream._activity_count_semantics(MINT_A, 30) == "exact_window_count"
+
+
+@pytest.mark.asyncio
+async def test_http_polling_does_not_saturate_on_duplicate_provider_rows() -> None:
+    stream = polling_stream(
+        backfill_max_slots=64,
+        backfill_limit_per_candidate=31,
+        backfill_max_pages_per_candidate=1,
+    )
+    await stream.set_candidates([MINT_A])
+    stream._rpc_call = AsyncMock(
+        side_effect=[
+            120,
+            [
+                {"signature": SIGNATURE_A, "slot": 120, "err": None}
+                for _ in range(31)
+            ],
+        ]
+    )
+
+    assert await stream._poll_once() is False
+    health = await stream.public_health()
+
+    assert health["replay"]["saturatedCandidates"] == 0
+    assert health["replay"]["truncatedCandidates"] == 1
+    assert health["replay"]["coverageComplete"] is False
+    assert health["activity"]["observedConfirmedTransactions"] is None
+
+
+@pytest.mark.asyncio
+async def test_http_polling_does_not_saturate_on_activity_older_than_score_window() -> None:
+    now = datetime.now(timezone.utc)
+    old_block_time = int((now - timedelta(seconds=181)).timestamp())
+    signatures = [character * 88 for character in BASE58_SIGNATURE_CHARACTERS[:31]]
+    stream = polling_stream(
+        activity_window_seconds=180,
+        backfill_max_slots=64,
+        backfill_limit_per_candidate=31,
+        backfill_max_pages_per_candidate=1,
+    )
+    await stream.set_candidates([MINT_A])
+    stream._rpc_call = AsyncMock(
+        side_effect=[
+            120,
+            [
+                {
+                    "signature": signature,
+                    "slot": 120,
+                    "err": None,
+                    "blockTime": old_block_time,
+                }
+                for signature in signatures
+            ],
+        ]
+    )
+
+    assert await stream._poll_once() is False
+    health = await stream.public_health()
+
+    assert health["replay"]["saturatedCandidates"] == 0
+    assert health["replay"]["truncatedCandidates"] == 1
+    assert health["replay"]["coverageComplete"] is False
+    assert health["activity"]["observedConfirmedTransactions"] is None
 
 
 @pytest.mark.asyncio
@@ -596,6 +705,7 @@ async def test_incomplete_backfill_becomes_complete_only_after_a_full_live_windo
     stream._mint_subscriptions[MINT_A] = 101
     stream._subscriptions[101] = ("logs", MINT_A)
     stream._backfill_truncated_candidates = 1
+    stream._backfill_saturated_mints = {MINT_A}
     stream._replay_reason = "partial_backfill"
     stream._refresh_live_coverage_start(now)
 
@@ -615,6 +725,9 @@ async def test_incomplete_backfill_becomes_complete_only_after_a_full_live_windo
     assert complete["replay"]["coverageComplete"] is True
     assert complete["replay"]["coverageBasis"] == "continuous_live_window"
     assert complete["replay"]["truncatedCandidates"] == 1
+    assert complete["replay"]["saturatedCandidates"] == 0
+    assert complete["replay"]["windowEnumerationComplete"] is True
+    assert complete["activity"]["countSemantics"] == "exact_window_count"
 
 
 @pytest.mark.asyncio
