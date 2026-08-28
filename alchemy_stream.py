@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import re
@@ -469,75 +470,158 @@ class AlchemyStreamStore:
         observed_at: datetime,
         mints: Iterable[str],
     ) -> bool:
-        normalized_mints = tuple(sorted({mint for mint in mints if SOLANA_ADDRESS_RE.fullmatch(mint)}))
-        if len(signature_hash) != 64 or not normalized_mints:
-            return False
-
-        event = _ActivityEvent(
-            signature_hash=signature_hash,
-            slot=max(0, int(slot)),
-            observed_at=observed_at.astimezone(timezone.utc),
-            mints=normalized_mints,
+        inserted = await self.record_activities(
+            [(signature_hash, slot, observed_at, mints)]
         )
+        return inserted == 1
 
-        if self._pool is not None:
-            try:
-                async with self._pool.acquire() as conn:
-                    result = await conn.execute(
-                        """
-                        INSERT INTO alchemy_stream_transactions (signature_hash, slot, observed_at, mints)
-                        VALUES ($1, $2, $3, $4::TEXT[])
-                        ON CONFLICT (signature_hash) DO NOTHING
-                        """,
-                        event.signature_hash,
-                        event.slot,
-                        event.observed_at,
-                        list(event.mints),
-                    )
-                self._database_healthy = True
-                inserted = result.endswith("1")
-                if not inserted:
-                    async with self._pool.acquire() as conn:
-                        await conn.execute(
-                            """
-                            UPDATE alchemy_stream_transactions
-                            SET slot = GREATEST(slot, $2),
-                                observed_at = GREATEST(observed_at, $3),
-                                mints = (
-                                    SELECT ARRAY_AGG(DISTINCT value ORDER BY value)
-                                    FROM UNNEST(mints || $4::TEXT[]) AS mint_value(value)
-                                )
-                            WHERE signature_hash = $1
-                            """,
-                            event.signature_hash,
-                            event.slot,
-                            event.observed_at,
-                            list(event.mints),
-                        )
-                remembered = await self._remember(event)
-                return inserted and remembered
-            except Exception as exc:
-                self._database_healthy = False
-                _LOGGER.warning("Alchemy activity write fell back to process memory: %s", type(exc).__name__)
+    async def record_activities(
+        self,
+        activities: Iterable[tuple[str, int, datetime, Iterable[str]]],
+    ) -> int:
+        """Persist one RPC page in a bounded batch and return new event count.
 
-        return await self._remember(event)
-
-    async def _remember(self, event: _ActivityEvent) -> bool:
-        async with self._lock:
-            existing = self._events.get(event.signature_hash)
+        HTTP polling can observe hundreds of signatures in one provider page.
+        Acquiring a PostgreSQL connection and issuing writes per signature lets
+        one dense mint monopolize a poll cycle, so the durable path inserts and
+        merges the complete page with two statements in one transaction.
+        """
+        normalized: dict[str, _ActivityEvent] = {}
+        for signature_hash, slot, observed_at, mints in activities:
+            normalized_mints = tuple(
+                sorted({mint for mint in mints if SOLANA_ADDRESS_RE.fullmatch(mint)})
+            )
+            if len(signature_hash) != 64 or not normalized_mints:
+                continue
+            normalized_time = (
+                observed_at.replace(tzinfo=timezone.utc)
+                if observed_at.tzinfo is None
+                else observed_at.astimezone(timezone.utc)
+            )
+            event = _ActivityEvent(
+                signature_hash=signature_hash,
+                slot=max(0, int(slot)),
+                observed_at=normalized_time,
+                mints=normalized_mints,
+            )
+            existing = normalized.get(signature_hash)
             if existing is not None:
-                self._events[event.signature_hash] = _ActivityEvent(
-                    signature_hash=event.signature_hash,
+                event = _ActivityEvent(
+                    signature_hash=signature_hash,
                     slot=max(existing.slot, event.slot),
                     observed_at=max(existing.observed_at, event.observed_at),
                     mints=tuple(sorted(set(existing.mints).union(event.mints))),
                 )
-                self._events.move_to_end(event.signature_hash)
-                return False
-            self._events[event.signature_hash] = event
+            normalized[signature_hash] = event
+
+        events = tuple(normalized.values())
+        if not events:
+            return 0
+
+        if self._pool is not None:
+            payload = json.dumps(
+                [
+                    {
+                        "signatureHash": event.signature_hash,
+                        "slot": event.slot,
+                        "observedAt": event.observed_at.isoformat(),
+                        "mints": event.mints,
+                    }
+                    for event in events
+                ]
+            )
+            try:
+                async with self._pool.acquire() as conn:
+                    async with conn.transaction():
+                        inserted_rows = await conn.fetch(
+                            """
+                            WITH incoming AS (
+                                SELECT
+                                    item ->> 'signatureHash' AS signature_hash,
+                                    (item ->> 'slot')::BIGINT AS slot,
+                                    (item ->> 'observedAt')::TIMESTAMPTZ AS observed_at,
+                                    ARRAY(
+                                        SELECT jsonb_array_elements_text(item -> 'mints')
+                                    )::TEXT[] AS mints
+                                FROM jsonb_array_elements($1::JSONB) AS payload(item)
+                            )
+                            INSERT INTO alchemy_stream_transactions (
+                                signature_hash, slot, observed_at, mints
+                            )
+                            SELECT signature_hash, slot, observed_at, mints
+                            FROM incoming
+                            ON CONFLICT (signature_hash) DO NOTHING
+                            RETURNING signature_hash
+                            """,
+                            payload,
+                        )
+                        await conn.execute(
+                            """
+                            WITH incoming AS (
+                                SELECT
+                                    item ->> 'signatureHash' AS signature_hash,
+                                    (item ->> 'slot')::BIGINT AS slot,
+                                    (item ->> 'observedAt')::TIMESTAMPTZ AS observed_at,
+                                    ARRAY(
+                                        SELECT jsonb_array_elements_text(item -> 'mints')
+                                    )::TEXT[] AS mints
+                                FROM jsonb_array_elements($1::JSONB) AS payload(item)
+                            )
+                            UPDATE alchemy_stream_transactions AS existing
+                            SET slot = GREATEST(existing.slot, incoming.slot),
+                                observed_at = GREATEST(
+                                    existing.observed_at,
+                                    incoming.observed_at
+                                ),
+                                mints = (
+                                    SELECT ARRAY_AGG(DISTINCT value ORDER BY value)
+                                    FROM UNNEST(
+                                        existing.mints || incoming.mints
+                                    ) AS mint_value(value)
+                                )
+                            FROM incoming
+                            WHERE existing.signature_hash = incoming.signature_hash
+                            """,
+                            payload,
+                        )
+                self._database_healthy = True
+                inserted_hashes = {
+                    str(row["signature_hash"])
+                    for row in inserted_rows
+                }
+                remembered_hashes = await self._remember_many(events)
+                return len(inserted_hashes.intersection(remembered_hashes))
+            except Exception as exc:
+                self._database_healthy = False
+                _LOGGER.warning(
+                    "Alchemy activity batch write fell back to process memory: %s",
+                    type(exc).__name__,
+                )
+
+        return len(await self._remember_many(events))
+
+    async def _remember(self, event: _ActivityEvent) -> bool:
+        return event.signature_hash in await self._remember_many((event,))
+
+    async def _remember_many(self, events: Iterable[_ActivityEvent]) -> set[str]:
+        inserted: set[str] = set()
+        async with self._lock:
+            for event in events:
+                existing = self._events.get(event.signature_hash)
+                if existing is not None:
+                    self._events[event.signature_hash] = _ActivityEvent(
+                        signature_hash=event.signature_hash,
+                        slot=max(existing.slot, event.slot),
+                        observed_at=max(existing.observed_at, event.observed_at),
+                        mints=tuple(sorted(set(existing.mints).union(event.mints))),
+                    )
+                    self._events.move_to_end(event.signature_hash)
+                    continue
+                self._events[event.signature_hash] = event
+                inserted.add(event.signature_hash)
             while len(self._events) > self._memory_event_limit:
                 self._events.popitem(last=False)
-            return True
+        return inserted
 
     async def activity_snapshot(
         self,

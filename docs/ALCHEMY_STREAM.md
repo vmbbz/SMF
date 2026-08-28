@@ -186,7 +186,8 @@ compatibility. Its transport-specific evidence includes:
 - monitored, covered, pending, and failed candidate counts;
 - confirmed HTTP method names and zero active WebSocket connections;
 - bounded floor, limits, failures, truncation, cursor durability, and coverage;
-- attempted, completed, and failed poll cycles;
+- attempted, completed, and failed poll cycles, current start time, and last duration;
+- one bounded PostgreSQL activity batch per returned provider page;
 - current and maximum 30-day compute-unit estimates; and
 - an activity count only after the complete-cycle freshness gate passes.
 
@@ -265,6 +266,12 @@ Because authenticated Alchemy HTTP URLs contain the key in their path,
 StickLash forces the `httpx` and `httpcore` loggers to WARNING. If a full
 provider URL ever appears in logs, deploy the logging fix first and rotate the
 affected key; do not copy the URL into an issue or public report.
+
+Each returned signature page is normalized in memory, deduplicated by hash, and
+persisted with one insert-and-merge PostgreSQL transaction. This keeps the RPC
+request ceiling and the database-work boundary independently visible: provider
+pages bound Alchemy cost, while page batches prevent a dense mint from creating
+hundreds of sequential database connection acquisitions.
 
 ## Optional transports
 

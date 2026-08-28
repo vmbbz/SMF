@@ -13,6 +13,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
@@ -658,6 +659,9 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                             if isinstance(item, dict) and isinstance(item.get("slot"), int)
                         ]
 
+                        page_activities: list[
+                            tuple[str, int, datetime, tuple[str, ...]]
+                        ] = []
                         for item in result:
                             if not isinstance(item, dict) or item.get("err") is not None:
                                 continue
@@ -675,14 +679,12 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                             else:
                                 observed_at = now
                             signature_hash = hashlib.sha256(signature.encode("ascii")).hexdigest()
-                            inserted = await self.store.record_activity(
-                                signature_hash,
-                                slot,
-                                observed_at,
-                                [mint],
+                            page_activities.append(
+                                (signature_hash, slot, observed_at, (mint,))
                             )
-                            if inserted:
-                                self._candidate_transactions += 1
+                        self._candidate_transactions += await self.store.record_activities(
+                            page_activities
+                        )
 
                         if len(result) < self.config.backfill_limit_per_candidate:
                             candidate_complete = True
@@ -868,6 +870,8 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
         self._poll_cycles_completed = 0
         self._poll_cycles_failed = 0
         self._last_poll_completed_at: datetime | None = None
+        self._poll_started_at: datetime | None = None
+        self._last_poll_duration_ms: int | None = None
 
     async def _on_candidates_changed(
         self,
@@ -917,6 +921,8 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
             return False
 
         cursor_slot, _ = await self.store.load_cursor()
+        started_monotonic = time.monotonic()
+        self._poll_started_at = _utc_now()
         self._poll_cycles_attempted += 1
         self._backfill_pending = True
         self._connected = False
@@ -957,6 +963,11 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
             self._state = "connected"
             return True
         finally:
+            self._last_poll_duration_ms = max(
+                0,
+                round((time.monotonic() - started_monotonic) * 1000),
+            )
+            self._poll_started_at = None
             self._backfill_pending = False
 
     async def _run(self) -> None:
@@ -1137,6 +1148,9 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
                 "pollCyclesAttempted": self._poll_cycles_attempted,
                 "pollCyclesCompleted": self._poll_cycles_completed,
                 "pollCyclesFailed": self._poll_cycles_failed,
+                "pollStartedAt": _public_time(self._poll_started_at),
+                "lastPollDurationMilliseconds": self._last_poll_duration_ms,
+                "activityPersistenceWriteMode": "one_postgres_batch_per_rpc_page",
                 "costGuard": self._cost_guard_health(),
             }
         )

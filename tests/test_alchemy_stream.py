@@ -102,6 +102,34 @@ async def test_memory_store_deduplicates_and_reports_candidate_window() -> None:
 
 
 @pytest.mark.asyncio
+async def test_memory_store_batches_and_merges_duplicate_signature_mints() -> None:
+    store = AlchemyStreamStore()
+    observed_at = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+
+    inserted = await store.record_activities(
+        [
+            ("a" * 64, 100, observed_at, [MINT_A]),
+            ("a" * 64, 101, observed_at + timedelta(seconds=1), [MINT_B]),
+            ("b" * 64, 102, observed_at + timedelta(seconds=2), [MINT_B]),
+        ]
+    )
+    duplicate = await store.record_activities(
+        [("a" * 64, 101, observed_at + timedelta(seconds=1), [MINT_A, MINT_B])]
+    )
+    snapshot = await store.activity_snapshot(
+        [MINT_A, MINT_B],
+        since=observed_at - timedelta(seconds=1),
+    )
+
+    assert inserted == 2
+    assert duplicate == 0
+    assert snapshot["totalTransactions"] == 2
+    assert snapshot["byMint"][MINT_A]["observedConfirmedTransactions"] == 1
+    assert snapshot["byMint"][MINT_B]["observedConfirmedTransactions"] == 2
+    assert snapshot["byMint"][MINT_A]["lastSlot"] == 101
+
+
+@pytest.mark.asyncio
 async def test_transaction_update_records_only_matching_candidate_mint() -> None:
     stream = configured_stream()
     await stream.set_candidates([MINT_A, MINT_B])

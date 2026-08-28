@@ -2,6 +2,18 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Dense-Candidate Persistence Stabilization
+
+### Fixed
+
+- Replaced per-signature PostgreSQL writes during Alchemy HTTP polling with one bounded insert-and-merge transaction per provider page. Dense token mints can no longer hold a complete cycle open through hundreds of sequential pool acquisitions.
+- Preserved signature-hash deduplication and merged mint attribution across rewind overlap and candidates while retaining process-memory fallback for database faults.
+
+### Evidence
+
+- Public reliability health now reports the current poll start, last completed/failed poll duration, and `one_postgres_batch_per_rpc_page` persistence mode.
+- Advanced the public arena evidence schema to `2026-08-28.v6`.
+
 ## 2026-08-28 - Production Alchemy Polling Hardening
 
 ### Fixed

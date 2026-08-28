@@ -160,6 +160,50 @@ async def test_http_poll_cycle_is_bounded_fresh_and_cost_disclosed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_http_polling_persists_each_provider_page_as_one_activity_batch() -> None:
+    now = datetime.now(timezone.utc)
+    stream = polling_stream(backfill_max_slots=64, backfill_limit_per_candidate=100)
+    await stream.set_candidates([MINT_A])
+    stream.store.record_activities = AsyncMock(return_value=2)
+    stream._rpc_call = AsyncMock(
+        side_effect=[
+            120,
+            [
+                {
+                    "signature": SIGNATURE_A,
+                    "slot": 119,
+                    "err": None,
+                    "blockTime": int(now.timestamp()),
+                },
+                {
+                    "signature": SIGNATURE_B,
+                    "slot": 118,
+                    "err": None,
+                    "blockTime": int(now.timestamp()),
+                },
+            ],
+        ]
+    )
+
+    assert await stream._poll_once() is True
+    stream.store.record_activities.assert_awaited_once()
+    (page,) = stream.store.record_activities.await_args.args
+    health = await stream.public_health()
+
+    assert len(page) == 2
+    assert {activity[3] for activity in page} == {(MINT_A,)}
+    assert stream._candidate_transactions == 2
+    assert health["reliability"]["activityPersistenceWriteMode"] == (
+        "one_postgres_batch_per_rpc_page"
+    )
+    assert isinstance(
+        health["reliability"]["lastPollDurationMilliseconds"],
+        int,
+    )
+    assert health["reliability"]["pollStartedAt"] is None
+
+
+@pytest.mark.asyncio
 async def test_http_polling_fails_closed_on_truncated_candidate_window() -> None:
     stream = polling_stream(
         backfill_max_slots=64,
