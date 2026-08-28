@@ -119,20 +119,22 @@ Using Alchemy's documented method costs as of 28 August 2026:
 - `getSlot`: 20 compute units;
 - `getSignaturesForAddress`: 40 compute units; and
 - baseline cycle: `20 + (40 x candidate_count)` compute units; and
-- bounded cycle: baseline plus at most eight 40-CU pagination requests.
+- pagination ceiling: baseline plus at most eight 40-CU page requests; and
+- complete ceiling: pagination plus at most four 40-CU retry requests.
 
 At the maximum 32 candidates and one cycle every 180 seconds:
 
 ```text
 baseline: 1,300 CU/cycle x 14,400 = 18,720,000 CU/30 days
-bounded:  1,620 CU/cycle x 14,400 = 23,328,000 CU/30 days
+pages:    1,620 CU/cycle x 14,400 = 23,328,000 CU/30 days
+bounded:  1,780 CU/cycle x 14,400 = 25,632,000 CU/30 days
 ```
 
-Alchemy documents 30 million CUs per month on the Free plan. The 23.328-million
-bounded figure is a guardrail, not a bill prediction: it excludes retries,
-`SOLANA_RPC` traffic, dashboard tests, and every other request using the same
-Alchemy account. Operators must keep usage alerts enabled and re-check current
-pricing before increasing any cap or poll frequency.
+Alchemy documents 30 million CUs per month on the Free plan. The 25.632-million
+bounded figure includes the complete retry budget but remains a guardrail, not a
+bill prediction: it excludes `SOLANA_RPC` traffic, dashboard tests, and every
+other request using the same Alchemy account. Operators must keep usage alerts
+enabled and re-check current pricing before increasing any cap or poll frequency.
 
 ## Dedupe and persistence
 
@@ -187,6 +189,7 @@ compatibility. Its transport-specific evidence includes:
 - confirmed HTTP method names and zero active WebSocket connections;
 - bounded floor, limits, failures, truncation, cursor durability, and coverage;
 - attempted, completed, and failed poll cycles, current start time, and last duration;
+- bounded retry attempts, recoveries, and sanitized request/final failure codes;
 - one bounded PostgreSQL activity batch per returned provider page;
 - current and maximum 30-day compute-unit estimates; and
 - an activity count only after the complete-cycle freshness gate passes.
@@ -229,6 +232,7 @@ text alone.
 | `ALCHEMY_STREAM_BACKFILL_LIMIT_PER_CANDIDATE` | `1000` | Signature page size; max 1000 |
 | `ALCHEMY_STREAM_BACKFILL_MAX_PAGES_PER_CANDIDATE` | `2` | Per-candidate page cap |
 | `ALCHEMY_STREAM_BACKFILL_EXTRA_PAGE_BUDGET` | `8` | Shared extra-page cap per cycle |
+| `ALCHEMY_STREAM_HTTP_RETRY_BUDGET` | `4` | Shared transient retry cap per cycle |
 | `ALCHEMY_STREAM_BACKFILL_MIN_INTERVAL_SECONDS` | `60` | Repeat-work guard |
 | `ALCHEMY_STREAM_DEDUPE_RETENTION_SECONDS` | `21600` | Signature-hash retention |
 | `ALCHEMY_STREAM_RPC_TIMEOUT_SECONDS` | `12` | HTTP/connection timeout |
@@ -252,6 +256,7 @@ candidate activity evidence.
    - `subscription.connectionCount == 0`;
    - `replay.cursorDurable == true` and `coverageComplete == true`;
    - zero failures and truncations;
+   - bounded retry counts and only sanitized failure-code keys;
    - a recent completed poll and advancing slot; and
    - no credential in the response or logs.
 6. Request one Director decision. The HTTP input source may appear only while

@@ -2,6 +2,18 @@
 
 All notable StickLash release changes are tracked here.
 
+## 2026-08-28 - Bounded Alchemy Retry Evidence
+
+### Added
+
+- Added sanitized final-failure and request-attempt code counts so operators can distinguish HTTP 429, timeout, transport, and non-retryable RPC failures without logging provider URLs or response bodies.
+- Added a four-request global retry budget per HTTP poll cycle with bounded 1/2/4/4-second backoff for timeouts, transport failures, HTTP 408/429/5xx, and JSON-RPC 429 responses.
+
+### Cost and Contract
+
+- Included the retry ceiling in public CU estimates. At the 32-candidate cap, the baseline remains 18.72 million CUs, pagination raises the ceiling to 23.328 million, and the complete pagination-plus-retry ceiling is 25.632 million CUs per 30 days before unrelated account traffic.
+- Advanced the public arena evidence schema to `2026-08-28.v7`.
+
 ## 2026-08-28 - Dense-Candidate Persistence Stabilization
 
 ### Fixed

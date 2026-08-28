@@ -160,6 +160,7 @@ class AlchemyStreamConfig:
     backfill_extra_page_budget: int = 8
     backfill_min_interval_seconds: int = 60
     poll_interval_seconds: int = 180
+    http_retry_budget: int = 4
 
     @classmethod
     def from_env(cls) -> "AlchemyStreamConfig":
@@ -292,6 +293,12 @@ class AlchemyStreamConfig:
                 180,
                 minimum=60,
                 maximum=1_800,
+            ),
+            http_retry_budget=_env_int(
+                "ALCHEMY_STREAM_HTTP_RETRY_BUDGET",
+                4,
+                minimum=0,
+                maximum=16,
             ),
         )
 

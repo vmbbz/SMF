@@ -40,6 +40,8 @@ SOLANA_SIGNATURE_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{80,90}$")
 HTTP_POLL_GET_SLOT_COMPUTE_UNITS = 20
 HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS = 40
 HTTP_POLL_SECONDS_PER_30_DAYS = 30 * 24 * 60 * 60
+HTTP_POLL_RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
+HTTP_POLL_MAX_RETRY_DELAY_SECONDS = 4
 
 # httpx logs complete request URLs at INFO. Alchemy authenticates standard
 # Solana HTTP RPC through the URL path, so provider request logging must stay
@@ -108,6 +110,7 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
         self._backfill_extra_pages_used = 0
         self._backfill_truncated_candidates = 0
         self._backfill_failures = 0
+        self._backfill_failure_codes: dict[str, int] = {}
         self._backfill_coverage_complete = False
         self._backfill_basis = "not_started"
         self._live_coverage_started_at: datetime | None = None
@@ -541,6 +544,20 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             raise _PubSubProtocolError(f"http_rpc_{code}")
         return payload.get("result")
 
+    async def _backfill_rpc_call(
+        self,
+        client: httpx.AsyncClient,
+        method: str,
+        params: list[Any],
+        request_id: int,
+    ) -> Any:
+        return await self._rpc_call(client, method, params, request_id)
+
+    def _record_backfill_failure(self, exc: Exception) -> str:
+        code = self._sanitize_transport_error(exc)
+        self._backfill_failure_codes[code] = self._backfill_failure_codes.get(code, 0) + 1
+        return code
+
     async def _backfill_candidates(
         self,
         candidates: tuple[str, ...],
@@ -572,13 +589,14 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             self._backfill_extra_pages_used = 0
             self._backfill_truncated_candidates = 0
             self._backfill_failures = 0
+            self._backfill_failure_codes = {}
 
             last_slot = cursor_slot
             if last_slot is None and not full_window:
                 last_slot, _ = await self.store.load_cursor()
             timeout = httpx.Timeout(self.config.rpc_timeout_seconds)
             async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
-                current_result = await self._rpc_call(
+                current_result = await self._backfill_rpc_call(
                     client,
                     "getSlot",
                     [{"commitment": "confirmed"}],
@@ -633,7 +651,7 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                             options["before"] = before_signature
 
                         try:
-                            result = await self._rpc_call(
+                            result = await self._backfill_rpc_call(
                                 client,
                                 "getSignaturesForAddress",
                                 [mint, options],
@@ -641,8 +659,9 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
                             )
                         except asyncio.CancelledError:
                             raise
-                        except Exception:
+                        except Exception as exc:
                             self._backfill_failures += 1
+                            self._record_backfill_failure(exc)
                             candidate_failed = True
                             break
                         pages_for_candidate += 1
@@ -719,6 +738,7 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             raise
         except Exception as exc:
             self._backfill_failures += 1
+            self._record_backfill_failure(exc)
             self._replay_reason = "backfill_failed"
             self._backfill_coverage_complete = False
             self._last_error_code = self._sanitize_transport_error(exc)
@@ -788,6 +808,7 @@ class AlchemySolanaPubSubStream(AlchemyYellowstoneStream):
             "extraPageBudget": self.config.backfill_extra_page_budget,
             "truncatedCandidates": self._backfill_truncated_candidates,
             "failures": self._backfill_failures,
+            "failureCodes": dict(sorted(self._backfill_failure_codes.items())),
             "lastBackfillAt": _public_time(self._last_backfill_at),
             "pending": self._backfill_pending,
             "coverageComplete": coverage_complete,
@@ -872,6 +893,10 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
         self._last_poll_completed_at: datetime | None = None
         self._poll_started_at: datetime | None = None
         self._last_poll_duration_ms: int | None = None
+        self._retry_budget_remaining = config.http_retry_budget
+        self._retry_attempts = 0
+        self._retry_recoveries = 0
+        self._request_failure_codes: dict[str, int] = {}
 
     async def _on_candidates_changed(
         self,
@@ -913,6 +938,51 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
         finally:
             self._poll_wake_event.clear()
 
+    @staticmethod
+    def _retryable_http_error(exc: Exception) -> bool:
+        if isinstance(exc, httpx.HTTPStatusError):
+            return exc.response.status_code in HTTP_POLL_RETRYABLE_HTTP_STATUS
+        if isinstance(exc, httpx.TransportError):
+            return True
+        return isinstance(exc, _PubSubProtocolError) and exc.code == "http_rpc_429"
+
+    @staticmethod
+    def _retry_delay_seconds(retry_number: int) -> float:
+        return float(min(2 ** max(0, retry_number - 1), HTTP_POLL_MAX_RETRY_DELAY_SECONDS))
+
+    async def _backfill_rpc_call(
+        self,
+        client: httpx.AsyncClient,
+        method: str,
+        params: list[Any],
+        request_id: int,
+    ) -> Any:
+        try:
+            return await self._rpc_call(client, method, params, request_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            code = self._sanitize_transport_error(exc)
+            self._request_failure_codes[code] = self._request_failure_codes.get(code, 0) + 1
+            if self._retry_budget_remaining <= 0 or not self._retryable_http_error(exc):
+                raise
+
+            self._retry_budget_remaining -= 1
+            self._retry_attempts += 1
+            await asyncio.sleep(self._retry_delay_seconds(self._retry_attempts))
+            try:
+                result = await self._rpc_call(client, method, params, request_id)
+            except asyncio.CancelledError:
+                raise
+            except Exception as retry_exc:
+                retry_code = self._sanitize_transport_error(retry_exc)
+                self._request_failure_codes[retry_code] = (
+                    self._request_failure_codes.get(retry_code, 0) + 1
+                )
+                raise
+            self._retry_recoveries += 1
+            return result
+
     async def _poll_once(self) -> bool:
         candidates = self._candidate_mints
         if not candidates:
@@ -923,6 +993,10 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
         cursor_slot, _ = await self.store.load_cursor()
         started_monotonic = time.monotonic()
         self._poll_started_at = _utc_now()
+        self._retry_budget_remaining = self.config.http_retry_budget
+        self._retry_attempts = 0
+        self._retry_recoveries = 0
+        self._request_failure_codes = {}
         self._poll_cycles_attempted += 1
         self._backfill_pending = True
         self._connected = False
@@ -1038,7 +1112,11 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
                 self.config.backfill_extra_page_budget,
                 count * max(0, self.config.backfill_max_pages_per_candidate - 1),
             )
-            bounded_requests = baseline_requests + available_extra_pages
+            bounded_requests = (
+                baseline_requests
+                + available_extra_pages
+                + self.config.http_retry_budget
+            )
             baseline_per_cycle = (
                 HTTP_POLL_GET_SLOT_COMPUTE_UNITS
                 + count * HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS
@@ -1046,6 +1124,7 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
             bounded_per_cycle = (
                 baseline_per_cycle
                 + available_extra_pages * HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS
+                + self.config.http_retry_budget * HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS
             )
             baseline_per_month = round(baseline_per_cycle * cycles_per_30_days)
             bounded_per_month = round(bounded_per_cycle * cycles_per_30_days)
@@ -1094,11 +1173,17 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
                 "maxPagesPerCandidate": self.config.backfill_max_pages_per_candidate,
                 "extraPageBudgetPerCycle": self.config.backfill_extra_page_budget,
             },
+            "retry": {
+                "budgetPerCycle": self.config.http_retry_budget,
+                "maximumDelaySeconds": HTTP_POLL_MAX_RETRY_DELAY_SECONDS,
+                "eligibleFailures": "timeouts, transport errors, HTTP 408/429/5xx, RPC 429",
+            },
             "assumptions": {
                 "getSlotComputeUnits": HTTP_POLL_GET_SLOT_COMPUTE_UNITS,
                 "getSignaturesForAddressComputeUnits": HTTP_POLL_GET_SIGNATURES_COMPUTE_UNITS,
                 "days": 30,
-                "excludesRetriesAndOtherApplicationTraffic": True,
+                "includesBoundedRetryBudget": True,
+                "excludesOtherApplicationTraffic": True,
             },
         }
 
@@ -1131,6 +1216,7 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
             "extraPageBudget": self.config.backfill_extra_page_budget,
             "truncatedCandidates": self._backfill_truncated_candidates,
             "failures": self._backfill_failures,
+            "failureCodes": dict(sorted(self._backfill_failure_codes.items())),
             "lastPollAt": _public_time(self._last_backfill_at),
             "pending": self._backfill_pending,
             "coverageComplete": coverage_complete,
@@ -1148,6 +1234,10 @@ class AlchemySolanaHttpPollingStream(AlchemySolanaPubSubStream):
                 "pollCyclesAttempted": self._poll_cycles_attempted,
                 "pollCyclesCompleted": self._poll_cycles_completed,
                 "pollCyclesFailed": self._poll_cycles_failed,
+                "retryBudgetPerCycle": self.config.http_retry_budget,
+                "retriesAttempted": self._retry_attempts,
+                "retriesRecovered": self._retry_recoveries,
+                "requestFailureCodes": dict(sorted(self._request_failure_codes.items())),
                 "pollStartedAt": _public_time(self._poll_started_at),
                 "lastPollDurationMilliseconds": self._last_poll_duration_ms,
                 "activityPersistenceWriteMode": "one_postgres_batch_per_rpc_page",

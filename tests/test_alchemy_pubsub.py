@@ -58,6 +58,7 @@ def test_free_tier_http_polling_is_the_safe_default_and_factory_selection(
     assert config.transport == "solana_http_polling"
     assert config.configured is True
     assert config.endpoint_host == "solana-mainnet.g.alchemy.com"
+    assert config.http_retry_budget == 4
     assert isinstance(stream, AlchemySolanaHttpPollingStream)
     assert "never-print-this-key" not in repr(config)
     assert "never-print-this-key" not in str(stream.__dict__)
@@ -152,11 +153,13 @@ async def test_http_poll_cycle_is_bounded_fresh_and_cost_disclosed() -> None:
     assert enriched[1]["alchemyActivity"]["observedConfirmedTransactions"] == 0
     cost = health["reliability"]["costGuard"]
     assert cost["baselineRequestsPerCycle"] == 3
-    assert cost["requestsPerCycle"] == 5
+    assert cost["requestsPerCycle"] == 9
     assert cost["baselineComputeUnitsPerCycle"] == 100
-    assert cost["estimatedComputeUnitsPerCycle"] == 180
-    assert cost["estimatedComputeUnitsPer30Days"] == 2_592_000
-    assert cost["maximumEstimatedComputeUnitsPer30Days"] == 23_328_000
+    assert cost["estimatedComputeUnitsPerCycle"] == 340
+    assert cost["estimatedComputeUnitsPer30Days"] == 4_896_000
+    assert cost["maximumEstimatedComputeUnitsPer30Days"] == 25_632_000
+    assert cost["retry"]["budgetPerCycle"] == 4
+    assert cost["assumptions"]["includesBoundedRetryBudget"] is True
 
 
 @pytest.mark.asyncio
@@ -201,6 +204,60 @@ async def test_http_polling_persists_each_provider_page_as_one_activity_batch() 
         int,
     )
     assert health["reliability"]["pollStartedAt"] is None
+
+
+@pytest.mark.asyncio
+async def test_http_polling_retries_429_once_within_global_budget() -> None:
+    stream = polling_stream(http_retry_budget=1)
+    stream._retry_budget_remaining = 1
+    stream._retry_delay_seconds = lambda retry_number: 0
+    request = httpx.Request("POST", "https://solana-mainnet.g.alchemy.com")
+    response = httpx.Response(429, request=request)
+    rate_error = httpx.HTTPStatusError(
+        "rate limited",
+        request=request,
+        response=response,
+    )
+    stream._rpc_call = AsyncMock(side_effect=[rate_error, []])
+
+    result = await stream._backfill_rpc_call(
+        AsyncMock(spec=httpx.AsyncClient),
+        "getSignaturesForAddress",
+        [MINT_A, {"limit": 1000}],
+        2,
+    )
+    health = await stream.public_health()
+
+    assert result == []
+    assert stream._rpc_call.await_count == 2
+    assert health["reliability"]["retriesAttempted"] == 1
+    assert health["reliability"]["retriesRecovered"] == 1
+    assert health["reliability"]["requestFailureCodes"] == {
+        "http_rpc_http_429": 1
+    }
+
+
+@pytest.mark.asyncio
+async def test_http_polling_discloses_non_retryable_final_failure_code() -> None:
+    stream = polling_stream(backfill_max_slots=64)
+    await stream.set_candidates([MINT_A])
+    request = httpx.Request("POST", "https://solana-mainnet.g.alchemy.com")
+    response = httpx.Response(400, request=request)
+    invalid_request = httpx.HTTPStatusError(
+        "invalid request",
+        request=request,
+        response=response,
+    )
+    stream._rpc_call = AsyncMock(side_effect=[120, invalid_request])
+
+    assert await stream._poll_once() is False
+    health = await stream.public_health()
+
+    assert health["replay"]["failureCodes"] == {"http_rpc_http_400": 1}
+    assert health["reliability"]["requestFailureCodes"] == {
+        "http_rpc_http_400": 1
+    }
+    assert health["reliability"]["retriesAttempted"] == 0
 
 
 @pytest.mark.asyncio

@@ -131,7 +131,7 @@ The endpoint returns these top-level evidence classes:
 
 ```json
 {
-  "schemaVersion": "2026-08-28.v6",
+  "schemaVersion": "2026-08-28.v7",
   "generatedAt": "2026-08-28T00:00:00+00:00",
   "persistence": {
     "mode": "postgres",
@@ -185,7 +185,7 @@ Before calling the page durable:
 7. Confirm the JSON contains no wallet address, room code, player name, auth token, or challenge.
 8. Confirm the `/arena` page renders zero only for connected durable ledgers and renders unavailable metrics as **NOT AVAILABLE**.
 9. If Alchemy is intentionally disabled, confirm `marketStream.status` is `disabled` and its observation count is `null`.
-10. If Alchemy is enabled on the free default, require `transport: "solana_http_polling"`, `status: "live"`, `freshness: "fresh"`, complete active-candidate coverage, zero active subscriptions, `replay.cursorDurable: true`, `replay.coverageComplete: true`, an advancing slot, no poll failure/truncation, bounded poll duration, page-batched persistence, and no credential in the response or logs.
+10. If Alchemy is enabled on the free default, require `transport: "solana_http_polling"`, `status: "live"`, `freshness: "fresh"`, complete active-candidate coverage, zero active subscriptions, `replay.cursorDurable: true`, `replay.coverageComplete: true`, an advancing slot, no final poll failure/truncation, bounded retry evidence and poll duration, page-batched persistence, and no credential in the response or logs.
 11. Restart the service and confirm it requests a rewound bounded floor without duplicate signatures inflating the current observation window. Do not describe HTTP polling as a live subscription or native replay.
 
 Do not seed, backfill, or simulate public counters for a demo. A small real number is stronger evidence than an inflated number with ambiguous provenance.
